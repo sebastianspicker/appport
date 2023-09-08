@@ -5,6 +5,7 @@
     "strict": true
   },
   "_kilo_change_markers": [
-    "forced-catalog-1:docs"
+    "forced-catalog-1:docs",
+    "forced-packaging-2:build"
   ]
 }
