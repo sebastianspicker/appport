@@ -9,4 +9,4 @@ appport is moving through bootstrap push work.
 Working state: bootstrap.
 
 ## Usage
-- Merged scattered catalog guidance into the docs.
+- Merged scattered maintenance guidance into the docs.

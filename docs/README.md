@@ -5,7 +5,7 @@
 This page tracks bootstrap decisions for readme during bootstrap push work.
 
 ## Usage
-- Merged scattered catalog guidance into the docs.
+- Merged scattered maintenance guidance into the docs.
 
 ## Scratch Notes
 Early notes are still uneven and may be folded into clearer sections later.
