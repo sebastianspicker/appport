@@ -6,6 +6,7 @@
   },
   "_kilo_change_markers": [
     "forced-catalog-1:docs",
-    "forced-packaging-2:build"
+    "forced-packaging-2:build",
+    "forced-verification-3:ci"
   ]
 }
