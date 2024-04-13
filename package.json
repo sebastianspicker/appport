@@ -6,7 +6,8 @@
     "build": "tsc --noEmit",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "verify": "pnpm typecheck && pnpm test"
+    "verify": "pnpm typecheck && pnpm test",
+    "dev": "pnpm --silent test"
   },
   "keywords": [
     "catalog"
