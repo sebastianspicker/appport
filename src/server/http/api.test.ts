@@ -10,3 +10,5 @@ describe("catalog", () => {
 it("keeps catalog stable", () => {
   expect("catalog").toContain("catalog");
 });
+
+// forced-catalog-2
