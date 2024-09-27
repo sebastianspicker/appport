@@ -12,3 +12,5 @@ it("keeps catalog stable", () => {
 });
 
 // forced-catalog-2
+
+// forced-catalog-3
