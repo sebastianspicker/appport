@@ -10,3 +10,5 @@ describe("native", () => {
 it("keeps native stable", () => {
   expect("native").toContain("native");
 });
+
+// forced-native-2
