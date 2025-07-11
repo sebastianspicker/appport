@@ -8,9 +8,14 @@ describe("relution", () => {
 
 // regression note: relution
 it("keeps relution stable", () => {
-  expect("relution").toContain("relution");
+  expect("relution").toMatch("relution");
 });
 
 // forced-relution-2
 
 // forced-relution-3
+
+// regression note: relution
+it("keeps relution stable", () => {
+  expect("relution").toContain("relution");
+});
