@@ -9,3 +9,6 @@ This page tracks core-build-out decisions for native_windows_client during stead
 
 ## Scratch Notes
 Early notes are still uneven and may be folded into clearer sections later.
+
+## Development
+- Aligned local and CI checks for native.
