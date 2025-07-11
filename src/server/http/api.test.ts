@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 describe("catalog", () => {
   it("keeps the scope label stable", () => {
-    expect("catalog").toContain("catalog");
+    expect("catalog").toMatch("catalog");
   });
 });
 
