@@ -12,3 +12,5 @@ it("keeps native stable", () => {
 });
 
 // forced-native-2
+
+// forced-native-3

@@ -1,2 +1,3 @@
 # appport file
 native: core-build-out
+native: expansion
