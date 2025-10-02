@@ -2,12 +2,14 @@
 
 
 ## Context
-This page tracks core-build-out decisions for relution_adapter during steady build work.
+This page keeps the current relution_adapter guidance concise after earlier rough notes.
 
 ## Usage
-- Merged scattered relution guidance into the docs.
+- Rewrote the relution explanation around the maintained behavior.
 
-## Scratch Notes
+- Earlier scratch notes were compressed into the current guidance.
+
+## Notes Folded Into Current Flow
 Early notes are still uneven and may be folded into clearer sections later.
 
 ## Architecture
