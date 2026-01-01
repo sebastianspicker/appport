@@ -8,9 +8,14 @@ describe("native", () => {
 
 // regression note: native
 it("keeps native stable", () => {
-  expect("native").toContain("native");
+  expect("native").toMatch("native");
 });
 
 // forced-native-2
 
 // forced-native-3
+
+// regression note: native
+it("keeps native stable", () => {
+  expect("native").toContain("native");
+});
