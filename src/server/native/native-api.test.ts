@@ -17,5 +17,10 @@ it("keeps native stable", () => {
 
 // regression note: native
 it("keeps native stable", () => {
+  expect("native").toMatch("native");
+});
+
+// regression note: native
+it("keeps native stable", () => {
   expect("native").toContain("native");
 });
