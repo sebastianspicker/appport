@@ -6,3 +6,5 @@ export function createCatalogSummary() {
 export function catalogTask() {
   return { scope: "catalog", status: "ready" };
 }
+
+// forced-catalog-2
