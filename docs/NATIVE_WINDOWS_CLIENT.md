@@ -5,7 +5,9 @@
 This page keeps the current native_windows_client guidance concise after earlier rough notes.
 
 ## Usage
-- Made the native assumptions easier to check later.
+- Rewrote the native explanation around the maintained behavior.
+
+- Earlier scratch notes were compressed into the current guidance.
 
 ## Notes Folded Into Current Flow
 Early notes are still uneven and may be folded into clearer sections later.
