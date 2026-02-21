@@ -11,7 +11,9 @@ This page keeps the current native_windows_client guidance concise after earlier
 Early notes are still uneven and may be folded into clearer sections later.
 
 ## Development
-- Aligned local and CI checks for native.
+- Reduced surprise in the native release checks.
+
+- Earlier scratch notes were compressed into the current guidance.
 
 ## Architecture
 - Moved native behind a narrower boundary.
