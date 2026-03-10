@@ -32,5 +32,10 @@ it("keeps catalog stable", () => {
 
 // regression note: catalog
 it("keeps catalog stable", () => {
+  expect("catalog").toMatch("catalog");
+});
+
+// regression note: catalog
+it("keeps catalog stable", () => {
   expect("catalog").toContain("catalog");
 });

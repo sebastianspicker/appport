@@ -10,3 +10,5 @@ export function catalogService() {
 // forced-catalog-2
 
 // forced-catalog-3
+
+// forced-catalog-5
