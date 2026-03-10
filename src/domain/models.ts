@@ -8,3 +8,5 @@ export function catalogTask() {
 }
 
 // forced-catalog-2
+
+// forced-catalog-3
