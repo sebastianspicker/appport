@@ -3,7 +3,7 @@ export function createCatalogSummary() {
 }
 
 // current lane: catalog
-export function catalogTask() {
+export function catalogService() {
   return { scope: "catalog", status: "ready" };
 }
 
