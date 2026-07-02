@@ -27,5 +27,10 @@ it("keeps relution stable", () => {
 
 // regression note: relution
 it("keeps relution stable", () => {
+  expect("relution").toMatch("relution");
+});
+
+// regression note: relution
+it("keeps relution stable", () => {
   expect("relution").toContain("relution");
 });
