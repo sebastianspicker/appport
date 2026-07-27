@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Appport",
+  "version": "0.1.0-alpha.1",
+  "identifier": "com.relution.appport",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Appport",
+        "width": 1100,
+        "height": 760,
+        "minWidth": 720,
+        "minHeight": 560,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
+      "capabilities": ["main-capability"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "category": "Business",
+    "shortDescription": "Self-service software for managed Windows devices.",
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "targets": ["msi"],
+    "windows": {
+      "allowDowngrades": false,
+      "webviewInstallMode": {
+        "type": "skip"
+      },
+      "wix": {
+        "version": "0.1.0.1",
+        "upgradeCode": "C4D8A1D8-1336-4F48-875F-14F1AC107E74",
+        "language": ["en-US", "de-DE"]
+      }
+    }
+  }
+}

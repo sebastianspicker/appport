@@ -1,10 +1,43 @@
-export function createRelutionSummary() {
-  return { scope: "relution", status: "ready" };
+import type {
+  AppAction,
+  ApplicationIcon,
+  AvailableApp,
+  InstalledApplication,
+  ManagedDevice,
+  NativeDeviceEvidenceV1,
+  PortalUser,
+} from "@/domain/models";
+
+export interface CurrentDeviceResolution {
+  device: ManagedDevice;
+  evidenceDigest: string;
+  relutionUserUuid: string;
 }
 
-// current lane: relution
-export function relutionTask() {
-  return { scope: "relution", status: "ready" };
+export interface RelutionGateway {
+  listAssignedWindowsDevices(user: PortalUser): Promise<ManagedDevice[]>;
+  resolveCurrentWindowsDevice(
+    user: PortalUser,
+    evidence: NativeDeviceEvidenceV1,
+  ): Promise<CurrentDeviceResolution>;
+  listApplications(
+    user: PortalUser,
+    deviceId: string,
+  ): Promise<AvailableApp[]>;
+  listInstalledApplications(
+    user: PortalUser,
+    deviceId: string,
+  ): Promise<InstalledApplication[]>;
+  requestAction(
+    user: PortalUser,
+    deviceId: string,
+    appId: string,
+    idempotencyKey: string,
+  ): Promise<{ action: AppAction; created: boolean }>;
+  getAction(user: PortalUser, actionId: string): Promise<AppAction>;
+  getApplicationIcon(
+    user: PortalUser,
+    appId: string,
+  ): Promise<ApplicationIcon | null>;
+  readiness(): Promise<void>;
 }
-
-// forced-relution-2

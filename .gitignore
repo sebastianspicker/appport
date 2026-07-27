@@ -1,0 +1,43 @@
+# Dependencies and build output
+node_modules/
+.next/
+/apps/windows-client/dist/
+/apps/windows-client/src-tauri/target/
+/apps/windows-client/src-tauri/gen/
+*.tsbuildinfo
+
+# Test and analysis output
+coverage/
+test-results/
+playwright-report/
+.nyc_output/
+.vite/
+
+# Runtime and release output
+/release-artifacts/
+*.sqlite
+*.sqlite-*
+*.log
+
+# Local tools and private workspace files
+/.local/
+/.agents/
+/.claude/
+/.codex/
+/.continue/
+/.cursor/
+/.serena/
+/.windsurf/
+/.cache/
+.DS_Store
+*.tmp
+*.swp
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx

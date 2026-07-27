@@ -1,0 +1,284 @@
+:root {
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  color: #17233a;
+  background: #f4f7fb;
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid #68a7ff;
+  outline-offset: 2px;
+}
+
+main {
+  max-width: 1120px;
+  margin: auto;
+  padding: 42px 28px;
+}
+
+header,
+.toolbar,
+.card-heading {
+  display: flex;
+  align-items: center;
+}
+
+header {
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+h2 {
+  margin: 0.25rem 0;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: #4169a6;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.device {
+  margin: 0.5rem 0;
+  color: #5b6473;
+}
+
+nav {
+  display: flex;
+  gap: 8px;
+  margin: 34px 0 18px;
+  border-bottom: 1px solid #dbe1ea;
+}
+
+button {
+  padding: 10px 15px;
+  border: 0;
+  border-radius: 7px;
+  background: #1559b0;
+  color: white;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+button.secondary,
+nav button {
+  border: 1px solid #cbd5e1;
+  background: transparent;
+  color: #28384f;
+}
+
+nav button {
+  border: 0;
+  border-radius: 7px 7px 0 0;
+}
+
+nav button.active {
+  border-bottom: 3px solid #1559b0;
+  color: #1559b0;
+}
+
+.toolbar {
+  justify-content: space-between;
+  margin: 22px 0;
+  color: #5b6473;
+}
+
+.toolbar input,
+.toolbar select {
+  min-width: 270px;
+  margin-left: 10px;
+  padding: 10px;
+  border: 1px solid #b7c5d8;
+  border-radius: 6px;
+  background: white;
+  color: #17233a;
+}
+
+.device-chip {
+  padding: 7px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.card,
+.state {
+  padding: 20px;
+  border: 1px solid #dbe1ea;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 7px #17233a0a;
+}
+
+.card-heading {
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.app-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 9px;
+  object-fit: contain;
+}
+
+.app-icon.placeholder {
+  display: grid;
+  place-items: center;
+  background: #e7eef9;
+  color: #1559b0;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.card > p {
+  min-height: 2.8em;
+  color: #536174;
+}
+
+.card small {
+  display: block;
+  margin-bottom: 16px;
+  color: #536174;
+}
+
+.unknown-action {
+  min-height: 0 !important;
+  padding: 10px;
+  border-left: 4px solid #9d6400;
+  background: #fff4d6;
+  color: #4f3700 !important;
+}
+
+.unknown-action code {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.state {
+  max-width: 520px;
+  margin-top: 30px;
+}
+
+.search-empty {
+  padding: 18px;
+  border: 1px dashed #9daabd;
+  border-radius: 8px;
+}
+
+.dialog-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: #17233a88; }
+.confirmation { width: min(100%, 480px); padding: 24px; border-radius: 10px; background: #fff; color: #17233a; box-shadow: 0 14px 40px #17233a66; }
+.confirmation dl div { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; margin: 12px 0; }
+.confirmation dt { font-weight: 700; }
+.confirmation dd { margin: 0; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.sign-out-warning { max-width: 620px; padding: 12px; border-left: 4px solid #a30d18; background: #fde7e9; color: #67101a; }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #eef4ff;
+    background: #111823;
+  }
+
+  .device,
+  .toolbar,
+  .card > p,
+  .card small {
+    color: #bdc8d8;
+  }
+
+  button.secondary,
+  nav button {
+    border-color: #526073;
+    color: #e5edf8;
+  }
+
+  .card,
+  .state,
+  .device-chip,
+  .toolbar input,
+  .toolbar select {
+    border-color: #3a4657;
+    background: #1b2532;
+    color: #eef4ff;
+  }
+
+  .app-icon.placeholder {
+    background: #263a56;
+    color: #8fc0ff;
+  }
+}
+
+@media (forced-colors: active) {
+  button,
+  .card,
+  .state,
+  .device-chip {
+    border: 1px solid ButtonText;
+  }
+
+  nav button.active {
+    border-bottom: 4px solid Highlight;
+  }
+}
+
+@media (max-width: 600px) {
+  main {
+    padding: 24px 16px;
+  }
+
+  header,
+  .toolbar {
+    display: block;
+  }
+
+  .toolbar span {
+    display: inline-block;
+    margin-top: 12px;
+  }
+
+  .toolbar input,
+  .toolbar select {
+    width: 100%;
+    min-width: 0;
+    margin: 8px 0 0;
+  }
+}
