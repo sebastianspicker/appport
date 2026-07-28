@@ -1,8 +1,10 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
+mod callbacks;
 mod client;
 mod evidence;
 mod logging;
+mod platform;
 mod runtime;
 mod session;
 
@@ -166,38 +168,55 @@ fn run_background_check(endpoint: &str) -> Result<(), String> {
 #[cfg(windows)]
 pub fn run() {
     let arguments: Vec<String> = std::env::args().collect();
-    let endpoint = match broker_endpoint() {
-        Ok(value) => value,
-        Err(error) => {
-            logging::write(&error);
-            return;
-        }
+    let Ok(endpoint) = broker_endpoint().inspect_err(|error| logging::write(error)) else {
+        return;
     };
-    if matches!(
-        runtime::launch_mode(&arguments),
+    if run_background_mode(&arguments, &endpoint) {
+        return;
+    }
+    let Some(client) = foreground_client(&endpoint) else {
+        return;
+    };
+    launch_tauri(client, arguments);
+}
+
+#[cfg(windows)]
+fn run_background_mode(arguments: &[String], endpoint: &str) -> bool {
+    if !matches!(
+        runtime::launch_mode(arguments),
         runtime::LaunchMode::BackgroundCheck
     ) {
-        if let Err(error) = run_background_check(&endpoint) {
-            logging::write(&error);
-        }
-        return;
+        return false;
     }
+    if let Err(error) = run_background_check(endpoint) {
+        logging::write(&error);
+    }
+    true
+}
+
+#[cfg(windows)]
+fn foreground_client(endpoint: &str) -> Option<client::BrokerClient> {
     if let Err(error) = runtime::acquire_singleton() {
         logging::write(&error);
-        return;
+        return None;
     }
+    register_protocol();
+    client::BrokerClient::new(endpoint)
+        .inspect_err(|error| logging::write(error))
+        .ok()
+}
+
+#[cfg(windows)]
+fn register_protocol() {
     if let Ok(executable) = std::env::current_exe() {
         if let Err(error) = runtime::register_protocol(&executable) {
             logging::write(&error);
         }
     }
-    let client = match client::BrokerClient::new(&endpoint) {
-        Ok(value) => value,
-        Err(error) => {
-            logging::write(&error);
-            return;
-        }
-    };
+}
+
+#[cfg(windows)]
+fn launch_tauri(client: client::BrokerClient, arguments: Vec<String>) {
     let state = Arc::new(AppState {
         client,
         session: Mutex::new(session::SessionStore::load()),

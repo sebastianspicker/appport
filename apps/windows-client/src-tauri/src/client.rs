@@ -1,17 +1,14 @@
-use crate::{evidence, session::SessionStore};
+use crate::{callbacks, evidence, platform, session::SessionStore};
 use base64::{engine::general_purpose::STANDARD, engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rand::Rng;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use url::Url;
 
 const MAX_JSON_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ICON_BYTES: usize = 512 * 1024;
-const CALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
-const CALLBACK_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
-const MAX_MALFORMED_CALLBACKS: u8 = 3;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,14 +135,7 @@ impl BrokerClient {
     pub fn new(endpoint: &str) -> Result<Self, String> {
         let base =
             Url::parse(endpoint).map_err(|_| "configuration: invalid broker URL".to_owned())?;
-        if base.scheme() != "https"
-            || base.host_str().is_none()
-            || !base.username().is_empty()
-            || base.password().is_some()
-            || base.query().is_some()
-            || base.fragment().is_some()
-            || base.path() != "/"
-        {
+        if !is_fixed_broker_base(&base) {
             return Err("configuration: broker URL must be a fixed HTTPS URL".into());
         }
         let http = reqwest::Client::builder()
@@ -179,8 +169,8 @@ impl BrokerClient {
             .append_pair("challenge", &challenge)
             .append_pair("state", &state)
             .append_pair("port", &port.to_string());
-        open_system_browser(connect.as_str())?;
-        let code = receive_code(listener, &state).await?;
+        platform::open_system_browser(connect.as_str())?;
+        let code = callbacks::receive_code(listener, &state).await?;
         let exchange: ExchangeResponse = self
             .post(
                 "api/native/session/exchange",
@@ -189,7 +179,7 @@ impl BrokerClient {
                     code,
                     verifier,
                     client_version: env!("CARGO_PKG_VERSION").into(),
-                    locale: current_locale(),
+                    locale: platform::current_locale(),
                     device_evidence: evidence,
                 },
                 None,
@@ -273,30 +263,15 @@ impl BrokerClient {
             .send()
             .await
             .map_err(map_network_error)?;
-        if response.status().as_u16() == 404 {
-            return Ok(None);
-        }
-        if response.status().as_u16() == 401 {
-            return Err("session-expired: authorization required".into());
-        }
-        if !response.status().is_success() {
-            return Err("server: icon request rejected".into());
-        }
-        let content_type = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.split(';').next())
-            .filter(|value| matches!(*value, "image/png" | "image/jpeg" | "image/webp"))
-            .ok_or("server: unsupported icon type")?
-            .to_owned();
+        let content_type = match icon_content_type(&response)? {
+            Some(content_type) => content_type,
+            None => return Ok(None),
+        };
         let bytes = response
             .bytes()
             .await
             .map_err(|_| "server: icon response failed")?;
-        if bytes.len() > MAX_ICON_BYTES {
-            return Err("server: icon response is too large".into());
-        }
+        ensure_icon_size(bytes.len())?;
         Ok(Some(format!(
             "data:{content_type};base64,{}",
             STANDARD.encode(bytes)
@@ -404,6 +379,43 @@ impl BrokerClient {
     }
 }
 
+fn icon_content_type(response: &reqwest::Response) -> Result<Option<String>, String> {
+    match response.status().as_u16() {
+        404 => Ok(None),
+        401 => Err("session-expired: authorization required".into()),
+        _ if !response.status().is_success() => Err("server: icon request rejected".into()),
+        _ => response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(';').next())
+            .filter(|value| matches!(*value, "image/png" | "image/jpeg" | "image/webp"))
+            .map(str::to_owned)
+            .map(Some)
+            .ok_or("server: unsupported icon type".into()),
+    }
+}
+
+fn ensure_icon_size(size: usize) -> Result<(), String> {
+    (size <= MAX_ICON_BYTES)
+        .then_some(())
+        .ok_or("server: icon response is too large".into())
+}
+
+fn is_fixed_broker_base(base: &Url) -> bool {
+    [
+        base.scheme() == "https",
+        base.host_str().is_some(),
+        base.username().is_empty(),
+        base.password().is_none(),
+        base.query().is_none(),
+        base.fragment().is_none(),
+        base.path() == "/",
+    ]
+    .into_iter()
+    .all(|valid| valid)
+}
+
 async fn decode<T: DeserializeOwned>(
     response: Result<reqwest::Response, reqwest::Error>,
 ) -> Result<T, String> {
@@ -465,44 +477,6 @@ fn uuid_key() -> String {
     )
 }
 
-async fn receive_code(listener: TcpListener, expected_state: &str) -> Result<String, String> {
-    let deadline = tokio::time::Instant::now() + CALLBACK_TIMEOUT;
-    receive_code_until(
-        listener,
-        expected_state,
-        deadline,
-        CALLBACK_CONNECTION_TIMEOUT,
-    )
-    .await
-}
-
-async fn receive_code_until(
-    listener: TcpListener,
-    expected_state: &str,
-    deadline: tokio::time::Instant,
-    connection_timeout: Duration,
-) -> Result<String, String> {
-    for _ in 0..=MAX_MALFORMED_CALLBACKS {
-        let (stream, _) = tokio::time::timeout_at(deadline, listener.accept())
-            .await
-            .map_err(|_| "session-expired: sign-in timed out")?
-            .map_err(|_| "unknown: loopback callback failed")?;
-        let connection_deadline = deadline.min(tokio::time::Instant::now() + connection_timeout);
-        let callback =
-            match tokio::time::timeout_at(connection_deadline, read_callback(stream)).await {
-                Ok(callback) => callback,
-                Err(_) if tokio::time::Instant::now() < deadline => continue,
-                Err(_) => return Err("session-expired: sign-in timed out".into()),
-            };
-        if let Ok((code, state)) = callback {
-            if state == expected_state {
-                return Ok(code);
-            }
-        }
-    }
-    Err("session-expired: invalid sign-in callback".into())
-}
-
 fn classify_remote_revocation(result: Result<u16, ()>) -> &'static str {
     match result {
         Ok(204 | 401) => "revoked",
@@ -510,207 +484,6 @@ fn classify_remote_revocation(result: Result<u16, ()>) -> &'static str {
     }
 }
 
-async fn read_callback(stream: tokio::net::TcpStream) -> Result<(String, String), String> {
-    let mut buffer = [0_u8; 4096];
-    stream
-        .readable()
-        .await
-        .map_err(|_| "unknown: callback unavailable")?;
-    let count = stream
-        .try_read(&mut buffer)
-        .map_err(|_| "unknown: malformed callback")?;
-    let first = std::str::from_utf8(&buffer[..count])
-        .map_err(|_| "unknown: callback encoding")?
-        .lines()
-        .next()
-        .ok_or("unknown: callback request")?;
-    let mut request_line = first.split_whitespace();
-    if request_line.next() != Some("GET") {
-        return Err("unknown: callback method".into());
-    }
-    let target = request_line.next().ok_or("unknown: callback target")?;
-    let callback =
-        Url::parse(&format!("http://127.0.0.1{target}")).map_err(|_| "unknown: callback URL")?;
-    if callback.path() != "/callback" {
-        return Err("unknown: callback path".into());
-    }
-    let mut values: HashMap<_, _> = callback.query_pairs().into_owned().collect();
-    let code = values
-        .remove("code")
-        .filter(|value| !value.is_empty())
-        .ok_or("session-expired: no authorization code")?;
-    let state = values
-        .remove("state")
-        .filter(|value| !value.is_empty())
-        .ok_or("session-expired: no callback state")?;
-    stream
-        .writable()
-        .await
-        .map_err(|_| "unknown: callback response unavailable")?;
-    let _ = stream.try_write(
-        b"HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 56\r\nConnection: close\r\n\r\nSign-in complete. You can return to Appport.",
-    );
-    Ok((code, state))
-}
-
-fn current_locale() -> String {
-    #[cfg(windows)]
-    {
-        use windows::Win32::Globalization::{GetUserDefaultLocaleName, LOCALE_NAME_MAX_LENGTH};
-        let mut locale = [0_u16; LOCALE_NAME_MAX_LENGTH as usize];
-        let length = unsafe { GetUserDefaultLocaleName(&mut locale) };
-        if length > 0 {
-            let value = String::from_utf16_lossy(&locale[..length as usize - 1]);
-            if value.to_ascii_lowercase().starts_with("de") {
-                return "de-DE".into();
-            }
-        }
-    }
-    "en-US".into()
-}
-
-fn open_system_browser(url: &str) -> Result<(), String> {
-    let parsed = Url::parse(url).map_err(|_| "server: invalid authorization URL".to_owned())?;
-    if parsed.scheme() != "https" {
-        return Err("server: authorization URL must use HTTPS".into());
-    }
-    #[cfg(windows)]
-    {
-        use windows::{
-            core::PCWSTR,
-            Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
-        };
-        let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
-        let target: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
-        let result = unsafe {
-            ShellExecuteW(
-                None,
-                PCWSTR(operation.as_ptr()),
-                PCWSTR(target.as_ptr()),
-                PCWSTR::null(),
-                PCWSTR::null(),
-                SW_SHOWNORMAL,
-            )
-        };
-        if result.0 as isize <= 32 {
-            return Err("unknown: unable to open system browser".into());
-        }
-        Ok(())
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = parsed;
-        Err("unknown: system-browser sign-in is only available on Windows".into())
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn random_values_are_url_safe_and_distinct() {
-        let first = random_url_value();
-        assert_eq!(first.len(), 43);
-        assert_ne!(first, random_url_value());
-        assert!(!first.contains('+'));
-    }
-
-    #[test]
-    fn idempotency_key_is_a_v4_uuid() {
-        let key = uuid_key();
-        assert_eq!(key.len(), 36);
-        assert_eq!(&key[14..15], "4");
-        assert!(matches!(&key[19..20], "8" | "9" | "a" | "b"));
-    }
-
-    #[test]
-    fn broker_url_must_be_fixed_https() {
-        assert!(BrokerClient::new("http://example.test").is_err());
-        assert!(BrokerClient::new("https://user@example.test").is_err());
-        assert!(BrokerClient::new("https://example.test?tenant=one").is_err());
-        assert!(BrokerClient::new("https://example.test").is_ok());
-    }
-
-    #[test]
-    fn rejects_non_https_browser_handoff() {
-        assert!(open_system_browser("http://example.test").is_err());
-    }
-
-    #[test]
-    fn classifies_remote_revocation_truthfully() {
-        assert_eq!(classify_remote_revocation(Ok(204)), "revoked");
-        assert_eq!(classify_remote_revocation(Ok(401)), "revoked");
-        assert_eq!(classify_remote_revocation(Ok(500)), "failed");
-        assert_eq!(classify_remote_revocation(Err(())), "failed");
-    }
-
-    #[test]
-    fn ignores_wrong_state_before_a_valid_callback() {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("test runtime");
-        runtime.block_on(async {
-            let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-            let address = listener.local_addr().expect("listener address");
-            tokio::spawn(async move {
-                for request in [
-                    "GET /callback?code=wrong-1&state=wrong HTTP/1.1\r\n\r\n",
-                    "GET /callback?code=wrong-2&state=wrong HTTP/1.1\r\n\r\n",
-                    "GET /callback?code=wrong-3&state=wrong HTTP/1.1\r\n\r\n",
-                    "GET /callback?code=accepted&state=expected HTTP/1.1\r\n\r\n",
-                ] {
-                    let stream = tokio::net::TcpStream::connect(address)
-                        .await
-                        .expect("connect");
-                    stream.writable().await.expect("writable");
-                    stream.try_write(request.as_bytes()).expect("write");
-                }
-            });
-            let code = receive_code_until(
-                listener,
-                "expected",
-                tokio::time::Instant::now() + Duration::from_secs(1),
-                Duration::from_millis(100),
-            )
-            .await
-            .expect("valid callback");
-            assert_eq!(code, "accepted");
-        });
-    }
-
-    #[test]
-    fn ignores_a_silent_connection_before_a_valid_callback() {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("test runtime");
-        runtime.block_on(async {
-            let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-            let address = listener.local_addr().expect("listener address");
-            tokio::spawn(async move {
-                let _stream = tokio::net::TcpStream::connect(address)
-                    .await
-                    .expect("connect");
-                tokio::time::sleep(Duration::from_millis(40)).await;
-                let valid = tokio::net::TcpStream::connect(address)
-                    .await
-                    .expect("valid connect");
-                valid.writable().await.expect("valid writable");
-                valid
-                    .try_write(b"GET /callback?code=accepted&state=expected HTTP/1.1\r\n\r\n")
-                    .expect("valid write");
-            });
-            let code = receive_code_until(
-                listener,
-                "expected",
-                tokio::time::Instant::now() + Duration::from_secs(1),
-                Duration::from_millis(20),
-            )
-            .await
-            .expect("valid callback after silent connection");
-            assert_eq!(code, "accepted");
-        });
-    }
-}
+#[path = "client_tests.rs"]
+mod tests;

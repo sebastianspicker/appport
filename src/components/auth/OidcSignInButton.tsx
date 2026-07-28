@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 
 export function OidcSignInButton({
@@ -13,7 +13,7 @@ export function OidcSignInButton({
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
-  async function signIn() {
+  const signIn = useCallback(async () => {
     setPending(true);
     setError("");
     const result = await authClient.signIn.oauth2({
@@ -25,19 +25,19 @@ export function OidcSignInButton({
       setError("Sign-in could not be started. Try again or contact support.");
       setPending(false);
     }
-  }
+  }, [callbackURL]);
 
   return (
     <>
       <button
         className={className}
         disabled={pending}
-        onClick={() => void signIn()}
+        onClick={signIn}
         type="button"
       >
         {pending ? "Opening sign-in…" : "Sign in with your organization"}
       </button>
-      {error && <p role="alert">{error}</p>}
+      {error ? <p role="alert">{error}</p> : null}
     </>
   );
 }

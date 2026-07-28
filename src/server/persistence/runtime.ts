@@ -6,20 +6,28 @@ import { createActionRepository } from "./repository";
 let repository: ReturnType<typeof createActionRepository> | undefined;
 let cleanedAt = 0;
 
+function repositoryPath(mockMode: boolean) {
+  return (
+    process.env.APPPORT_SQLITE_PATH ??
+    (mockMode
+      ? join(tmpdir(), "relution-appport-mock.sqlite")
+      : getLiveRuntimeConfig().sqlitePath)
+  );
+}
+
+function auditRetentionDays(mockMode: boolean) {
+  return mockMode ? 90 : getLiveRuntimeConfig().auditRetentionDays;
+}
+
 export function getActionRepository() {
   const mockMode =
     process.env.NODE_ENV !== "production" &&
     process.env.RELUTION_GATEWAY_MODE === "mock";
-  const sqlitePath =
-    process.env.APPPORT_SQLITE_PATH ??
-    (mockMode
-      ? join(tmpdir(), "relution-appport-mock.sqlite")
-      : getLiveRuntimeConfig().sqlitePath);
-  repository ??= createActionRepository(sqlitePath);
+  repository ??= createActionRepository(repositoryPath(mockMode));
   const now = Date.now();
   if (now - cleanedAt >= 24 * 60 * 60 * 1_000) {
     repository.cleanup(
-      mockMode ? 90 : getLiveRuntimeConfig().auditRetentionDays,
+      auditRetentionDays(mockMode),
       now,
     );
     repository.cleanupNativeAuth(now);

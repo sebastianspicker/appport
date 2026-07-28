@@ -5,6 +5,14 @@ import type { LiveRuntimeConfig } from "@/server/runtime-config";
 const MAX_JSON_BYTES = 10 * 1024 * 1024;
 const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
 
+function retryDelay(attempt: number) {
+  return 150 * 2 ** attempt + Math.random() * 100;
+}
+
+function isNonRetryableReadError(error: unknown) {
+  return error instanceof GatewayError && error.code !== "INTEGRATION_UNAVAILABLE";
+}
+
 interface RequestOptions {
   query?: URLSearchParams;
   body?: unknown;
@@ -118,17 +126,13 @@ export class RelutionClient {
         }
         await response.body?.cancel();
         const retryAfter = safeRetryAfter(response.headers.get("retry-after"));
-        await wait(retryAfter ?? 150 * 2 ** attempt + Math.random() * 100);
+        await wait(retryAfter ?? retryDelay(attempt));
       } catch (error) {
         lastError = error;
-        if (
-          (error instanceof GatewayError &&
-            error.code !== "INTEGRATION_UNAVAILABLE") ||
-          attempt === 2
-        ) {
+        if (isNonRetryableReadError(error) || attempt === 2) {
           throw error;
         }
-        await wait(150 * 2 ** attempt + Math.random() * 100);
+        await wait(retryDelay(attempt));
       }
     }
     throw lastError;
