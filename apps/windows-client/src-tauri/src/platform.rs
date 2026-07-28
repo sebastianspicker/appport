@@ -5,7 +5,8 @@ pub fn current_locale() -> String {
     {
         use windows::Win32::Globalization::{GetUserDefaultLocaleName, LOCALE_NAME_MAX_LENGTH};
         let mut locale = [0_u16; LOCALE_NAME_MAX_LENGTH as usize];
-        // SAFETY: locale is a writable buffer with the exact API-defined capacity.
+        // SAFETY: `locale` is writable, has `LOCALE_NAME_MAX_LENGTH` UTF-16
+        // elements, and remains valid for the synchronous Win32 call.
         let length = unsafe { GetUserDefaultLocaleName(&mut locale) };
         if length > 0 {
             let value = String::from_utf16_lossy(&locale[..length as usize - 1]);
@@ -30,7 +31,8 @@ pub fn open_system_browser(url: &str) -> Result<(), String> {
         };
         let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
         let target: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
-        // SAFETY: both UTF-16 vectors are NUL terminated and live for the call.
+        // SAFETY: both UTF-16 vectors are NUL-terminated, retained until
+        // `ShellExecuteW` returns, and are derived from an already validated HTTPS URL.
         let result = unsafe {
             ShellExecuteW(
                 None,

@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { GatewayError } from "./errors";
 import type { LiveRuntimeConfig } from "@/server/runtime-config";
@@ -6,7 +7,7 @@ const MAX_JSON_BYTES = 10 * 1024 * 1024;
 const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
 
 function retryDelay(attempt: number) {
-  return 150 * 2 ** attempt + Math.random() * 100;
+  return 150 * 2 ** attempt + randomInt(100);
 }
 
 function isNonRetryableReadError(error: unknown) {

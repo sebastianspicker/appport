@@ -61,6 +61,8 @@ fn open_accounts_key() -> Option<windows::Win32::System::Registry::HKEY> {
 
     let accounts = wide(r"SOFTWARE\Microsoft\Provisioning\OMADM\Accounts");
     let mut root = HKEY::default();
+    // SAFETY: `accounts` is NUL-terminated for the duration of this call and
+    // `root` is valid writable storage for the out-parameter.
     (unsafe {
         RegOpenKeyExW(
             HKEY_LOCAL_MACHINE,

@@ -29,6 +29,18 @@ const WINDOWS_SUBTYPES = new Map<string, AppSource>([
 ]);
 const CACHE_LIMIT = 256;
 const catalogCache = new Map<string, { expiresAt: number; value: Promise<CatalogApp[]> }>();
+const RELUTION_ACTION_TYPES = new Set(["DEPLOY_WINGET_APP", "DEPLOY_DESKTOP_APP", "DEPLOY_CLASSIC_APP"]);
+
+type RelutionDeviceAction = {
+  uuid: string;
+  state: string;
+  type: string;
+  creationDate: number;
+  errorCode: string | null;
+  appUuid: string | null;
+  versionUuid: string | null;
+  packageIdentifier: string | null;
+};
 
 function epochTimestamp(value: number | null) {
   return value === null ? null : new Date(value).toISOString();
@@ -84,6 +96,23 @@ function inventoryAppFor(item: JsonRecord, statusByApp: Map<string, JsonRecord>)
   if (!packageId || !name) return null;
   const appId = stringField(item, "appUuid", false); const status = appId ? statusByApp.get(appId) : undefined;
   return { appId, packageId, name, versionId: stringField(item, "versionUuid", false), versionLabel: optionalFirstString(item, "versionToShow", "versionName") ?? "Unknown", source: inventorySource(item), updateAvailable: updateAvailableFor(item, status), iconPath: stringField(item, "iconUrl", false) };
+}
+
+function decodeDeviceAction(value: JsonRecord): RelutionDeviceAction | null {
+  const type = stringField(value, "type");
+  if (!RELUTION_ACTION_TYPES.has(type)) return null;
+  const details = optionalRecordField(value, "details");
+  const code = numberField(value, "errorCode");
+  return {
+    uuid: stringField(value, "uuid"),
+    state: stringField(value, "state"),
+    type,
+    creationDate: numberField(value, "creationDate") ?? 0,
+    errorCode: code === null ? null : `RELUTION_${code}`,
+    appUuid: details ? stringField(details, "appUuid", false) : null,
+    versionUuid: details ? stringField(details, "versionUuid", false) : null,
+    packageIdentifier: details ? stringField(details, "appInternalName", false) : null,
+  };
 }
 
 export class LiveGatewayData {
@@ -177,11 +206,8 @@ export class LiveGatewayData {
     const query = new URLSearchParams([["limit", String(this.config.pageSize)], ["offset", "0"], ["sortOrder", "-creationDate"], ["getItems", "true"], ["getNonpagedCount", "true"], ["getPings", "false"]]);
     const wrapper = decodeWrapper(await this.client.get(`/api/management/v1/devices/${encodeURIComponent(deviceId)}/actions`, query));
     return wrapper.results.flatMap((value) => {
-      const type = stringField(value, "type");
-      if (type !== "DEPLOY_WINGET_APP" && type !== "DEPLOY_DESKTOP_APP" && type !== "DEPLOY_CLASSIC_APP") return [];
-      const details = optionalRecordField(value, "details");
-      const code = numberField(value, "errorCode");
-      return [{ uuid: stringField(value, "uuid"), state: stringField(value, "state"), type, creationDate: numberField(value, "creationDate") ?? 0, errorCode: code === null ? null : `RELUTION_${code}`, appUuid: details ? stringField(details, "appUuid", false) : null, versionUuid: details ? stringField(details, "versionUuid", false) : null, packageIdentifier: details ? stringField(details, "appInternalName", false) : null }];
+      const action = decodeDeviceAction(value);
+      return action ? [action] : [];
     });
   }
 
