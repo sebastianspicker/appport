@@ -3,6 +3,23 @@ export type AuthMode = "mock" | "oidc";
 import { readFileSync, statSync } from "node:fs";
 import { fixedHttpsUrl } from "@/server/runtime-config";
 
+function readSecretFile(fileName: string, secretFile: string) {
+  const stat = statSync(secretFile);
+  if (!stat.isFile()) {
+    throw new Error(`${fileName} must reference a regular file.`);
+  }
+  if (process.env.NODE_ENV === "production" && (stat.mode & 0o077) !== 0) {
+    throw new Error(
+      `${fileName} must reference a file without group or other permissions.`,
+    );
+  }
+  const value = readFileSync(secretFile, "utf8").trim();
+  if (!value) {
+    throw new Error(`${fileName} references an empty secret file.`);
+  }
+  return value;
+}
+
 function readSecret(
   valueName: string,
   fileName: string,
@@ -10,20 +27,7 @@ function readSecret(
 ) {
   const secretFile = process.env[fileName];
   if (secretFile) {
-    const stat = statSync(secretFile);
-    if (!stat.isFile()) {
-      throw new Error(`${fileName} must reference a regular file.`);
-    }
-    if (process.env.NODE_ENV === "production" && (stat.mode & 0o077) !== 0) {
-      throw new Error(
-        `${fileName} must reference a file without group or other permissions.`,
-      );
-    }
-    const value = readFileSync(secretFile, "utf8").trim();
-    if (!value) {
-      throw new Error(`${fileName} references an empty secret file.`);
-    }
-    return value;
+    return readSecretFile(fileName, secretFile);
   }
   if (process.env.NODE_ENV !== "production") {
     return process.env[valueName] ?? options?.developmentFallback;
@@ -63,27 +67,28 @@ export function secureCookiesEnabled() {
 }
 
 export function requireOidcConfig() {
-  const keys = [
-    "OIDC_ISSUER",
-    "OIDC_CLIENT_ID",
-    "APP_BASE_URL",
-  ] as const;
-  const missing = keys.filter((key) => !process.env[key]);
+  const issuer = process.env.OIDC_ISSUER;
+  const clientId = process.env.OIDC_CLIENT_ID;
+  const baseUrl = process.env.APP_BASE_URL;
+  const clientSecret = readSecret("OIDC_CLIENT_SECRET", "OIDC_CLIENT_SECRET_FILE");
+  const missing = [
+    !issuer && "OIDC_ISSUER",
+    !clientId && "OIDC_CLIENT_ID",
+    !baseUrl && "APP_BASE_URL",
+    !clientSecret && "OIDC_CLIENT_SECRET",
+  ].filter((value): value is string => Boolean(value));
   if (missing.length > 0) {
     throw new Error(`Missing OIDC configuration: ${missing.join(", ")}`);
   }
+  if (!issuer || !clientId || !baseUrl || !clientSecret) {
+    throw new Error("Missing OIDC configuration.");
+  }
 
   return {
-    issuer: fixedHttpsUrl("OIDC_ISSUER", process.env.OIDC_ISSUER!).href.replace(
-      /\/$/,
-      "",
-    ),
-    clientId: process.env.OIDC_CLIENT_ID!,
-    clientSecret: readSecret(
-      "OIDC_CLIENT_SECRET",
-      "OIDC_CLIENT_SECRET_FILE",
-    )!,
-    baseUrl: fixedHttpsUrl("APP_BASE_URL", process.env.APP_BASE_URL!, {
+    issuer: fixedHttpsUrl("OIDC_ISSUER", issuer).href.replace(/\/$/, ""),
+    clientId,
+    clientSecret,
+    baseUrl: fixedHttpsUrl("APP_BASE_URL", baseUrl, {
       rootOnly: true,
     }).origin,
     usernameClaim: process.env.OIDC_USERNAME_CLAIM ?? "preferred_username",

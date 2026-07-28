@@ -30,14 +30,14 @@ windows = { version = "=0.61.3", features = [
   "Data_Xml_Dom",
   "UI_Notifications",
   "Win32_Foundation",
-  "Win32_Globalization",
   "Win32_Security_Credentials",
-  "Win32_System_Registry",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
-  "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging"
 ] }
+open = "=5.4.0"
+sys-locale = "=0.3.2"
+winreg = "=0.56.0"
 
 [build-dependencies]
 tauri-build = { version = "=2.6.3", features = [] }

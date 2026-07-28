@@ -3,6 +3,34 @@ use std::path::Path;
 #[cfg(windows)]
 use std::{fs, process::Command};
 
+#[cfg(windows)]
+const BACKGROUND_TASK_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Checks Appport for approved updates.</Description></RegistrationInfo>
+  <Triggers>
+    <LogonTrigger><Enabled>true</Enabled><UserId>{sid_xml}</UserId><Delay>PT15M</Delay></LogonTrigger>
+    <CalendarTrigger>
+      <StartBoundary>2026-01-01T00:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <RandomDelay>PT15M</RandomDelay>
+      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
+      <Repetition><Interval>PT4H</Interval><Duration>P1D</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals><Principal id="Author"><UserId>{sid_xml}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <ExecutionTimeLimit>PT2M</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>{command}</Command><Arguments>--background-check</Arguments></Exec></Actions>
+</Task>"#;
+
 pub enum LaunchMode {
     Foreground,
     BackgroundCheck,
@@ -80,40 +108,28 @@ pub fn acquire_singleton() -> Result<(), String> {
 pub fn register_background_check(executable: &Path) -> Result<(), String> {
     let sid = current_user_sid()?;
     let task_name = format!(r"\Relution\Appport\{sid}");
+    let task_xml = background_task_xml(executable, &sid)?;
+    let task_file = write_background_task(&task_xml)?;
+    let result = create_scheduled_task(&task_name, &task_file);
+    let _ = fs::remove_file(task_file);
+    result
+}
+
+#[cfg(windows)]
+fn background_task_xml(executable: &Path, sid: &str) -> Result<String, String> {
     let command = xml_escape(
         executable
             .to_str()
             .ok_or("unknown: application path is not Unicode")?,
     );
-    let sid_xml = xml_escape(&sid);
-    let task_xml = format!(
-        r#"<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>Checks Appport for approved updates.</Description></RegistrationInfo>
-  <Triggers>
-    <LogonTrigger><Enabled>true</Enabled><UserId>{sid_xml}</UserId><Delay>PT15M</Delay></LogonTrigger>
-    <CalendarTrigger>
-      <StartBoundary>2026-01-01T00:00:00</StartBoundary>
-      <Enabled>true</Enabled>
-      <RandomDelay>PT15M</RandomDelay>
-      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
-      <Repetition><Interval>PT4H</Interval><Duration>P1D</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition>
-    </CalendarTrigger>
-  </Triggers>
-  <Principals><Principal id="Author"><UserId>{sid_xml}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <StartWhenAvailable>true</StartWhenAvailable>
-    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>
-    <AllowHardTerminate>true</AllowHardTerminate>
-    <ExecutionTimeLimit>PT2M</ExecutionTimeLimit>
-    <Priority>7</Priority>
-  </Settings>
-  <Actions Context="Author"><Exec><Command>{command}</Command><Arguments>--background-check</Arguments></Exec></Actions>
-</Task>"#
-    );
+    let sid_xml = xml_escape(sid);
+    Ok(BACKGROUND_TASK_TEMPLATE
+        .replace("{sid_xml}", &sid_xml)
+        .replace("{command}", &command))
+}
+
+#[cfg(windows)]
+fn write_background_task(task_xml: &str) -> Result<std::path::PathBuf, String> {
     let directory = local_data_directory();
     fs::create_dir_all(&directory).map_err(|_| "unknown: task staging directory unavailable")?;
     let task_file = directory.join("background-task.xml");
@@ -122,12 +138,16 @@ pub fn register_background_check(executable: &Path) -> Result<(), String> {
         .collect();
     let bytes = unsafe { std::slice::from_raw_parts(utf16.as_ptr().cast::<u8>(), utf16.len() * 2) };
     fs::write(&task_file, bytes).map_err(|_| "unknown: task definition unavailable")?;
+    Ok(task_file)
+}
+
+#[cfg(windows)]
+fn create_scheduled_task(task_name: &str, task_file: &Path) -> Result<(), String> {
     let status = Command::new("schtasks.exe")
         .args(["/Create", "/F", "/TN", &task_name, "/XML"])
-        .arg(&task_file)
+        .arg(task_file)
         .status()
         .map_err(|_| "unknown: Task Scheduler unavailable")?;
-    let _ = fs::remove_file(task_file);
     if status.success() {
         Ok(())
     } else {
