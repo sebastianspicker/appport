@@ -7,6 +7,7 @@ export default defineConfig([
   ...nextTypescript,
   globalIgnores([
     ".next/**",
+    ".codacy/**",
     ".local/**",
     "coverage/**",
     "apps/windows-client/dist/**",

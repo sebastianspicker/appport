@@ -1,20 +1,20 @@
 :root {
-  --surface: #ffffff;
-  --surface-subtle: #f5f7fa;
-  --surface-hover: #edf1f6;
-  --border: #e2e7ed;
-  --border-strong: #cdd4dd;
-  --text: #172033;
-  --text-secondary: #526071;
-  --text-muted: #667085;
-  --accent: #146cdd;
-  --accent-hover: #0f5fc7;
-  --accent-strong: #0d59b9;
-  --accent-soft: #e9f2ff;
-  --success: #15803d;
-  --danger: #b91c1c;
-  --warning: #9a5b00;
-  --warning-text: #7a4600;
+  --surface: rgb(255 255 255);
+  --surface-subtle: rgb(245 247 250);
+  --surface-hover: rgb(237 241 246);
+  --border: rgb(226 231 237);
+  --border-strong: rgb(205 212 221);
+  --text: rgb(23 32 51);
+  --text-secondary: rgb(82 96 113);
+  --text-muted: rgb(102 112 133);
+  --accent: rgb(20 108 221);
+  --accent-hover: rgb(15 95 199);
+  --accent-strong: rgb(13 89 185);
+  --accent-soft: rgb(233 242 255);
+  --success: rgb(21 128 61);
+  --danger: rgb(185 28 28);
+  --warning: rgb(154 91 0);
+  --warning-text: rgb(122 70 0);
   color-scheme: light;
 }
 

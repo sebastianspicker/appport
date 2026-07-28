@@ -9,14 +9,18 @@ import { nativeConnectReturnTo } from "@/server/native/validation";
 
 export async function POST(request: Request) {
   try {
+    const origin = request.headers.get("origin");
     assertSameOrigin(request);
+    if (!origin) {
+      throw new ApiError(403, "Cross-origin mutations are not allowed.");
+    }
     if (getAuthMode() !== "mock") {
       throw new ApiError(404, "Mock sign-in is disabled.");
     }
     const form = await request.formData();
     const returnTo = nativeConnectReturnTo(form.get("returnTo")) ?? "/";
     const response = NextResponse.redirect(
-      new URL(returnTo, request.headers.get("origin")!),
+      new URL(returnTo, origin),
       303,
     );
     response.cookies.set(MOCK_SESSION_COOKIE, createMockSessionValue(), {

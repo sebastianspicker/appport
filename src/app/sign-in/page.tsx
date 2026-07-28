@@ -27,7 +27,7 @@ export default async function SignInPage({
 
   return (
     <main className={styles.page}>
-      <section className={styles.panel} aria-labelledby="sign-in-heading">
+      <section className={styles.panel} aria-label="Connect Appport">
         <div className={styles.brandMark} aria-hidden="true">
           <span />
           <span />
@@ -35,15 +35,15 @@ export default async function SignInPage({
           <span />
         </div>
         <p className={styles.eyebrow}>Windows application</p>
-        <h1 id="sign-in-heading">Connect Appport</h1>
+        <h1>Connect Appport</h1>
         <p className={styles.copy}>
           Sign in to connect Appport on this Windows device.
         </p>
-        {parameters.error && (
+        {parameters.error ? (
           <p className={styles.error} role="alert">
             Sign-in could not be completed. Try again from the Windows app.
           </p>
-        )}
+        ) : null}
         {mode === "mock" ? (
           <form action="/api/auth/mock/sign-in" method="post">
             <input name="returnTo" type="hidden" value={returnTo} />

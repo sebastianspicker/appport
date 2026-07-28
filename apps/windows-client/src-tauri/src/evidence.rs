@@ -39,65 +39,31 @@ fn hostname() -> Option<String> {
 
 #[cfg(windows)]
 fn ent_dmid() -> Option<String> {
-    use windows::{
-        core::{PCWSTR, PWSTR},
-        Win32::{
-            Foundation::{ERROR_NO_MORE_ITEMS, ERROR_SUCCESS},
-            System::Registry::{
-                RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ,
-            },
-        },
-    };
+    use winreg::{enums::HKEY_LOCAL_MACHINE, RegKey};
 
-    let accounts = wide(r"SOFTWARE\Microsoft\Provisioning\OMADM\Accounts");
-    let mut root = HKEY::default();
-    if unsafe {
-        RegOpenKeyExW(
-            HKEY_LOCAL_MACHINE,
-            PCWSTR(accounts.as_ptr()),
-            None,
-            KEY_READ,
-            &mut root,
-        )
-    } != ERROR_SUCCESS
-    {
-        return None;
-    }
+    let machine = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let accounts = machine
+        .open_subkey(r"SOFTWARE\Microsoft\Provisioning\OMADM\Accounts")
+        .ok()?;
+    account_ent_dmid(&accounts)
+}
 
+#[cfg(windows)]
+fn account_ent_dmid(root: &winreg::RegKey) -> Option<String> {
     let mut result = None;
-    for index in 0..128 {
-        let mut name = [0_u16; 256];
-        let mut length = name.len() as u32;
-        let status = unsafe {
-            RegEnumKeyExW(
-                root,
-                index,
-                Some(PWSTR(name.as_mut_ptr())),
-                &mut length,
-                None,
-                None,
-                None,
-                None,
-            )
-        };
-        if status == ERROR_NO_MORE_ITEMS {
-            break;
-        }
-        if status != ERROR_SUCCESS {
-            continue;
-        }
-        let account = String::from_utf16_lossy(&name[..length as usize]);
-        let path = format!(r"SOFTWARE\Microsoft\Provisioning\OMADM\Accounts\{account}");
-        if let Some(value) = registry_string(&path, "EntDMID") {
+    for account in root.enum_keys().take(128).flatten() {
+        if let Some(value) = root
+            .open_subkey(account)
+            .ok()
+            .and_then(|key| key.get_value::<String, _>("EntDMID").ok())
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+        {
             if result.is_some() && result.as_ref() != Some(&value) {
-                result = None;
-                break;
+                return None;
             }
             result = Some(value);
         }
-    }
-    unsafe {
-        let _ = RegCloseKey(root);
     }
     result
 }
@@ -105,56 +71,6 @@ fn ent_dmid() -> Option<String> {
 #[cfg(not(windows))]
 fn ent_dmid() -> Option<String> {
     None
-}
-
-#[cfg(windows)]
-fn registry_string(key: &str, value: &str) -> Option<String> {
-    use windows::{
-        core::PCWSTR,
-        Win32::{
-            Foundation::ERROR_SUCCESS,
-            System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ},
-        },
-    };
-    let key = wide(key);
-    let value = wide(value);
-    unsafe {
-        let mut length = 0_u32;
-        if RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            PCWSTR(key.as_ptr()),
-            PCWSTR(value.as_ptr()),
-            RRF_RT_REG_SZ,
-            None,
-            None,
-            Some(&mut length),
-        ) != ERROR_SUCCESS
-        {
-            return None;
-        }
-        let mut output = vec![0_u16; length as usize / 2];
-        if RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            PCWSTR(key.as_ptr()),
-            PCWSTR(value.as_ptr()),
-            RRF_RT_REG_SZ,
-            None,
-            Some(output.as_mut_ptr().cast()),
-            Some(&mut length),
-        ) != ERROR_SUCCESS
-        {
-            return None;
-        }
-        String::from_utf16(&output)
-            .ok()
-            .map(|result| result.trim_matches('\0').trim().to_owned())
-            .filter(|result| !result.is_empty())
-    }
-}
-
-#[cfg(windows)]
-fn wide(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(Some(0)).collect()
 }
 
 #[cfg(windows)]
@@ -187,51 +103,38 @@ pub fn parse_raw_smbios(raw: &[u8]) -> (Option<String>, Option<String>) {
     while offset + 4 <= raw.len() {
         let kind = raw[offset];
         let length = raw[offset + 1] as usize;
-        if length < 4 || offset + length > raw.len() {
+        let Some((strings_offset, end)) = structure_strings(raw, offset, length) else {
             break;
-        }
-        let strings_offset = offset + length;
-        let mut end = strings_offset;
-        while end + 1 < raw.len() && !(raw[end] == 0 && raw[end + 1] == 0) {
-            end += 1;
-        }
-        if end + 1 >= raw.len() {
-            break;
-        }
+        };
         if kind == 1 {
-            let serial = raw
-                .get(offset + 7)
-                .and_then(|index| smbios_string(raw, strings_offset, *index, end));
-            let uuid = raw.get(offset + 8..offset + 24).and_then(|bytes| {
-                if bytes.iter().all(|value| *value == 0 || *value == 255) {
-                    None
-                } else {
-                    Some(format!(
-                        "{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
-                        bytes[3],
-                        bytes[2],
-                        bytes[1],
-                        bytes[0],
-                        bytes[5],
-                        bytes[4],
-                        bytes[7],
-                        bytes[6],
-                        bytes[8],
-                        bytes[9],
-                        bytes[10],
-                        bytes[11],
-                        bytes[12],
-                        bytes[13],
-                        bytes[14],
-                        bytes[15]
-                    ))
-                }
-            });
-            return (uuid, serial);
+            return type_one(raw, offset, strings_offset, end);
         }
         offset = end + 2;
     }
     (None, None)
+}
+
+fn structure_strings(raw: &[u8], offset: usize, length: usize) -> Option<(usize, usize)> {
+    (length >= 4 && offset + length <= raw.len()).then_some(())?;
+    let strings_offset = offset + length;
+    let end = raw[strings_offset..]
+        .windows(2)
+        .position(|bytes| bytes == [0, 0])
+        .map(|index| strings_offset + index)?;
+    Some((strings_offset, end))
+}
+
+fn type_one(
+    raw: &[u8],
+    offset: usize,
+    start: usize,
+    end: usize,
+) -> (Option<String>, Option<String>) {
+    let serial = raw
+        .get(offset + 7)
+        .and_then(|index| smbios_string(raw, start, *index, end));
+    let uuid = raw.get(offset + 8..offset + 24).filter(|bytes| !bytes.iter().all(|value| *value == 0 || *value == 255)).map(|bytes| format!("{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}", bytes[3],bytes[2],bytes[1],bytes[0],bytes[5],bytes[4],bytes[7],bytes[6],bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]));
+    (uuid, serial)
 }
 
 fn smbios_string(raw: &[u8], start: usize, index: u8, end: usize) -> Option<String> {

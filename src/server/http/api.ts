@@ -17,28 +17,44 @@ export class ApiError extends Error {
   }
 }
 
-export function assertSameOrigin(request: Request) {
-  const origin = request.headers.get("origin");
+const API_CODES_BY_STATUS = new Map<number, ApiErrorCode>([
+  [400, "BAD_REQUEST"],
+  [413, "BAD_REQUEST"],
+  [415, "BAD_REQUEST"],
+  [401, "UNAUTHORIZED"],
+  [403, "FORBIDDEN"],
+  [404, "NOT_FOUND"],
+  [409, "CONFLICT"],
+  [410, "CONFLICT"],
+  [429, "RATE_LIMITED"],
+]);
+
+function allowedOriginsFor(request: Request) {
   const expectedOrigin =
     process.env.APPPORT_PUBLIC_ORIGIN ??
     (process.env.AUTH_MODE === "oidc" ? process.env.APP_BASE_URL : undefined);
   const allowedOrigins = new Set<string>();
   if (expectedOrigin) {
     allowedOrigins.add(new URL(expectedOrigin).origin);
-  } else {
-    allowedOrigins.add(new URL(request.url).origin);
-    const host = request.headers.get("host");
-    if (host) {
-      const forwardedProtocol = request.headers
-        .get("x-forwarded-proto")
-        ?.split(",")[0]
-        .trim();
-      allowedOrigins.add(
-        `${forwardedProtocol === "https" ? "https" : "http"}://${host}`,
-      );
-    }
+    return allowedOrigins;
   }
-  if (!origin || !allowedOrigins.has(origin)) {
+  allowedOrigins.add(new URL(request.url).origin);
+  const host = request.headers.get("host");
+  if (host) {
+    const forwardedProtocol = request.headers
+      .get("x-forwarded-proto")
+      ?.split(",")[0]
+      .trim();
+    allowedOrigins.add(
+      `${forwardedProtocol === "https" ? "https" : "http"}://${host}`,
+    );
+  }
+  return allowedOrigins;
+}
+
+export function assertSameOrigin(request: Request) {
+  const origin = request.headers.get("origin");
+  if (!origin || !allowedOriginsFor(request).has(origin)) {
     throw new ApiError(403, "Cross-origin mutations are not allowed.");
   }
   const fetchSite = request.headers.get("sec-fetch-site");
@@ -155,11 +171,5 @@ function errorResponse(
 }
 
 function apiCodeForStatus(status: number): ApiErrorCode {
-  if (status === 400 || status === 413 || status === 415) return "BAD_REQUEST";
-  if (status === 401) return "UNAUTHORIZED";
-  if (status === 403) return "FORBIDDEN";
-  if (status === 404) return "NOT_FOUND";
-  if (status === 409 || status === 410) return "CONFLICT";
-  if (status === 429) return "RATE_LIMITED";
-  return "INTERNAL_ERROR";
+  return API_CODES_BY_STATUS.get(status) ?? "INTERNAL_ERROR";
 }

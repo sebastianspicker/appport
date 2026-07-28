@@ -237,6 +237,54 @@ function effectiveInstallation(fixture: FixtureApp, deviceId: string) {
   return fixture.installed[deviceId];
 }
 
+function activeMockAction(deviceId: string, appId: string) {
+  const latest = latestAction(deviceId, appId);
+  const action = latest ? materializeAction(latest) : null;
+  return action && isActive(action.state) ? action : null;
+}
+
+function mockInstallState(
+  installation: ReturnType<typeof effectiveInstallation>,
+  active: AppAction | null,
+) {
+  if (active) return "action_active";
+  if (!installation) return "not_installed";
+  return installation.updateAvailable ? "update_available" : "installed";
+}
+
+function installedVersions(installation: ReturnType<typeof effectiveInstallation>) {
+  return {
+    installedVersionId: installation?.versionId ?? null,
+    installedVersionLabel: installation?.versionLabel ?? null,
+  };
+}
+
+function activeActionFields(active: AppAction | null) {
+  return {
+    activeActionId: active?.id ?? null,
+    activeActionState: active?.state ?? null,
+  };
+}
+
+function availableAppFor(fixture: FixtureApp, deviceId: string): AvailableApp {
+  const installation = effectiveInstallation(fixture, deviceId);
+  const active = activeMockAction(deviceId, fixture.id);
+  return {
+    id: fixture.id,
+    name: fixture.name,
+    description: fixture.description,
+    publisher: fixture.publisher,
+    source: fixture.source,
+    packageIdentifier: fixture.packageIdentifier,
+    releasedVersionId: fixture.releasedVersionId,
+    releasedVersionLabel: fixture.releasedVersionLabel,
+    ...installedVersions(installation),
+    installState: mockInstallState(installation, active),
+    ...activeActionFields(active),
+    iconUrl: null,
+  };
+}
+
 export class MockRelutionGateway implements RelutionGateway {
   async listAssignedWindowsDevices(user: PortalUser) {
     assertUser(user);
@@ -259,10 +307,12 @@ export class MockRelutionGateway implements RelutionGateway {
             : "travel-ent-dmid",
       })),
     );
+    const device = devices.find((device) => device.id === matched.device.uuid);
+    if (!device) {
+      throw new Error("The matched mock device is unavailable.");
+    }
     return {
-      device: structuredClone(
-        devices.find((device) => device.id === matched.device.uuid)!,
-      ),
+      device: structuredClone(device),
       evidenceDigest: matched.evidenceDigest,
       relutionUserUuid: "mock-relution-user",
     };
@@ -273,35 +323,7 @@ export class MockRelutionGateway implements RelutionGateway {
     deviceId: string,
   ): Promise<AvailableApp[]> {
     assertDevice(user, deviceId);
-    return apps.map((fixture) => {
-      const installation = effectiveInstallation(fixture, deviceId);
-      const latest = latestAction(deviceId, fixture.id);
-      const action = latest ? materializeAction(latest) : null;
-      const active = action && isActive(action.state) ? action : null;
-      const installState = active
-        ? "action_active"
-        : !installation
-          ? "not_installed"
-          : installation.updateAvailable
-            ? "update_available"
-            : "installed";
-      return {
-        id: fixture.id,
-        name: fixture.name,
-        description: fixture.description,
-        publisher: fixture.publisher,
-        source: fixture.source,
-        packageIdentifier: fixture.packageIdentifier,
-        releasedVersionId: fixture.releasedVersionId,
-        releasedVersionLabel: fixture.releasedVersionLabel,
-        installedVersionId: installation?.versionId ?? null,
-        installedVersionLabel: installation?.versionLabel ?? null,
-        installState,
-        activeActionId: active?.id ?? null,
-        activeActionState: active?.state ?? null,
-        iconUrl: null,
-      };
-    });
+    return apps.map((fixture) => availableAppFor(fixture, deviceId));
   }
 
   async listInstalledApplications(
