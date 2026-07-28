@@ -39,55 +39,26 @@ fn hostname() -> Option<String> {
 
 #[cfg(windows)]
 fn ent_dmid() -> Option<String> {
-    use windows::Win32::System::Registry::RegCloseKey;
+    use winreg::{enums::HKEY_LOCAL_MACHINE, RegKey};
 
-    let root = open_accounts_key()?;
-    let result = account_ent_dmid(&root);
-    unsafe {
-        let _ = RegCloseKey(root);
-    }
-    result
+    let machine = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let accounts = machine
+        .open_subkey(r"SOFTWARE\Microsoft\Provisioning\OMADM\Accounts")
+        .ok()?;
+    account_ent_dmid(&accounts)
 }
 
 #[cfg(windows)]
-fn open_accounts_key() -> Option<windows::Win32::System::Registry::HKEY> {
-    use windows::{
-        core::PCWSTR,
-        Win32::{
-            Foundation::ERROR_SUCCESS,
-            System::Registry::{RegOpenKeyExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ},
-        },
-    };
-
-    let accounts = wide(r"SOFTWARE\Microsoft\Provisioning\OMADM\Accounts");
-    let mut root = HKEY::default();
-    // SAFETY: `accounts` is NUL-terminated for the duration of this call and
-    // `root` is valid writable storage for the out-parameter.
-    (unsafe {
-        RegOpenKeyExW(
-            HKEY_LOCAL_MACHINE,
-            PCWSTR(accounts.as_ptr()),
-            None,
-            KEY_READ,
-            &mut root,
-        )
-    } == ERROR_SUCCESS)
-        .then_some(root)
-}
-
-#[cfg(windows)]
-fn account_ent_dmid(root: &windows::Win32::System::Registry::HKEY) -> Option<String> {
+fn account_ent_dmid(root: &winreg::RegKey) -> Option<String> {
     let mut result = None;
-    for index in 0..128 {
-        let account = match account_name(root, index) {
-            Ok(Some(account)) => account,
-            Ok(None) => break,
-            Err(()) => continue,
-        };
-        if let Some(value) = registry_string(
-            &format!(r"SOFTWARE\Microsoft\Provisioning\OMADM\Accounts\{account}"),
-            "EntDMID",
-        ) {
+    for account in root.enum_keys().take(128).flatten() {
+        if let Some(value) = root
+            .open_subkey(account)
+            .ok()
+            .and_then(|key| key.get_value::<String, _>("EntDMID").ok())
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+        {
             if result.is_some() && result.as_ref() != Some(&value) {
                 return None;
             }
@@ -97,95 +68,9 @@ fn account_ent_dmid(root: &windows::Win32::System::Registry::HKEY) -> Option<Str
     result
 }
 
-#[cfg(windows)]
-fn account_name(
-    root: &windows::Win32::System::Registry::HKEY,
-    index: u32,
-) -> Result<Option<String>, ()> {
-    use windows::{
-        core::PWSTR,
-        Win32::{
-            Foundation::{ERROR_NO_MORE_ITEMS, ERROR_SUCCESS},
-            System::Registry::RegEnumKeyExW,
-        },
-    };
-
-    let mut name = [0_u16; 256];
-    let mut length = name.len() as u32;
-    let status = unsafe {
-        RegEnumKeyExW(
-            *root,
-            index,
-            Some(PWSTR(name.as_mut_ptr())),
-            &mut length,
-            None,
-            None,
-            None,
-            None,
-        )
-    };
-    if status == ERROR_NO_MORE_ITEMS {
-        return Ok(None);
-    }
-    if status != ERROR_SUCCESS {
-        return Err(());
-    }
-    Ok(Some(String::from_utf16_lossy(&name[..length as usize])))
-}
-
 #[cfg(not(windows))]
 fn ent_dmid() -> Option<String> {
     None
-}
-
-#[cfg(windows)]
-fn registry_string(key: &str, value: &str) -> Option<String> {
-    use windows::{
-        core::PCWSTR,
-        Win32::{
-            Foundation::ERROR_SUCCESS,
-            System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ},
-        },
-    };
-    let key = wide(key);
-    let value = wide(value);
-    unsafe {
-        let mut length = 0_u32;
-        if RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            PCWSTR(key.as_ptr()),
-            PCWSTR(value.as_ptr()),
-            RRF_RT_REG_SZ,
-            None,
-            None,
-            Some(&mut length),
-        ) != ERROR_SUCCESS
-        {
-            return None;
-        }
-        let mut output = vec![0_u16; length as usize / 2];
-        if RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            PCWSTR(key.as_ptr()),
-            PCWSTR(value.as_ptr()),
-            RRF_RT_REG_SZ,
-            None,
-            Some(output.as_mut_ptr().cast()),
-            Some(&mut length),
-        ) != ERROR_SUCCESS
-        {
-            return None;
-        }
-        String::from_utf16(&output)
-            .ok()
-            .map(|result| result.trim_matches('\0').trim().to_owned())
-            .filter(|result| !result.is_empty())
-    }
-}
-
-#[cfg(windows)]
-fn wide(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(Some(0)).collect()
 }
 
 #[cfg(windows)]
