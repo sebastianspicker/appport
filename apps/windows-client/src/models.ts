@@ -1,13 +1,67 @@
-export type {
-  ActionState,
-  AppAction,
-  AppInstallState,
-  AppSource,
-  AvailableApp,
-  InstalledApplication,
-  NativeBootstrap,
-  NativeDeviceEvidenceV1,
-} from "@relution/appport-contracts";
+export type AppSource = "winget" | "windows_msi" | "windows_exe";
+
+export type AppInstallState =
+  | "available"
+  | "update_available"
+  | "action_active";
+
+export type ActionIntent = "install" | "update";
+
+export type ActionState =
+  | "queued"
+  | "sent"
+  | "deferred"
+  | "verifying"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "unknown";
+
+export interface ConnectOutcome {
+  backgroundCheckRegistered: boolean;
+}
+
+export interface SignOutOutcome {
+  tokenRevocationRequired: boolean;
+  credentialRemoved: boolean;
+  scheduledTaskRemoved: boolean;
+  notificationStateCleared: boolean;
+}
+
+export interface NativeBootstrap {
+  user: { displayName: string };
+  device: { name: string; status: string; lastSeenAt: string | null };
+  updates: { count: number; keys: string[] };
+}
+
+export interface AvailableApp {
+  id: string;
+  name: string;
+  description: string | null;
+  publisher: string | null;
+  source: AppSource;
+  packageIdentifier: string | null;
+  releasedVersionId: string;
+  releasedVersionLabel: string | null;
+  installedVersionId: string | null;
+  installedVersionLabel: string | null;
+  installState: AppInstallState;
+  activeActionId: string | null;
+  activeActionState: ActionState | null;
+  hasIcon: boolean;
+}
+
+export interface AppAction {
+  id: string;
+  deviceId: string;
+  appId: string;
+  intent: ActionIntent;
+  state: ActionState;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export type ClientProblem =
   | "loading"
@@ -30,10 +84,4 @@ export type NativeErrorCode =
 export interface NativeError {
   code: NativeErrorCode;
   message: string;
-}
-
-export interface SignOutOutcome {
-  remoteRevocation: "revoked" | "not_attempted" | "failed";
-  credentialDeletion: "deleted" | "failed";
-  scheduledTaskRemoval: "removed" | "failed";
 }
