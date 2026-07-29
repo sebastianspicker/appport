@@ -1,48 +1,22 @@
 # Security policy
 
-## Reporting a vulnerability
+Appport is a Windows client. It does not ship web routes, a network service, or Relution technical-account credentials. Its per-user SQLite journal contains action recovery metadata and never stores the access token.
 
-Do not disclose a suspected vulnerability in a public issue. Use the private
-security reporting channel configured by the repository owner. If GitHub
-private vulnerability reporting is enabled, use the Security tab.
+## Security boundary
 
-The repository does not publish a dedicated security contact. One must be
-defined before the managed pilot expands.
+- The endpoint is a fixed HTTPS origin embedded at build time. There is no runtime endpoint override.
+- The WebView has no network permission. Rust owns outbound requests.
+- Windows Credential Manager stores a versioned record containing the personal token, validated username, and immutable Relution user UUID.
+- The per-user action journal applies a current-user Windows ACL to its directory, database, and SQLite sidecars.
+- The client sends device evidence only to the configured Relution API.
+- Alpha.3 embeds `APPPORT_RELUTION_WRITES_ENABLED=false`; it has no runtime write override.
 
-## Sensitive material
+Relution remains responsible for user authentication, authorization, audit retention, and deployment mutations. Do not add administrative tokens to this repository.
 
-Do not submit:
+## Reporting
 
-- authentication secrets or OIDC client secrets;
-- Relution service tokens;
-- signing certificates or private keys;
-- tenant exports or organization identifiers;
-- user data or device evidence;
-- production SQLite databases or backups;
-- production logs.
-
-Production secrets are read from mounted files and must not be stored in the
-repository. Treat the SQLite database and native bearer tokens as sensitive
-operational data.
-
-## Security boundaries
-
-- The Windows WebView cannot access the network.
-- Rust code owns all broker communication.
-- The Windows client contains no Relution service token or OIDC client secret.
-- The broker stores hashes of native bearer tokens and device evidence.
-- Every native resource request rechecks device assignment.
-- Deployment requests require current authorization, inventory checks, an
-  idempotency key, and the live-write switch.
-- Production secret files must be regular files without group or other
-  permissions.
-
-The native bearer is portable, and initial user resolution depends on a
-username claim before the immutable Relution UUID is pinned. These constraints
-limit the current release to a restricted managed pilot. See
-[docs/RUNTIME_CONTRACT.md](docs/RUNTIME_CONTRACT.md).
+Report a vulnerability privately to the maintainer. Include affected version, reproduction steps, impact, and any mitigation already applied. Do not include credentials, bearer tokens, device identifiers, or customer data.
 
 ## Supported version
 
-The current source version is `0.1.0-alpha.1`. Its verified and unverified
-release gates are listed in [RELEASE_STATUS.md](RELEASE_STATUS.md).
+Only the current read-only alpha version, 0.1.0-alpha.3, receives security fixes. It is unsigned, tenant-fixed, and not suitable for general distribution.

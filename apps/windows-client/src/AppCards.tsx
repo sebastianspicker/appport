@@ -1,14 +1,56 @@
 import { text, type Locale } from "./appCopy";
 import { AppIcon } from "./AppIcon";
 import { AppActionState } from "./AppActionState";
-import type { AppAction, AvailableApp, InstalledApplication } from "./models";
+import type { AppAction, AvailableApp } from "./models";
+import type { PollingState } from "./useAppCatalog";
 
-export function AppCard({ application, action, busy, locale, onConfirm }: { application: AvailableApp; action?: AppAction; busy: boolean; locale: Locale; onConfirm: (application: AvailableApp, opener: HTMLElement) => void }) {
+export function AppCard({
+  application,
+  action,
+  actionFailure,
+  busy,
+  iconSession,
+  locale,
+  onConfirm,
+  polling,
+  onResume,
+}: {
+  application: AvailableApp;
+  action?: AppAction;
+  actionFailure?: string;
+  busy: boolean;
+  iconSession: number;
+  locale: Locale;
+  onConfirm: (application: AvailableApp, opener: HTMLElement) => void;
+  polling?: PollingState;
+  onResume: (appId: string) => void;
+}) {
   const copy = text[locale];
-  return <article className="card"><div className="card-heading"><AppIcon appId={application.id} name={application.name} /><div><p className="eyebrow">{application.publisher ?? copy.approved}</p><h2>{application.name}</h2></div></div><p>{application.description ?? copy.approvedForDevice}</p><AppActionState application={application} action={action} busy={busy} locale={locale} onConfirm={onConfirm} /></article>;
-}
-
-export function InstalledCard({ application, locale }: { application: InstalledApplication; locale: Locale }) {
-  const copy = text[locale];
-  return <article className="card"><div className="card-heading">{application.appId && <AppIcon appId={application.appId} name={application.name} />}<h2>{application.name}</h2></div><p>{application.version}</p><small>{application.updateAvailable ? copy.updateAvailable : copy.installed}</small></article>;
+  return (
+    <article className="card">
+      <div className="card-heading">
+        <AppIcon
+          appId={application.id}
+          hasIcon={application.hasIcon}
+          name={application.name}
+          sessionKey={iconSession}
+        />
+        <div>
+          <p className="eyebrow">{application.publisher ?? copy.approved}</p>
+          <h2>{application.name}</h2>
+        </div>
+      </div>
+      <p>{application.description ?? copy.approvedForDevice}</p>
+      {actionFailure && <p role="alert">{actionFailure}</p>}
+      <AppActionState
+        application={application}
+        action={action}
+        busy={busy}
+        locale={locale}
+        onConfirm={onConfirm}
+        polling={polling}
+        onResume={onResume}
+      />
+    </article>
+  );
 }
