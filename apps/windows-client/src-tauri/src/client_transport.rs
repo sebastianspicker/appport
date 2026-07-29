@@ -57,9 +57,10 @@ impl RelutionClient {
                         .collect(),
                 )
                 .await?;
+            let total = page.total;
             let len = page.results.len();
             out.extend(page.results);
-            if len < PAGE_SIZE {
+            if len < PAGE_SIZE || total.is_some_and(|total| out.len() as u64 >= total) {
                 return Ok(out);
             }
         }
@@ -77,9 +78,10 @@ impl RelutionClient {
             b["limit"] = json!(PAGE_SIZE);
             b["offset"] = json!(n * PAGE_SIZE);
             let page: dto::Page<T> = self.post_once(p, t, b).await?;
+            let total = page.total;
             let l = page.results.len();
             out.extend(page.results);
-            if l < PAGE_SIZE {
+            if l < PAGE_SIZE || total.is_some_and(|total| out.len() as u64 >= total) {
                 return Ok(out);
             }
         }

@@ -88,10 +88,6 @@ impl SessionStore {
     fn clear_credential(&self) -> Result<(), String> {
         credential::clear()
     }
-    pub fn clear(&mut self) -> Result<(), String> {
-        self.take_access_token();
-        self.clear_credential()
-    }
 }
 
 impl SessionCoordinator {
@@ -266,8 +262,8 @@ mod tests {
 
     #[test]
     fn clearing_an_absent_credential_is_idempotent() {
-        let mut session = SessionStore::load();
-        assert!(session.clear().is_ok());
+        let mut session = SessionCoordinator::load();
+        assert!(session.sign_out().credential_removed);
         assert!(session.credential().is_none());
     }
 

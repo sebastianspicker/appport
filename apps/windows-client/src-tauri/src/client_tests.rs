@@ -122,7 +122,7 @@ fn relution_action_states_are_mapped_fail_closed() {
 fn inventory_confirmation_requires_exact_identity() {
     let item = dto::Inventory {
         identifier: Some("pkg".into()),
-        name: Some("App".into()),
+        _name: Some("App".into()),
         app_uuid: Some("app".into()),
         version_uuid: Some("v2".into()),
         version_to_show: None,

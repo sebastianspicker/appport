@@ -38,7 +38,6 @@ pub fn acquire_singleton() -> Result<(), String> {
             let _ = CloseHandle(handle);
             return Err("unknown: Appport is already running".into());
         }
-        std::mem::forget(handle);
     }
     Ok(())
 }

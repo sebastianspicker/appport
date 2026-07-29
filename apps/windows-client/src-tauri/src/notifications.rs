@@ -98,7 +98,7 @@ fn read_notification_keys() -> Option<BTreeSet<String>> {
     let value = text
         .lines()
         .find_map(|line| line.split_once("REG_SZ").map(|(_, value)| value.trim()))?;
-    serde_json::from_str::<Vec<String>>(&value)
+    serde_json::from_str::<Vec<String>>(value)
         .ok()
         .map(|keys| normalized_update_keys(&keys))
 }

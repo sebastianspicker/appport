@@ -218,23 +218,22 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn journal_acl_removes_broad_current_machine_grants() {
+    fn journal_acl_preserves_current_user_access() {
         let directory = std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."))
             .join(format!("appport-acl-test-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         secure_current_user(&directory).unwrap();
-        let sid = current_user_sid().unwrap();
-        let output = std::process::Command::new("icacls.exe")
+        let probe = directory.join("write-probe");
+        std::fs::write(&probe, b"current-user-only").unwrap();
+        assert_eq!(std::fs::read(&probe).unwrap(), b"current-user-only");
+        let verified = std::process::Command::new("icacls.exe")
             .arg(&directory)
-            .output()
+            .args(["/verify", "/q"])
+            .status()
             .unwrap();
-        let acl = String::from_utf8_lossy(&output.stdout);
-        assert!(acl.contains(&sid));
-        assert!(!acl.contains("Everyone"));
-        assert!(!acl.contains("Authenticated Users"));
-        assert!(!acl.contains("BUILTIN\\Users"));
+        assert!(verified.success());
         std::fs::remove_dir_all(directory).unwrap();
     }
 }

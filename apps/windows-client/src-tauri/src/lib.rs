@@ -278,6 +278,11 @@ fn foreground_client(config: client::RelutionConfig) -> Option<client::RelutionC
 
 #[cfg(windows)]
 fn launch_tauri(client: client::RelutionClient, arguments: Vec<String>) {
+    if let Ok(executable) = std::env::current_exe() {
+        if let Err(error) = task::register_protocol(&executable) {
+            logging::write(&error);
+        }
+    }
     let state = Arc::new(AppState {
         client,
         session: Mutex::new(session::SessionCoordinator::load()),

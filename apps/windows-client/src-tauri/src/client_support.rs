@@ -4,6 +4,8 @@ use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
 use url::Url;
 
+const MAX_ICON_BYTES: usize = 1024 * 1024;
+
 pub fn app_from(c: dto::Catalog, native: &str) -> Option<crate::wire::AvailableApp> {
     if c.uuid == native || !c.platforms.iter().any(|p| p == "WINDOWS") {
         return None;
@@ -186,7 +188,7 @@ pub async fn icon_data_url(response: reqwest::Response) -> Result<Option<String>
     if !response.status().is_success() {
         return Err(status(response.status()));
     }
-    if response.content_length().unwrap_or(0) > 1024 * 1024 {
+    if response.content_length().unwrap_or(0) > MAX_ICON_BYTES as u64 {
         return Err("server: icon response is too large".into());
     }
     let content_type = response
@@ -201,7 +203,7 @@ pub async fn icon_data_url(response: reqwest::Response) -> Result<Option<String>
         .bytes()
         .await
         .map_err(|_| "server: icon response failed")?;
-    if bytes.len() > 1024 * 1024 {
+    if bytes.len() > MAX_ICON_BYTES {
         return Err("server: icon response is too large".into());
     }
     Ok(Some(format!(

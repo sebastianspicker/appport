@@ -104,7 +104,8 @@ pub struct Deployment {
 #[serde(deny_unknown_fields)]
 pub struct Inventory {
     pub identifier: Option<String>,
-    pub name: Option<String>,
+    #[serde(rename = "name")]
+    pub _name: Option<String>,
     #[serde(rename = "appUuid")]
     pub app_uuid: Option<String>,
     #[serde(rename = "versionUuid")]

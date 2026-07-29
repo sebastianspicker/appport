@@ -10,7 +10,6 @@ use std::{collections::HashMap, sync::Mutex as StdMutex, time::Duration};
 use tokio::sync::Semaphore;
 use url::Url;
 const MAX_JSON_BYTES: usize = 10 * 1024 * 1024;
-const MAX_ICON_BYTES: usize = 1024 * 1024;
 const PAGE_SIZE: usize = 100;
 const MAX_PAGES: usize = 100;
 #[derive(Clone)]
@@ -164,11 +163,12 @@ impl RelutionClient {
         u: &str,
         d: &CurrentDevice,
     ) -> Result<Vec<AvailableApp>, String> {
+        let locale = crate::platform::current_locale();
         let catalog: Vec<dto::Catalog> = self
             .get_pages(
                 "/api/management/v1/content/apps/baseInfo",
                 t,
-                vec![("extend", "versions"), ("locale", "en")],
+                vec![("extend", "versions"), ("locale", locale.as_str())],
             )
             .await?;
         let groups: dto::Groups = self
