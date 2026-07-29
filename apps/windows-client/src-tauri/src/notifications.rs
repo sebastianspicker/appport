@@ -62,7 +62,7 @@ fn show_update_toast(count: u32) -> Result<(), String> {
             .map_err(|_| "unknown: toast notifier unavailable")?;
     notifier
         .Show(&toast)
-        .map_err(|_| "unknown: toast could not be displayed")
+        .map_err(|_| "unknown: toast could not be displayed".to_owned())
 }
 
 #[cfg(not(windows))]

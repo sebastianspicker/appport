@@ -168,7 +168,7 @@ mod credential {
             if CredReadW(
                 PCWSTR(target.as_ptr()),
                 CRED_TYPE_GENERIC,
-                0,
+                None,
                 &mut credential,
             )
             .is_err()
@@ -180,8 +180,8 @@ mod credential {
                 (*credential).CredentialBlobSize as usize,
             );
             let value = bytes.to_vec();
-            CredFree(Some(credential.cast()));
-            value
+            CredFree(credential.cast());
+            Some(value)
         }
     }
     pub fn load() -> Option<CredentialRecord> {
@@ -206,14 +206,9 @@ mod credential {
                 Type: CRED_TYPE_GENERIC,
                 TargetName: windows::core::PWSTR(target.as_ptr() as *mut _),
                 CredentialBlobSize: bytes.len() as u32,
-                CredentialBlob: windows::core::PSTR(bytes.as_mut_ptr()),
+                CredentialBlob: bytes.as_mut_ptr(),
                 Persist: CRED_PERSIST_LOCAL_MACHINE,
-                UserName: windows::core::PWSTR::null(),
-                Comment: windows::core::PWSTR::null(),
-                TargetAlias: windows::core::PWSTR::null(),
-                AttributeCount: 0,
-                Attributes: std::ptr::null_mut(),
-                Flags: 0,
+                ..Default::default()
             };
             CredWriteW(&credential, 0)
                 .map_err(|_| "unknown: Windows Credential Manager could not save session".into())
@@ -224,7 +219,7 @@ mod credential {
         use windows::Win32::Security::Credentials::{CredDeleteW, CRED_TYPE_GENERIC};
         unsafe {
             let target = wide(target_name);
-            match CredDeleteW(PCWSTR(target.as_ptr()), CRED_TYPE_GENERIC, 0) {
+            match CredDeleteW(PCWSTR(target.as_ptr()), CRED_TYPE_GENERIC, None) {
                 Ok(()) => Ok(()),
                 Err(error)
                     if error.code() == windows::core::HRESULT::from_win32(ERROR_NOT_FOUND.0) =>
