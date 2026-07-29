@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { resetIconSession } from "./AppIcon";
 import { copyFor, type Copy, type Locale } from "./appCopy";
 import type {
@@ -15,15 +23,11 @@ export type SourceFilter = "all" | AppSource;
 export type PollingState = "polling" | "paused";
 type Phase = "ready" | ClientProblem;
 export type CatalogSetters = {
-  setApps: (apps: AvailableApp[]) => void;
-  setBootstrap: (bootstrap: NativeBootstrap | undefined) => void;
-  setPhase: (phase: Phase) => void;
+  setApps: ReturnType<typeof useAppsState>[1];
+  setBootstrap: ReturnType<typeof useBootstrapState>[1];
+  setPhase: ReturnType<typeof usePhaseState>[1];
 };
 type PollTimer = { resolve: () => void; timerId: number };
-export type PollTimerRegistry = {
-  clear: (appId?: string) => void;
-  schedule: (appId: string) => Promise<void>;
-};
 
 const terminalStates = new Set(["succeeded", "failed", "cancelled", "unknown"]);
 const pollIntervalMs = 2_000;
@@ -65,7 +69,7 @@ export function useMounted() {
   return mounted;
 }
 
-export function usePollTimerRegistry(): PollTimerRegistry {
+export function usePollTimerRegistry() {
   const timers = useRef(new Map<string, PollTimer>());
   const clear = useCallback((appId?: string) => {
     const entries = appId
@@ -97,6 +101,8 @@ export function usePollTimerRegistry(): PollTimerRegistry {
   }, [clear]);
   return useMemo(() => ({ clear, schedule }), [clear, schedule]);
 }
+
+export type PollTimerRegistry = ReturnType<typeof usePollTimerRegistry>;
 
 /** A session generation invalidates transient work without subscribing the UI to it. */
 export function useOperationGeneration(clearPollTimers: () => void) {
@@ -234,6 +240,26 @@ function withoutKey<Value>(entries: ReadonlyMap<string, Value>, key: string) {
   return next;
 }
 
+async function completeTerminalAction(
+  action: AppAction,
+  pollTimers: PollTimerRegistry,
+  setPolling: Dispatch<SetStateAction<Map<string, PollingState>>>,
+  load: () => Promise<void>,
+) {
+  pollTimers.clear(action.appId);
+  setPolling((existing) => withoutKey(existing, action.appId));
+  if (action.state === "succeeded") await load();
+}
+
+function pauseIfCurrent(
+  action: AppAction,
+  current: boolean,
+  setPolling: Dispatch<SetStateAction<Map<string, PollingState>>>,
+) {
+  if (current)
+    setPolling((existing) => new Map(existing).set(action.appId, "paused"));
+}
+
 export function useActionWorkflow(
   locale: Locale,
   mounted: React.MutableRefObject<boolean>,
@@ -272,9 +298,7 @@ export function useActionWorkflow(
         if (!isCurrent(action.appId, actionGeneration, sessionGeneration))
           return;
         if (terminalStates.has(current.state)) {
-          pollTimers.clear(current.appId);
-          setPolling((existing) => withoutKey(existing, current.appId));
-          if (current.state === "succeeded") await load();
+          await completeTerminalAction(current, pollTimers, setPolling, load);
           return;
         }
         await pollTimers.schedule(action.appId);
@@ -287,15 +311,19 @@ export function useActionWorkflow(
           current = next;
           saveAction(current, setActions);
         } catch {
-          if (isCurrent(action.appId, actionGeneration, sessionGeneration))
-            setPolling((existing) =>
-              new Map(existing).set(action.appId, "paused"),
-            );
+          pauseIfCurrent(
+            action,
+            isCurrent(action.appId, actionGeneration, sessionGeneration),
+            setPolling,
+          );
           return;
         }
       }
-      if (isCurrent(action.appId, actionGeneration, sessionGeneration))
-        setPolling((existing) => new Map(existing).set(action.appId, "paused"));
+      pauseIfCurrent(
+        action,
+        isCurrent(action.appId, actionGeneration, sessionGeneration),
+        setPolling,
+      );
     },
     [isCurrent, load, pollTimers],
   );
@@ -373,12 +401,14 @@ export function useActionWorkflow(
   };
 }
 
+export type ResumeAction = ReturnType<typeof useActionWorkflow>["resumeAction"];
+
 function createConnect(
   load: () => Promise<void>,
   cancel: () => void,
   generation: React.MutableRefObject<number>,
-  setPhase: (phase: Phase) => void,
-  setWarning: (warning: string | undefined) => void,
+  setPhase: CatalogSetters["setPhase"],
+  setWarning: Dispatch<SetStateAction<string | undefined>>,
   copy: Copy,
 ) {
   return async (relutionUsername: string, accessToken: string) => {
@@ -406,7 +436,7 @@ export function useConnect(
   load: () => Promise<void>,
   cancel: () => void,
   generation: React.MutableRefObject<number>,
-  setPhase: (phase: Phase) => void,
+  setPhase: CatalogSetters["setPhase"],
 ) {
   const [backgroundCheckWarning, setBackgroundCheckWarning] =
     useState<string>();
@@ -428,11 +458,11 @@ export function useConnect(
 function createSignOut(
   copy: Copy,
   cancel: () => void,
-  setBootstrap: (bootstrap: NativeBootstrap | undefined) => void,
-  setApps: (apps: AvailableApp[]) => void,
+  setBootstrap: CatalogSetters["setBootstrap"],
+  setApps: CatalogSetters["setApps"],
   setActions: React.Dispatch<React.SetStateAction<Map<string, AppAction>>>,
-  setPhase: (phase: Phase) => void,
-  setWarning: (warning: string | undefined) => void,
+  setPhase: CatalogSetters["setPhase"],
+  setWarning: Dispatch<SetStateAction<string | undefined>>,
 ) {
   return async () => {
     cancel();

@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import type { Dispatch } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { AppAction } from "./models";
@@ -58,7 +59,7 @@ function application(id: string, name = id) {
 }
 
 function deferred<T>() {
-  let resolve!: (value: T) => void;
+  let resolve!: Dispatch<T>;
   const promise = new Promise<T>((complete) => {
     resolve = complete;
   });
@@ -279,13 +280,11 @@ describe("App catalog refresh", () => {
     render(<App />);
     await screen.findByRole("button", { name: "Available" });
     fireEvent.click(screen.getByRole("button", { name: "Updates" }));
-    await act(() => {
-      updates.resolve([application("update", "Update result")]);
-    });
+    updates.resolve([application("update", "Update result")]);
+    await act(() => updates.promise);
     expect(await screen.findByText("Update result")).toBeTruthy();
-    await act(() => {
-      available.resolve([application("available", "Available result")]);
-    });
+    available.resolve([application("available", "Available result")]);
+    await act(() => available.promise);
     expect(screen.queryByText("Available result")).toBeNull();
     expect(screen.getByText("Update result")).toBeTruthy();
   });
@@ -343,7 +342,7 @@ async function pollsToTerminalState() {
     .mockResolvedValueOnce(action("verifying"))
     .mockResolvedValueOnce(action("succeeded"));
   render(<App />);
-  await act(async () => {});
+  await act(() => Promise.resolve());
   fireEvent.click(screen.getByRole("button", { name: "Install" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
@@ -370,7 +369,7 @@ async function resumesPausedAction() {
     .mockRejectedValueOnce(new Error("temporary IPC failure"))
     .mockResolvedValueOnce(action("succeeded"));
   render(<App />);
-  await act(async () => {});
+  await act(() => Promise.resolve());
   fireEvent.click(screen.getByRole("button", { name: "Install" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
   await act(async () => {
@@ -397,7 +396,7 @@ async function showsUnknownAction() {
   vi.mocked(native.act).mockResolvedValue(action("queued"));
   vi.mocked(native.action).mockResolvedValue(action("unknown"));
   render(<App />);
-  await act(async () => {});
+  await act(() => Promise.resolve());
   fireEvent.click(screen.getByRole("button", { name: "Install" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
   await act(async () => {
@@ -421,16 +420,15 @@ const ignoresPollAfterSignOut = async () => {
   vi.mocked(native.act).mockResolvedValue(action("queued"));
   vi.mocked(native.action).mockReturnValue(refresh.promise);
   render(<App />);
-  await act(async () => {});
+  await act(() => Promise.resolve());
   fireEvent.click(screen.getByRole("button", { name: "Install" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(2_000);
   });
   fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-  await act(async () => {
-    refresh.resolve(action("succeeded"));
-  });
+  refresh.resolve(action("succeeded"));
+  await act(() => refresh.promise);
   expect(screen.queryByText("Status: succeeded")).toBeNull();
   expect(screen.getByLabelText("Relution username")).toBeTruthy();
 };
@@ -471,10 +469,10 @@ const clearsPendingTimer = async () => {
     updatedAt: "2026-07-29T00:00:00.000Z",
   });
   const { unmount } = render(<App />);
-  await act(async () => {});
+  await act(() => Promise.resolve());
   fireEvent.click(screen.getByRole("button", { name: "Install" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-  await act(async () => {});
+  await act(() => Promise.resolve());
   const timerCountWithPoll = vi.getTimerCount();
   expect(timerCountWithPoll).toBeGreaterThan(0);
   unmount();
@@ -499,12 +497,12 @@ async function limitsIconLoading() {
   render(<App />);
   await screen.findByText("App 4");
   expect(native.icon).toHaveBeenCalledTimes(4);
-  await act(async () => {
-    icons[0].resolve(null);
-  });
+  icons[0].resolve(null);
+  await act(() => icons[0].promise);
   expect(native.icon).toHaveBeenCalledTimes(5);
+  for (const icon of icons.slice(1)) icon.resolve(null);
   await act(async () => {
-    for (const icon of icons.slice(1)) icon.resolve(null);
+    await Promise.all(icons.slice(1).map(({ promise }) => promise));
   });
 }
 
@@ -522,12 +520,12 @@ async function memoizesIconsPerSession() {
   });
   render(<App />);
   await screen.findByText("Mozilla Firefox");
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(native.icon).toHaveBeenCalledTimes(1);
 
   fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
   submitConnection();
   await screen.findByText("Mozilla Firefox");
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(vi.mocked(native.icon).mock.calls.length).toBeGreaterThan(1);
 }

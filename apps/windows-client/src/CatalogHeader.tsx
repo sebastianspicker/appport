@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { copyFor, type Copy, type Locale } from "./appCopy";
 import type { NativeBootstrap } from "./models";
+import type { useConnect } from "./useAppCatalog";
 
 export function CatalogHeader({
   bootstrap,
@@ -11,7 +12,7 @@ export function CatalogHeader({
 }: {
   bootstrap: NativeBootstrap | undefined;
   locale: Locale;
-  onConnect: (relutionUsername: string, accessToken: string) => Promise<void>;
+  onConnect: ReturnType<typeof useConnect>["connect"];
   onOpenPortal: () => Promise<void>;
   onSignOut: () => Promise<void>;
 }) {
@@ -63,7 +64,7 @@ function ConnectForm({
   onConnect,
 }: {
   copy: Copy;
-  onConnect: (relutionUsername: string, accessToken: string) => Promise<void>;
+  onConnect: ReturnType<typeof useConnect>["connect"];
 }) {
   const [relutionUsername, setRelutionUsername] = useState("");
   const [accessToken, setAccessToken] = useState("");

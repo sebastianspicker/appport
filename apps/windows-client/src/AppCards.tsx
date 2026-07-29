@@ -1,30 +1,34 @@
 import { copyFor, type Locale } from "./appCopy";
 import { AppIcon } from "./AppIcon";
 import { AppActionState } from "./AppActionState";
+import type { ConfirmationHandler } from "./catalogInteraction";
 import type { AppAction, AvailableApp } from "./models";
-import type { PollingState } from "./useAppCatalog";
+import type { PollingState, ResumeAction } from "./useAppCatalog";
 
-export function AppCard({
-  application,
-  action,
-  actionFailure,
-  busy,
-  iconSession,
-  locale,
-  onConfirm,
-  polling,
-  onResume,
-}: {
+type AppCardProps = {
   application: AvailableApp;
   action?: AppAction;
   actionFailure?: string;
   busy: boolean;
   iconSession: number;
   locale: Locale;
-  onConfirm: (application: AvailableApp, opener: HTMLElement) => void;
+  onConfirm: ConfirmationHandler;
   polling?: PollingState;
-  onResume: (appId: string) => void;
-}) {
+  onResume: ResumeAction;
+};
+
+export function AppCard(props: AppCardProps) {
+  const {
+    application,
+    action,
+    actionFailure,
+    busy,
+    iconSession,
+    locale,
+    onConfirm,
+    polling,
+    onResume,
+  } = props;
   const copy = copyFor(locale);
   return (
     <article className="card">

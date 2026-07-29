@@ -9,6 +9,7 @@ import { CatalogHeader } from "./CatalogHeader";
 import { CatalogNavigation } from "./CatalogNavigation";
 import { CatalogResults } from "./CatalogResults";
 import { copyFor, type Locale } from "./appCopy";
+import type { ConfirmationRequest } from "./catalogInteraction";
 import { native } from "./native";
 import type {
   AppAction,
@@ -16,7 +17,14 @@ import type {
   ClientProblem,
   NativeBootstrap,
 } from "./models";
-import type { PollingState, SourceFilter, View } from "./useAppCatalog";
+import type {
+  PollingState,
+  SourceFilter,
+  View,
+  useActionWorkflow,
+  useCatalogLoading,
+  useConnect,
+} from "./useAppCatalog";
 
 type Phase = "ready" | ClientProblem;
 export type Catalog = {
@@ -25,14 +33,14 @@ export type Catalog = {
   apps: AvailableApp[];
   bootstrap: NativeBootstrap | undefined;
   busy: string | undefined;
-  connect: (relutionUsername: string, accessToken: string) => Promise<void>;
+  connect: ReturnType<typeof useConnect>["connect"];
   iconSession: number;
-  load: (view?: View, showLoading?: boolean) => Promise<void>;
+  load: ReturnType<typeof useCatalogLoading>;
   mounted: MutableRefObject<boolean>;
   phase: Phase;
   polling: ReadonlyMap<string, PollingState>;
   query: string;
-  resumeAction: (appId: string) => void;
+  resumeAction: ReturnType<typeof useActionWorkflow>["resumeAction"];
   rows: AvailableApp[];
   setApps: Dispatch<SetStateAction<AvailableApp[]>>;
   setBootstrap: Dispatch<SetStateAction<NativeBootstrap | undefined>>;
@@ -43,7 +51,7 @@ export type Catalog = {
   signOut: () => Promise<void>;
   signOutWarning: string | undefined;
   sourceFilter: SourceFilter;
-  startAction: (application: AvailableApp) => Promise<void>;
+  startAction: ReturnType<typeof useActionWorkflow>["startAction"];
   view: View | undefined;
 };
 
@@ -55,10 +63,7 @@ export function CatalogPage({
   locale: Locale;
 }) {
   const copy = copyFor(locale);
-  const [confirmation, setConfirmation] = useState<{
-    application: AvailableApp;
-    opener: HTMLElement;
-  }>();
+  const [confirmation, setConfirmation] = useState<ConfirmationRequest>();
   return (
     <main>
       <CatalogHeader
@@ -82,9 +87,7 @@ export function CatalogPage({
       <CatalogResults
         catalog={catalog}
         locale={locale}
-        onConfirm={(application, opener) =>
-          setConfirmation({ application, opener })
-        }
+        onConfirm={setConfirmation}
       />
       {catalog.signOutWarning && (
         <p className="sign-out-warning" role="alert">
@@ -135,9 +138,9 @@ function CatalogToolbar({
         {copy.source}
         <select
           value={catalog.sourceFilter}
-          onChange={(event) =>
-            catalog.setSourceFilter(event.target.value as SourceFilter)
-          }
+          onChange={(event) => {
+            catalog.setSourceFilter(event.target.value as SourceFilter);
+          }}
         >
           <option value="all">{copy.allSources}</option>
           <option value="winget">Winget</option>

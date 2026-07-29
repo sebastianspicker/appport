@@ -1,7 +1,7 @@
 import { AppCard } from "./AppCards";
 import { copyFor, type Locale } from "./appCopy";
+import type { ConfirmationHandler } from "./catalogInteraction";
 import { Status } from "./Status";
-import type { AvailableApp } from "./models";
 import type { Catalog } from "./CatalogPage";
 
 export function CatalogResults({
@@ -11,7 +11,7 @@ export function CatalogResults({
 }: {
   catalog: Catalog;
   locale: Locale;
-  onConfirm: (application: AvailableApp, opener: HTMLElement) => void;
+  onConfirm: ConfirmationHandler;
 }) {
   if (hasNoResults(catalog))
     return (

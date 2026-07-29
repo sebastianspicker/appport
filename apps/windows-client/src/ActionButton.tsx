@@ -1,4 +1,5 @@
 import { copyFor, type Locale } from "./appCopy";
+import type { ConfirmationHandler } from "./catalogInteraction";
 import type { AvailableApp } from "./models";
 
 export function ActionButton({
@@ -9,14 +10,14 @@ export function ActionButton({
 }: {
   application: AvailableApp;
   locale: Locale;
-  onConfirm: (application: AvailableApp, opener: HTMLElement) => void;
+  onConfirm: ConfirmationHandler;
   state: string | null | undefined;
 }) {
   const copy = copyFor(locale);
   return (
     <button
       onClick={(event) => {
-        onConfirm(application, event.currentTarget);
+        onConfirm({ application, opener: event.currentTarget });
       }}
     >
       {actionLabel(

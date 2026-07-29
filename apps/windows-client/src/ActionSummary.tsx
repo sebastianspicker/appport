@@ -4,19 +4,16 @@ import type { AppAction, AvailableApp } from "./models";
 import { UnknownAction } from "./UnknownAction";
 import type { PollingState } from "./useAppCatalog";
 
-export function ActionSummary({
-  action,
-  application,
-  locale,
-  polling,
-  state,
-}: {
+type ActionSummaryProps = {
   action?: AppAction;
   application: AvailableApp;
   locale: Locale;
   polling?: PollingState;
   state: string | null | undefined;
-}) {
+};
+
+export function ActionSummary(props: ActionSummaryProps) {
+  const { action, application, locale, polling, state } = props;
   const copy = copyFor(locale);
   if (state === "unknown")
     return (
@@ -40,6 +37,12 @@ export function ActionSummary({
     );
   if (state)
     return <ActionStatus label={state} state={state} status={copy.status} />;
+  return <VersionRail application={application} locale={locale} />;
+}
+
+function VersionRail(props: { application: AvailableApp; locale: Locale }) {
+  const { application, locale } = props;
+  const copy = copyFor(locale);
   const target = application.releasedVersionLabel ?? copy.available;
   const label = application.installedVersionLabel
     ? `${copy.installedVersion}: ${application.installedVersionLabel}. ${copy.availableVersion}: ${target}.`

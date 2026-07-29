@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch } from "react";
 import { native } from "./native";
 
 const maxConcurrentIconLoads = 4;
@@ -7,7 +7,7 @@ let activeLoads = 0;
 const successfulIcons = new Map<string, string>();
 const pendingLoads: Array<{
   appId: string;
-  resolve: (value: string | null) => void;
+  resolve: Dispatch<string | null>;
   session: number;
 }> = [];
 

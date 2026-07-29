@@ -1,26 +1,23 @@
 import { type Locale } from "./appCopy";
 import { ActionControl } from "./ActionControl";
 import { ActionSummary } from "./ActionSummary";
+import type { ConfirmationHandler } from "./catalogInteraction";
 import type { AppAction, AvailableApp } from "./models";
-import type { PollingState } from "./useAppCatalog";
+import type { PollingState, ResumeAction } from "./useAppCatalog";
 
-export function AppActionState({
-  application,
-  action,
-  busy,
-  locale,
-  onConfirm,
-  polling,
-  onResume,
-}: {
+type AppActionStateProps = {
   application: AvailableApp;
   action?: AppAction;
   busy: boolean;
   locale: Locale;
-  onConfirm: (application: AvailableApp, opener: HTMLElement) => void;
+  onConfirm: ConfirmationHandler;
   polling?: PollingState;
-  onResume: (appId: string) => void;
-}) {
+  onResume: ResumeAction;
+};
+
+export function AppActionState(props: AppActionStateProps) {
+  const { application, action, busy, locale, onConfirm, polling, onResume } =
+    props;
   const state = action?.state ?? application.activeActionState;
   return (
     <>

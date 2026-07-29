@@ -1,3 +1,4 @@
+import type { Dispatch } from "react";
 import { copyFor, type Locale } from "./appCopy";
 import type { NativeBootstrap } from "./models";
 import type { View } from "./useAppCatalog";
@@ -13,7 +14,7 @@ export function CatalogNavigation({
   bootstrap: NativeBootstrap | undefined;
   locale: Locale;
   view: View | undefined;
-  onSelect: (view: View) => void;
+  onSelect: Dispatch<View>;
 }) {
   return (
     <nav aria-label="Software views">
@@ -42,7 +43,7 @@ function ViewButton({
   bootstrap: NativeBootstrap | undefined;
   item: View;
   locale: Locale;
-  onSelect: (view: View) => void;
+  onSelect: Dispatch<View>;
 }) {
   const copy = copyFor(locale);
   const label =

@@ -13,7 +13,7 @@ The available host completed these source checks:
 - Prettier and documentation validation for 17 maintained Markdown files
 - The complete `pnpm verify` gate with Node 26.5.0
 - TypeScript checking and the Vite production build
-- 27 React tests with 92.85% statement, 81.90% branch, 92.36% function, and 94.93% line coverage
+- 27 React tests with 93.43% statement, 82.52% branch, 93.18% function, and 95.00% line coverage
 - 30 Rust tests, Rust formatting, Clippy with warnings denied, and Cargo check
 - Version parity, standalone-boundary validation, evidence-script syntax, forbidden-marker scanning, and `git diff --check`
 - Fail-closed build checks for missing qualification configuration

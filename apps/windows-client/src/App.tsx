@@ -3,7 +3,6 @@ import { CatalogPage } from "./CatalogPage";
 import { localeFor } from "./appCopy";
 import { buildCatalog } from "./buildCatalog";
 import {
-  useActionWorkflow,
   useAppsState,
   useBootstrapState,
   useCatalogFilters,
