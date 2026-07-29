@@ -18,5 +18,5 @@ export const native = {
   action: (actionId: string) => invoke<AppAction>("get_action", { actionId }),
   icon: (appId: string) => invoke<string | null>("load_app_icon", { appId }),
   signOut: () => invoke<SignOutOutcome>("sign_out"),
-  openRelutionPortal: () => invoke<void>("open_relution_portal"),
+  openRelutionPortal: (): Promise<void> => invoke("open_relution_portal"),
 };

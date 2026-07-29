@@ -1,5 +1,5 @@
 import { AppCard } from "./AppCards";
-import { text, type Locale } from "./appCopy";
+import { copyFor, type Locale } from "./appCopy";
 import { Status } from "./Status";
 import type { AvailableApp } from "./models";
 import type { Catalog } from "./CatalogPage";
@@ -16,7 +16,7 @@ export function CatalogResults({
   if (hasNoResults(catalog))
     return (
       <p className="search-empty" role="status">
-        {text[locale].noSearchResults}
+        {copyFor(locale).noSearchResults}
       </p>
     );
   if (catalog.phase !== "ready")
@@ -29,13 +29,13 @@ export function CatalogResults({
         <AppCard
           key={application.id}
           application={application}
-          action={catalog.actions[application.id]}
-          actionFailure={catalog.actionFailures[application.id]}
+          action={catalog.actions.get(application.id)}
+          actionFailure={catalog.actionFailures.get(application.id)}
           busy={catalog.busy === application.id}
           iconSession={catalog.iconSession}
           locale={locale}
           onConfirm={onConfirm}
-          polling={catalog.polling[application.id]}
+          polling={catalog.polling.get(application.id)}
           onResume={catalog.resumeAction}
         />
       ))}

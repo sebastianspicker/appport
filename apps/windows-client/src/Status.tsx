@@ -1,4 +1,4 @@
-import { problemCopy, text, type Copy, type Locale } from "./appCopy";
+import { copyFor, problemCopy, type Copy, type Locale } from "./appCopy";
 import type { ClientProblem } from "./models";
 
 export function Status({
@@ -10,7 +10,7 @@ export function Status({
   retry: () => Promise<void>;
   locale: Locale;
 }) {
-  const copy = text[locale];
+  const copy = copyFor(locale);
   const [title, body] = problemCopy(locale, problem);
   return (
     <section className="state" role={statusRole(problem)}>
@@ -46,5 +46,13 @@ function StatusRetry({
     )
   )
     return null;
-  return <button onClick={() => void retry()}>{label}</button>;
+  return (
+    <button
+      onClick={() => {
+        void retry();
+      }}
+    >
+      {label}
+    </button>
+  );
 }

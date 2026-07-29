@@ -1,4 +1,4 @@
-import { text, type Locale } from "./appCopy";
+import { copyFor, type Locale } from "./appCopy";
 import type { NativeBootstrap } from "./models";
 import type { View } from "./useAppCatalog";
 
@@ -44,13 +44,18 @@ function ViewButton({
   locale: Locale;
   onSelect: (view: View) => void;
 }) {
-  const copy = text[locale];
+  const copy = copyFor(locale);
   const label =
     item === "apps"
       ? copy.apps
       : `${copy.updates}${bootstrap?.updates.count ? ` (${bootstrap.updates.count})` : ""}`;
   return (
-    <button className={active ? "active" : ""} onClick={() => onSelect(item)}>
+    <button
+      className={active ? "active" : ""}
+      onClick={() => {
+        onSelect(item);
+      }}
+    >
       {label}
     </button>
   );

@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
-import { text, type Copy, type Locale } from "./appCopy";
+import { copyFor, type Copy, type Locale } from "./appCopy";
 import type { NativeBootstrap } from "./models";
 
 export function CatalogHeader({
@@ -15,7 +15,7 @@ export function CatalogHeader({
   onOpenPortal: () => Promise<void>;
   onSignOut: () => Promise<void>;
 }) {
-  const copy: Copy = text[locale];
+  const copy: Copy = copyFor(locale);
   const device = bootstrap
     ? `${bootstrap.user.displayName} · ${bootstrap.device.name}`
     : copy.currentDevice;
@@ -33,14 +33,24 @@ export function CatalogHeader({
               <summary>{copy.replaceToken}</summary>
               <ConnectForm copy={copy} onConnect={onConnect} />
             </details>
-            <button className="secondary" onClick={() => void onSignOut()}>
+            <button
+              className="secondary"
+              onClick={() => {
+                void onSignOut();
+              }}
+            >
               {copy.signOut}
             </button>
           </>
         ) : (
           <ConnectForm copy={copy} onConnect={onConnect} />
         )}
-        <button className="portal-link" onClick={() => void onOpenPortal()}>
+        <button
+          className="portal-link"
+          onClick={() => {
+            void onOpenPortal();
+          }}
+        >
           {copy.manageToken}
         </button>
       </div>
@@ -82,7 +92,9 @@ function ConnectForm({
           autoComplete="username"
           required
           value={relutionUsername}
-          onChange={(event) => setRelutionUsername(event.target.value)}
+          onChange={(event) => {
+            setRelutionUsername(event.target.value);
+          }}
         />
       </label>
       <label>
@@ -94,7 +106,9 @@ function ConnectForm({
           autoComplete="off"
           required
           value={accessToken}
-          onChange={(event) => setAccessToken(event.target.value)}
+          onChange={(event) => {
+            setAccessToken(event.target.value);
+          }}
         />
       </label>
       <button className="secondary" type="submit">

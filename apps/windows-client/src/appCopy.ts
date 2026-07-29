@@ -159,19 +159,29 @@ export const text = {
 
 export type Copy = (typeof text)[Locale];
 
+/** Returns one of the two fixed local copy bundles without indexing by input. */
+export function copyFor(locale: Locale): Copy {
+  return locale === "de" ? text.de : text.en;
+}
+
+const problemCopiers = new Map<
+  ClientProblem,
+  (copy: Copy) => readonly string[]
+>([
+  ["loading", (copy) => copy.loading],
+  ["empty", (copy) => copy.empty],
+  ["offline", (copy) => copy.offline],
+  ["session-expired", (copy) => copy.sessionExpired],
+  ["device-match-failed", (copy) => copy.deviceFailed],
+  ["server", (copy) => copy.server],
+  ["action", (copy) => copy.action],
+  ["unknown", (copy) => copy.unknown],
+]);
+
 export function problemCopy(locale: Locale, problem: ClientProblem) {
-  const copy = text[locale];
-  const mapping = {
-    loading: copy.loading,
-    empty: copy.empty,
-    offline: copy.offline,
-    "session-expired": copy.sessionExpired,
-    "device-match-failed": copy.deviceFailed,
-    server: copy.server,
-    action: copy.action,
-    unknown: copy.unknown,
-  };
-  return mapping[problem];
+  const copy = copyFor(locale);
+  const copier = problemCopiers.get(problem);
+  return copier ? copier(copy) : copy.unknown;
 }
 
 export function localeFor(language: string): Locale {

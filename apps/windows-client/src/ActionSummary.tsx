@@ -1,4 +1,4 @@
-import { text, type Locale } from "./appCopy";
+import { copyFor, type Locale } from "./appCopy";
 import { ActionStatus } from "./ActionStatus";
 import type { AppAction, AvailableApp } from "./models";
 import { UnknownAction } from "./UnknownAction";
@@ -17,7 +17,7 @@ export function ActionSummary({
   polling?: PollingState;
   state: string | null | undefined;
 }) {
-  const copy = text[locale];
+  const copy = copyFor(locale);
   if (state === "unknown")
     return (
       <UnknownAction

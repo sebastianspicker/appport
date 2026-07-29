@@ -65,45 +65,39 @@ fn validate_origin(value: &str, release: bool) -> Result<(), &'static str> {
         return Err("must be a trimmed fixed HTTPS origin");
     }
     let url = Url::parse(value).map_err(|_| "must be a valid URL")?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-        || url.path() != "/"
-    {
+    if !is_fixed_https_origin(&url) {
         return Err(
             "must be a credential-free fixed HTTPS origin with no path, query, or fragment",
         );
     }
     let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
-    if release
-        && (host == "localhost"
-            || host.ends_with(".localhost")
-            || host.ends_with(".invalid")
-            || host == "example.com"
-            || host.ends_with(".example.com")
-            || host == "example.test"
-            || host.ends_with(".example.test"))
-    {
+    if release && is_placeholder_host(&host) {
         return Err("must identify the approved qualification tenant, not a placeholder host");
     }
     Ok(())
 }
 
+fn is_fixed_https_origin(url: &Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.path() == "/"
+}
+
+fn is_placeholder_host(host: &str) -> bool {
+    matches!(host, "localhost" | "example.com" | "example.test")
+        || host.ends_with(".localhost")
+        || host.ends_with(".invalid")
+        || host.ends_with(".example.com")
+        || host.ends_with(".example.test")
+}
+
 fn validate_uuid(value: &str) -> Result<(), &'static str> {
     let bytes = value.as_bytes();
-    if bytes.len() != 36
-        || bytes[8] != b'-'
-        || bytes[13] != b'-'
-        || bytes[18] != b'-'
-        || bytes[23] != b'-'
-        || bytes
-            .iter()
-            .enumerate()
-            .any(|(index, byte)| !matches!(index, 8 | 13 | 18 | 23) && !byte.is_ascii_hexdigit())
-    {
+    if !has_uuid_shape(bytes) {
         return Err("must be a canonical UUID");
     }
     let compact: String = value
@@ -118,4 +112,15 @@ fn validate_uuid(value: &str) -> Result<(), &'static str> {
         return Err("must not be a nil or repeated placeholder UUID");
     }
     Ok(())
+}
+
+fn has_uuid_shape(bytes: &[u8]) -> bool {
+    bytes.len() == 36
+        && [8, 13, 18, 23]
+            .into_iter()
+            .all(|index| bytes[index] == b'-')
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 8 | 13 | 18 | 23) || byte.is_ascii_hexdigit())
 }

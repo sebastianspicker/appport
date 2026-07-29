@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resetIconSession } from "./AppIcon";
-import { text, type Copy, type Locale } from "./appCopy";
+import { copyFor, type Copy, type Locale } from "./appCopy";
 import type {
   AppAction,
   AppSource,
@@ -14,7 +14,7 @@ export type View = "apps" | "updates";
 export type SourceFilter = "all" | AppSource;
 export type PollingState = "polling" | "paused";
 type Phase = "ready" | ClientProblem;
-type CatalogSetters = {
+export type CatalogSetters = {
   setApps: (apps: AvailableApp[]) => void;
   setBootstrap: (bootstrap: NativeBootstrap | undefined) => void;
   setPhase: (phase: Phase) => void;
@@ -47,7 +47,9 @@ export function useViewSelection() {
     void native
       .initialView()
       .then(setView)
-      .catch(() => setView("apps"));
+      .catch(() => {
+        setView("apps");
+      });
   }, []);
   return [view, setView] as const;
 }
@@ -88,7 +90,11 @@ export function usePollTimerRegistry(): PollTimerRegistry {
       }),
     [clear],
   );
-  useEffect(() => () => clear(), [clear]);
+  useEffect(() => {
+    return () => {
+      clear();
+    };
+  }, [clear]);
   return useMemo(() => ({ clear, schedule }), [clear, schedule]);
 }
 
@@ -116,6 +122,30 @@ export function usePhaseState() {
   return useState<Phase>("loading");
 }
 
+function isCurrentRequest(
+  mounted: React.MutableRefObject<boolean>,
+  generation: React.MutableRefObject<number>,
+  requestId: React.MutableRefObject<number>,
+  currentGeneration: number,
+  currentRequest: number,
+) {
+  return (
+    mounted.current &&
+    generation.current === currentGeneration &&
+    requestId.current === currentRequest
+  );
+}
+
+function applyCatalog(
+  setters: CatalogSetters,
+  bootstrap: NativeBootstrap,
+  apps: AvailableApp[],
+) {
+  setters.setBootstrap(bootstrap);
+  setters.setApps(apps);
+  setters.setPhase(apps.length ? "ready" : "empty");
+}
+
 export function useCatalogLoading(
   view: View | undefined,
   mounted: React.MutableRefObject<boolean>,
@@ -135,19 +165,25 @@ export function useCatalogLoading(
           native.apps(activeView),
         ]);
         if (
-          !mounted.current ||
-          generation.current !== currentGeneration ||
-          requestId.current !== currentRequest
+          !isCurrentRequest(
+            mounted,
+            generation,
+            requestId,
+            currentGeneration,
+            currentRequest,
+          )
         )
           return;
-        setters.setBootstrap(bootstrap);
-        setters.setApps(apps);
-        setters.setPhase(apps.length ? "ready" : "empty");
+        applyCatalog(setters, bootstrap, apps);
       } catch (error) {
         if (
-          mounted.current &&
-          generation.current === currentGeneration &&
-          requestId.current === currentRequest
+          isCurrentRequest(
+            mounted,
+            generation,
+            requestId,
+            currentGeneration,
+            currentRequest,
+          )
         )
           setters.setPhase(problemFor(error));
       }
@@ -187,14 +223,14 @@ export function useCatalogFilters(apps: AvailableApp[], locale: Locale) {
 
 function saveAction(
   action: AppAction,
-  setActions: React.Dispatch<React.SetStateAction<Record<string, AppAction>>>,
+  setActions: React.Dispatch<React.SetStateAction<Map<string, AppAction>>>,
 ) {
-  setActions((existing) => ({ ...existing, [action.appId]: action }));
+  setActions((existing) => new Map(existing).set(action.appId, action));
 }
 
-function withoutKey<Value>(entries: Record<string, Value>, key: string) {
-  const next = { ...entries };
-  delete next[key];
+function withoutKey<Value>(entries: ReadonlyMap<string, Value>, key: string) {
+  const next = new Map(entries);
+  next.delete(key);
   return next;
 }
 
@@ -205,12 +241,16 @@ export function useActionWorkflow(
   load: () => Promise<void>,
   pollTimers: PollTimerRegistry,
 ) {
-  const [actions, setActions] = useState<Record<string, AppAction>>({});
-  const [actionFailures, setActionFailures] = useState<Record<string, string>>(
-    {},
+  const [actions, setActions] = useState<Map<string, AppAction>>(
+    () => new Map(),
+  );
+  const [actionFailures, setActionFailures] = useState<Map<string, string>>(
+    () => new Map(),
   );
   const [busy, setBusy] = useState<string>();
-  const [polling, setPolling] = useState<Record<string, PollingState>>({});
+  const [polling, setPolling] = useState<Map<string, PollingState>>(
+    () => new Map(),
+  );
   const actionGenerations = useRef(new Map<string, number>());
 
   const isCurrent = useCallback(
@@ -248,15 +288,14 @@ export function useActionWorkflow(
           saveAction(current, setActions);
         } catch {
           if (isCurrent(action.appId, actionGeneration, sessionGeneration))
-            setPolling((existing) => ({
-              ...existing,
-              [action.appId]: "paused",
-            }));
+            setPolling((existing) =>
+              new Map(existing).set(action.appId, "paused"),
+            );
           return;
         }
       }
       if (isCurrent(action.appId, actionGeneration, sessionGeneration))
-        setPolling((existing) => ({ ...existing, [action.appId]: "paused" }));
+        setPolling((existing) => new Map(existing).set(action.appId, "paused"));
     },
     [isCurrent, load, pollTimers],
   );
@@ -268,7 +307,7 @@ export function useActionWorkflow(
         (actionGenerations.current.get(action.appId) ?? 0) + 1;
       const sessionGeneration = generation.current;
       actionGenerations.current.set(action.appId, actionGeneration);
-      setPolling((existing) => ({ ...existing, [action.appId]: "polling" }));
+      setPolling((existing) => new Map(existing).set(action.appId, "polling"));
       void poll(action, actionGeneration, sessionGeneration);
     },
     [generation, poll, pollTimers],
@@ -291,10 +330,9 @@ export function useActionWorkflow(
         setBusy((current) =>
           current === application.id ? undefined : current,
         );
-        setPolling((existing) => ({
-          ...existing,
-          [application.id]: "polling",
-        }));
+        setPolling((existing) =>
+          new Map(existing).set(application.id, "polling"),
+        );
         void poll(started, actionGeneration, sessionGeneration);
       } catch (error) {
         if (!isCurrent(application.id, actionGeneration, sessionGeneration))
@@ -302,13 +340,14 @@ export function useActionWorkflow(
         setBusy((current) =>
           current === application.id ? undefined : current,
         );
-        setActionFailures((existing) => ({
-          ...existing,
-          [application.id]:
+        setActionFailures((existing) =>
+          new Map(existing).set(
+            application.id,
             problemFor(error) === "unknown"
-              ? text[locale].action[1]
-              : text[locale].action[0],
-        }));
+              ? copyFor(locale).action[1]
+              : copyFor(locale).action[0],
+          ),
+        );
       }
     },
     [generation, isCurrent, locale, poll, pollTimers],
@@ -316,7 +355,7 @@ export function useActionWorkflow(
 
   const resumeAction = useCallback(
     (appId: string) => {
-      const action = actions[appId];
+      const action = actions.get(appId);
       if (!action || terminalStates.has(action.state)) return;
       beginPolling(action);
     },
@@ -379,7 +418,7 @@ export function useConnect(
         generation,
         setPhase,
         setBackgroundCheckWarning,
-        text[locale],
+        copyFor(locale),
       ),
     [cancel, generation, load, locale, setPhase],
   );
@@ -391,7 +430,7 @@ function createSignOut(
   cancel: () => void,
   setBootstrap: (bootstrap: NativeBootstrap | undefined) => void,
   setApps: (apps: AvailableApp[]) => void,
-  setActions: (actions: Record<string, AppAction>) => void,
+  setActions: (actions: Map<string, AppAction>) => void,
   setPhase: (phase: Phase) => void,
   setWarning: (warning: string | undefined) => void,
 ) {
@@ -408,7 +447,7 @@ function createSignOut(
     }
     setBootstrap(undefined);
     setApps([]);
-    setActions({});
+    setActions(new Map());
     setPhase("session-expired");
     setWarning(
       outcome.tokenRevocationRequired ||
@@ -424,13 +463,13 @@ export function useSignOut(
   locale: Locale,
   cancel: () => void,
   setters: CatalogSetters,
-  setActions: (actions: Record<string, AppAction>) => void,
+  setActions: (actions: Map<string, AppAction>) => void,
 ) {
   const [signOutWarning, setSignOutWarning] = useState<string>();
   const signOut = useMemo(
     () =>
       createSignOut(
-        text[locale],
+        copyFor(locale),
         cancel,
         setters.setBootstrap,
         setters.setApps,

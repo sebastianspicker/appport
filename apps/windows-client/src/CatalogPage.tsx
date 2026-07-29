@@ -8,7 +8,7 @@ import { ConfirmationDialog } from "./ConfirmationDialog";
 import { CatalogHeader } from "./CatalogHeader";
 import { CatalogNavigation } from "./CatalogNavigation";
 import { CatalogResults } from "./CatalogResults";
-import { text, type Locale } from "./appCopy";
+import { copyFor, type Locale } from "./appCopy";
 import { native } from "./native";
 import type {
   AppAction,
@@ -20,8 +20,8 @@ import type { PollingState, SourceFilter, View } from "./useAppCatalog";
 
 type Phase = "ready" | ClientProblem;
 export type Catalog = {
-  actionFailures: Record<string, string>;
-  actions: Record<string, AppAction>;
+  actionFailures: ReadonlyMap<string, string>;
+  actions: ReadonlyMap<string, AppAction>;
   apps: AvailableApp[];
   bootstrap: NativeBootstrap | undefined;
   busy: string | undefined;
@@ -30,7 +30,7 @@ export type Catalog = {
   load: (view?: View, showLoading?: boolean) => Promise<void>;
   mounted: MutableRefObject<boolean>;
   phase: Phase;
-  polling: Record<string, PollingState>;
+  polling: ReadonlyMap<string, PollingState>;
   query: string;
   resumeAction: (appId: string) => void;
   rows: AvailableApp[];
@@ -54,7 +54,7 @@ export function CatalogPage({
   catalog: Catalog;
   locale: Locale;
 }) {
-  const copy = text[locale];
+  const copy = copyFor(locale);
   const [confirmation, setConfirmation] = useState<{
     application: AvailableApp;
     opener: HTMLElement;
@@ -97,7 +97,9 @@ export function CatalogPage({
           deviceName={catalog.bootstrap?.device.name ?? copy.currentDevice}
           locale={locale}
           returnFocus={confirmation.opener}
-          onCancel={() => setConfirmation(undefined)}
+          onCancel={() => {
+            setConfirmation(undefined);
+          }}
           onConfirm={() => {
             const application = confirmation.application;
             setConfirmation(undefined);
@@ -116,14 +118,16 @@ function CatalogToolbar({
   catalog: Catalog;
   locale: Locale;
 }) {
-  const copy = text[locale];
+  const copy = copyFor(locale);
   return (
     <section className="toolbar">
       <label>
         {copy.search}
         <input
           value={catalog.query}
-          onChange={(event) => catalog.setQuery(event.target.value)}
+          onChange={(event) => {
+            catalog.setQuery(event.target.value);
+          }}
           placeholder={copy.searchPlaceholder}
         />
       </label>

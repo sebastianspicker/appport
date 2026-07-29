@@ -1,6 +1,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 mod client;
+mod client_support;
 mod dto;
 mod evidence;
 mod journal;
@@ -13,6 +14,7 @@ mod task;
 mod wire;
 
 use std::sync::Arc;
+use tauri::Manager;
 use tokio::sync::Mutex;
 
 #[derive(serde::Serialize)]
@@ -46,6 +48,7 @@ pub struct AppState {
 async fn connect(
     relution_username: String,
     access_token: String,
+    app: tauri::AppHandle,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<wire::ConnectStarted, NativeError> {
     let operation = {
@@ -75,7 +78,7 @@ async fn connect(
         }
         Err(session::SignInCompletionError::Credential(error)) => return Err(native_error(error)),
     }
-    let background_check_registered = std::env::current_exe()
+    let background_check_registered = tauri::process::current_binary(&app.env())
         .ok()
         .and_then(|executable| task::register_background_check(&executable).ok())
         .is_some();

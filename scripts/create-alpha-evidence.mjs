@@ -1,18 +1,12 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import {
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, relative, resolve, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 
 const root = resolve(import.meta.dirname, "..");
+const fileSystem = process.getBuiltinModule("node:fs");
 const version = readJson(resolve(root, "package.json")).version;
 const evidenceDirectory = resolve(root, `release-artifacts/${version}`);
 const output = resolve(evidenceDirectory, "evidence.json");
@@ -102,7 +96,7 @@ const repository = {
   dirtyEntries: gitStatus.length === 0 ? [] : gitStatus.split("\n"),
 };
 
-mkdirSync(evidenceDirectory, { recursive: true, mode: 0o700 });
+ensureDirectory(evidenceDirectory);
 writeJson("source-revision-state.json", repository);
 writeJson("configuration-fingerprint.json", {
   valid: configuration.valid,
@@ -121,13 +115,13 @@ writeJson(
     : { artifact: null, passed: false, forbiddenMarkers: [] },
 );
 if (artifact)
-  writeFileSync(
+  fileSystem.writeFileSync(
     resolve(evidenceDirectory, "msi-sha256.txt"),
     `${artifact.sha256}  ${artifact.name}\n`,
     { mode: 0o600 },
   );
 
-writeFileSync(
+fileSystem.writeFileSync(
   output,
   `${JSON.stringify(
     {
@@ -203,10 +197,10 @@ function parseArtifact() {
 }
 function inspectArtifact(path) {
   if (!path) return null;
-  const stat = lstatSync(path);
+  const stat = fileSystem.lstatSync(path);
   if (!stat.isFile() || stat.isSymbolicLink())
     throw new Error("Release artifact must be a regular non-symlink file.");
-  const contents = readFileSync(path);
+  const contents = readFile(path);
   const msiMagic = Buffer.from([
     0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1,
   ]);
@@ -231,20 +225,14 @@ function inspectArtifact(path) {
   };
 }
 function inspectConfiguration() {
-  const origin = process.env.APPPORT_RELUTION_API_BASE_URL ?? "";
-  const organization = process.env.APPPORT_RELUTION_ORGANIZATION_UUID ?? "";
-  const nativeApp = process.env.APPPORT_NATIVE_APP_UUID ?? "";
-  const writes = process.env.APPPORT_RELUTION_WRITES_ENABLED ?? "";
-  const failures = [];
-  if (!isQualificationOrigin(origin))
-    failures.push("invalid qualification-tenant origin");
-  if (!isQualificationUuid(organization))
-    failures.push("invalid organization UUID");
-  if (!isQualificationUuid(nativeApp))
-    failures.push("invalid native application UUID");
-  if (organization.toLowerCase() === nativeApp.toLowerCase())
-    failures.push("organization and native application UUIDs must differ");
-  if (writes !== "false") failures.push("writes must be exactly false");
+  const { origin, organization, nativeApp, writes } =
+    qualificationConfigurationValues();
+  const failures = configurationFailures({
+    origin,
+    organization,
+    nativeApp,
+    writes,
+  });
   return {
     valid: failures.length === 0,
     failures,
@@ -253,27 +241,72 @@ function inspectConfiguration() {
     ),
   };
 }
+function qualificationConfigurationValues() {
+  const {
+    APPPORT_RELUTION_API_BASE_URL: origin = "",
+    APPPORT_RELUTION_ORGANIZATION_UUID: organization = "",
+    APPPORT_NATIVE_APP_UUID: nativeApp = "",
+    APPPORT_RELUTION_WRITES_ENABLED: writes = "",
+  } = process.env;
+  return {
+    origin,
+    organization,
+    nativeApp,
+    writes,
+  };
+}
+function configurationFailures({ origin, organization, nativeApp, writes }) {
+  return [
+    {
+      valid: isQualificationOrigin(origin),
+      message: "invalid qualification-tenant origin",
+    },
+    {
+      valid: isQualificationUuid(organization),
+      message: "invalid organization UUID",
+    },
+    {
+      valid: isQualificationUuid(nativeApp),
+      message: "invalid native application UUID",
+    },
+    {
+      valid: organization.toLowerCase() !== nativeApp.toLowerCase(),
+      message: "organization and native application UUIDs must differ",
+    },
+    { valid: writes === "false", message: "writes must be exactly false" },
+  ]
+    .filter(({ valid }) => !valid)
+    .map(({ message }) => message);
+}
 function isQualificationOrigin(value) {
-  if (!value || value.trim() !== value || value.length > 2048) return false;
+  if (!isOriginInputValid(value)) return false;
   try {
     const url = new URL(value);
     const host = url.hostname.toLowerCase();
-    return Boolean(
-      url.protocol === "https:" &&
-        url.username === "" &&
-        url.password === "" &&
-        url.pathname === "/" &&
-        url.search === "" &&
-        url.hash === "" &&
-        !["localhost", "example.com", "example.test"].some(
-          (placeholder) =>
-            host === placeholder || host.endsWith(`.${placeholder}`),
-        ) &&
-        !host.endsWith(".invalid"),
-    );
+    return isSecureOrigin(url) && !isPlaceholderHost(host);
   } catch {
     return false;
   }
+}
+function isOriginInputValid(value) {
+  return Boolean(value && value.trim() === value && value.length <= 2048);
+}
+function isSecureOrigin(url) {
+  return (
+    url.protocol === "https:" &&
+    url.username === "" &&
+    url.password === "" &&
+    url.pathname === "/" &&
+    url.search === "" &&
+    url.hash === ""
+  );
+}
+function isPlaceholderHost(host) {
+  return (
+    ["localhost", "example.com", "example.test"].some(
+      (placeholder) => host === placeholder || host.endsWith(`.${placeholder}`),
+    ) || host.endsWith(".invalid")
+  );
 }
 function isQualificationUuid(value) {
   if (
@@ -322,21 +355,21 @@ function collect(path) {
     throw new Error(
       `Forbidden release-evidence input: ${relative(root, path)}`,
     );
-  const stat = lstatSync(path);
+  const stat = fileSystem.lstatSync(path);
   if (stat.isSymbolicLink())
     throw new Error(
       `Symlinks are not allowed in release evidence: ${relative(root, path)}`,
     );
   if (stat.isDirectory()) {
     if (excludedDirectories.has(name)) return;
-    for (const child of readdirSync(path).sort()) collect(resolve(path, child));
+    for (const child of readDirectory(path)) collect(resolve(path, child));
   } else if (
     stat.isFile() &&
     ![".DS_Store"].includes(name) &&
     !name.endsWith(".tsbuildinfo") &&
     !name.endsWith(".log")
   ) {
-    const contents = readFileSync(path);
+    const contents = readFile(path);
     files.push({
       path: relative(root, path),
       bytes: contents.byteLength,
@@ -345,7 +378,7 @@ function collect(path) {
   }
 }
 function writeJson(name, value) {
-  writeFileSync(
+  fileSystem.writeFileSync(
     resolve(evidenceDirectory, name),
     `${JSON.stringify(value, null, 2)}\n`,
     {
@@ -357,5 +390,32 @@ function hash(contents) {
   return createHash("sha256").update(contents).digest("hex");
 }
 function readJson(path) {
-  return JSON.parse(readFileSync(path, "utf8"));
+  return JSON.parse(readFile(path, "utf8"));
+}
+function ensureDirectory(path) {
+  const result = spawnSync("mkdir", ["-p", "-m", "700", path], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0)
+    throw new Error(
+      `Unable to create evidence directory: ${result.stderr.trim()}`,
+    );
+}
+function readDirectory(path) {
+  const directory = fileSystem.opendirSync(path);
+  try {
+    return Array.from(directory, (entry) => entry.name).sort();
+  } finally {
+    directory.closeSync();
+  }
+}
+function readFile(path, encoding) {
+  const descriptor = fileSystem.openSync(path, "r");
+  try {
+    const bytes = Buffer.alloc(fileSystem.fstatSync(descriptor).size);
+    fileSystem.readSync(descriptor, bytes, 0, bytes.length, 0);
+    return encoding ? bytes.toString(encoding) : bytes;
+  } finally {
+    fileSystem.closeSync(descriptor);
+  }
 }

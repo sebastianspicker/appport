@@ -4,6 +4,12 @@ Appport is a pnpm workspace for a standalone Windows client. The product is a Ta
 
 The client connects directly to a fixed HTTPS Relution API endpoint. The Windows WebView does not make network requests; native Rust code owns authenticated requests and local credential handling.
 
+## Interface mockup
+
+![Appport application catalog mockup](docs/assets/appport-catalog-mockup.svg)
+
+This mockup illustrates the catalog layout. It does not contain qualification-tenant or managed-device data and is not release evidence.
+
 ## Workspace
 
     apps/windows-client/  Tauri, Rust, React, and Vite client

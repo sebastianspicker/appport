@@ -1,20 +1,20 @@
 import { useMemo } from "react";
-import { CatalogPage, type Catalog } from "./CatalogPage";
+import { CatalogPage } from "./CatalogPage";
 import { localeFor } from "./appCopy";
+import { buildCatalog } from "./buildCatalog";
 import {
   useActionWorkflow,
   useAppsState,
   useBootstrapState,
   useCatalogFilters,
   useCatalogLoading,
-  useConnect,
   useMounted,
   useOperationGeneration,
   usePhaseState,
   usePollTimerRegistry,
-  useSignOut,
   useViewSelection,
 } from "./useAppCatalog";
+import { useClientOperations } from "./useClientOperations";
 
 export function App() {
   const locale = localeFor(navigator.language);
@@ -31,43 +31,35 @@ export function App() {
   );
   const load = useCatalogLoading(view, mounted, operations.generation, setters);
   const filters = useCatalogFilters(apps, locale);
-  const actions = useActionWorkflow(
+  const { actions, connect, signOut } = useClientOperations(
     locale,
     mounted,
     operations.generation,
     load,
     pollTimers,
-  );
-  const connect = useConnect(
-    locale,
-    load,
-    operations.cancel,
-    operations.generation,
-    setPhase,
-  );
-  const signOut = useSignOut(
-    locale,
     operations.cancel,
     setters,
-    actions.setActions,
   );
-  const catalog: Catalog = {
-    ...filters,
-    ...actions,
-    apps,
-    bootstrap,
-    connect: connect.connect,
-    iconSession: operations.iconSession,
-    load,
-    mounted,
-    phase,
-    setApps,
-    setBootstrap,
-    setPhase,
-    setView,
-    signOut: signOut.signOut,
-    signOutWarning: signOut.signOutWarning ?? connect.backgroundCheckWarning,
-    view,
-  };
-  return <CatalogPage catalog={catalog} locale={locale} />;
+  return (
+    <CatalogPage
+      catalog={buildCatalog({
+        actions,
+        apps,
+        bootstrap,
+        connect,
+        filters,
+        load,
+        mounted,
+        operations,
+        phase,
+        setApps,
+        setBootstrap,
+        setPhase,
+        setView,
+        signOut,
+        view,
+      })}
+      locale={locale}
+    />
+  );
 }

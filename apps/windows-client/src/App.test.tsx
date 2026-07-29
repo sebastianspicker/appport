@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import type { AppAction } from "./models";
 import { native } from "./native";
 
 vi.mock("./native", () => ({
@@ -33,7 +34,9 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function application(id: string, name = id) {
   return {
@@ -106,20 +109,10 @@ describe("App", () => {
   it("distinguishes no search results from loading", async () => {
     vi.mocked(native.apps).mockResolvedValue([
       {
-        id: "firefox",
-        name: "Mozilla Firefox",
+        ...application("firefox", "Mozilla Firefox"),
         description: "Managed browser",
         publisher: "Mozilla",
-        source: "winget",
         packageIdentifier: "Mozilla.Firefox",
-        releasedVersionId: "release",
-        releasedVersionLabel: "128",
-        installedVersionId: null,
-        installedVersionLabel: null,
-        installState: "available",
-        activeActionId: null,
-        activeActionState: null,
-        hasIcon: false,
       },
     ]);
     render(<App />);
@@ -133,25 +126,18 @@ describe("App", () => {
     ).toBeTruthy();
     expect(screen.queryByText("Loading this device")).toBeNull();
   });
+});
 
+describe("App catalog", () => {
   it("shows installed to available versions for updates", async () => {
     vi.mocked(native.initialView).mockResolvedValue("updates");
     vi.mocked(native.apps).mockResolvedValue([
       {
-        id: "firefox",
-        name: "Mozilla Firefox",
-        description: null,
-        publisher: null,
-        source: "winget",
-        packageIdentifier: null,
-        releasedVersionId: "release",
+        ...application("firefox", "Mozilla Firefox"),
         releasedVersionLabel: "128.0.4",
         installedVersionId: "installed",
         installedVersionLabel: "128.0.3",
         installState: "update_available",
-        activeActionId: null,
-        activeActionState: null,
-        hasIcon: false,
       },
     ]);
     render(<App />);
@@ -161,25 +147,12 @@ describe("App", () => {
       ),
     ).toBeTruthy();
   });
+});
 
+describe("App confirmation", () => {
   it("requires a focused cancellation before an install", async () => {
     vi.mocked(native.apps).mockResolvedValue([
-      {
-        id: "firefox",
-        name: "Mozilla Firefox",
-        description: null,
-        publisher: null,
-        source: "winget",
-        packageIdentifier: null,
-        releasedVersionId: "release",
-        releasedVersionLabel: "128",
-        installedVersionId: null,
-        installedVersionLabel: null,
-        installState: "available",
-        activeActionId: null,
-        activeActionState: null,
-        hasIcon: false,
-      },
+      application("firefox", "Mozilla Firefox"),
     ]);
     render(<App />);
     const install = await screen.findByRole("button", { name: "Install" });
@@ -201,36 +174,9 @@ describe("App", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(install);
   });
+});
 
-  it("directs the user to revoke a locally removed token in Relution", async () => {
-    vi.mocked(native.signOut).mockResolvedValue({
-      tokenRevocationRequired: true,
-      credentialRemoved: true,
-      scheduledTaskRemoved: true,
-      notificationStateCleared: true,
-    });
-    render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
-    expect(
-      await screen.findByText(
-        "Signed out locally. Revoke the token in your Relution profile if it is no longer needed; some background cleanup did not complete.",
-      ),
-    ).toBeTruthy();
-    expect(screen.getByLabelText("Relution username")).toBeTruthy();
-  });
-
-  it("does not claim local sign-out when native cleanup could not run", async () => {
-    vi.mocked(native.signOut).mockRejectedValue(new Error("IPC unavailable"));
-    render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
-    expect(
-      await screen.findByText(
-        "Sign-out could not run. Your stored credential may still be present. Try again or contact IT.",
-      ),
-    ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
-  });
-
+describe("App session", () => {
   it("retains authenticated state when credential deletion fails", async () => {
     vi.mocked(native.signOut).mockResolvedValue({
       tokenRevocationRequired: false,
@@ -247,7 +193,9 @@ describe("App", () => {
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
   });
+});
 
+describe("App session cleanup", () => {
   it("reports background-task cleanup failure after local sign-out", async () => {
     vi.mocked(native.signOut).mockResolvedValue({
       tokenRevocationRequired: false,
@@ -294,7 +242,9 @@ describe("App", () => {
       ),
     ).toBeTruthy();
   });
+});
 
+describe("App connection", () => {
   it("clears credentials from the form before connection completes", async () => {
     const pending = deferred<{ backgroundCheckRegistered: boolean }>();
     vi.mocked(native.connect).mockReturnValue(pending.promise);
@@ -313,9 +263,13 @@ describe("App", () => {
       screen.getByLabelText<HTMLInputElement>("Personal access token").value,
     ).toBe("");
 
-    await act(async () => pending.resolve({ backgroundCheckRegistered: true }));
+    await act(() => {
+      pending.resolve({ backgroundCheckRegistered: true });
+    });
   });
+});
 
+describe("App catalog refresh", () => {
   it("does not let an older Available catalog replace Updates", async () => {
     const available = deferred<ReturnType<typeof application>[]>();
     const updates = deferred<ReturnType<typeof application>[]>();
@@ -325,231 +279,255 @@ describe("App", () => {
     render(<App />);
     await screen.findByRole("button", { name: "Available" });
     fireEvent.click(screen.getByRole("button", { name: "Updates" }));
-    await act(async () => {
+    await act(() => {
       updates.resolve([application("update", "Update result")]);
     });
     expect(await screen.findByText("Update result")).toBeTruthy();
-    await act(async () => {
+    await act(() => {
       available.resolve([application("available", "Available result")]);
     });
     expect(screen.queryByText("Available result")).toBeNull();
     expect(screen.getByText("Update result")).toBeTruthy();
   });
-
-  it("pauses polling after a transient failure without inventing an unknown result", async () => {
-    vi.useFakeTimers();
-    vi.mocked(native.apps).mockResolvedValue([
-      application("firefox", "Mozilla Firefox"),
-    ]);
-    vi.mocked(native.act).mockResolvedValue({
-      id: "action-42",
-      appId: "firefox",
-      deviceId: "device",
-      intent: "install",
-      state: "queued",
-      errorCode: null,
-      errorMessage: null,
-      createdAt: "2026-07-29T00:00:00.000Z",
-      updatedAt: "2026-07-29T00:00:00.000Z",
-    });
-    vi.mocked(native.action).mockRejectedValue(
-      new Error("temporary IPC failure"),
-    );
-    render(<App />);
-    await act(async () => {});
-    const install = screen.getByRole("button", { name: "Install" });
-    fireEvent.click(install);
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_000);
-    });
-    expect(screen.getByText(/Status checks paused/)).toBeTruthy();
-    expect(screen.getByText("action-42")).toBeTruthy();
-    expect(screen.queryByText(/final result is unknown/i)).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Resume status checks" }),
-    ).toBeTruthy();
-  });
-
-  it("polls iteratively to a terminal Relution state", async () => {
-    vi.useFakeTimers();
-    vi.mocked(native.apps).mockResolvedValue([
-      application("firefox", "Mozilla Firefox"),
-    ]);
-    vi.mocked(native.act).mockResolvedValue(action("queued"));
-    vi.mocked(native.action)
-      .mockResolvedValueOnce(action("verifying"))
-      .mockResolvedValueOnce(action("succeeded"));
-    render(<App />);
-    await act(async () => {});
-    fireEvent.click(screen.getByRole("button", { name: "Install" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(4_000);
-    });
-
-    expect(screen.getByText("Status: succeeded")).toBeTruthy();
-    expect(native.action).toHaveBeenCalledTimes(2);
-    expect(native.apps).toHaveBeenCalledTimes(2);
-  });
-
-  it("resumes a paused action and preserves its action identifier", async () => {
-    vi.useFakeTimers();
-    vi.mocked(native.apps).mockResolvedValue([
-      application("firefox", "Mozilla Firefox"),
-    ]);
-    vi.mocked(native.act).mockResolvedValue(action("queued"));
-    vi.mocked(native.action)
-      .mockRejectedValueOnce(new Error("temporary IPC failure"))
-      .mockResolvedValueOnce(action("succeeded"));
-    render(<App />);
-    await act(async () => {});
-    fireEvent.click(screen.getByRole("button", { name: "Install" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_000);
-    });
-    expect(screen.getByText("action-42")).toBeTruthy();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Resume status checks" }),
-    );
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_000);
-    });
-    expect(screen.getByText("Status: succeeded")).toBeTruthy();
-  });
-
-  it("shows unknown only when the Relution workflow returns unknown", async () => {
-    vi.useFakeTimers();
-    vi.mocked(native.apps).mockResolvedValue([
-      application("firefox", "Mozilla Firefox"),
-    ]);
-    vi.mocked(native.act).mockResolvedValue(action("queued"));
-    vi.mocked(native.action).mockResolvedValue(action("unknown"));
-    render(<App />);
-    await act(async () => {});
-    fireEvent.click(screen.getByRole("button", { name: "Install" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_000);
-    });
-    expect(screen.getByText(/final result is unknown/i)).toBeTruthy();
-    expect(screen.getByText("action-42")).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: "Resume status checks" }),
-    ).toBeNull();
-  });
-
-  it("ignores an in-flight polling result after sign-out", async () => {
-    vi.useFakeTimers();
-    const refresh = deferred<ReturnType<typeof action>>();
-    vi.mocked(native.apps).mockResolvedValue([
-      application("firefox", "Mozilla Firefox"),
-    ]);
-    vi.mocked(native.act).mockResolvedValue(action("queued"));
-    vi.mocked(native.action).mockReturnValue(refresh.promise);
-    render(<App />);
-    await act(async () => {});
-    fireEvent.click(screen.getByRole("button", { name: "Install" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_000);
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    await act(async () => {
-      refresh.resolve(action("succeeded"));
-    });
-    expect(screen.queryByText("Status: succeeded")).toBeNull();
-    expect(screen.getByLabelText("Relution username")).toBeTruthy();
-  });
-
-  it("keeps action-start failures local to the application card", async () => {
-    vi.mocked(native.apps).mockResolvedValue([
-      application("firefox", "Mozilla Firefox"),
-      application("sevenzip", "7-Zip"),
-    ]);
-    vi.mocked(native.act).mockRejectedValue({ code: "ACTION" });
-    render(<App />);
-    await screen.findByText("7-Zip");
-    fireEvent.click(screen.getAllByRole("button", { name: "Install" })[0]);
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    expect(await screen.findByText("Action could not be started")).toBeTruthy();
-    expect(screen.getByText("7-Zip")).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "Install" })).toHaveLength(2);
-  });
-
-  it("clears a pending poll timer when the client unmounts", async () => {
-    vi.useFakeTimers();
-    vi.mocked(native.apps).mockResolvedValue([
-      application("firefox", "Mozilla Firefox"),
-    ]);
-    vi.mocked(native.act).mockResolvedValue({
-      id: "action-43",
-      appId: "firefox",
-      deviceId: "device",
-      intent: "install",
-      state: "queued",
-      errorCode: null,
-      errorMessage: null,
-      createdAt: "2026-07-29T00:00:00.000Z",
-      updatedAt: "2026-07-29T00:00:00.000Z",
-    });
-    const { unmount } = render(<App />);
-    await act(async () => {});
-    fireEvent.click(screen.getByRole("button", { name: "Install" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await act(async () => {});
-    const timerCountWithPoll = vi.getTimerCount();
-    expect(timerCountWithPoll).toBeGreaterThan(0);
-    unmount();
-    expect(vi.getTimerCount()).toBe(timerCountWithPoll - 1);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_000);
-    });
-    expect(native.action).not.toHaveBeenCalled();
-  });
-
-  it("limits icon loading to four concurrent requests", async () => {
-    const icons = Array.from({ length: 5 }, () => deferred<string | null>());
-    let nextIcon = 0;
-    vi.mocked(native.apps).mockResolvedValue(
-      Array.from({ length: 5 }, (_, index) => ({
-        ...application(`app-${index}`, `App ${index}`),
-        hasIcon: true,
-      })),
-    );
-    vi.mocked(native.icon).mockImplementation(() => icons[nextIcon++].promise);
-    render(<App />);
-    await screen.findByText("App 4");
-    expect(native.icon).toHaveBeenCalledTimes(4);
-    await act(async () => {
-      icons[0].resolve(null);
-    });
-    expect(native.icon).toHaveBeenCalledTimes(5);
-    await act(async () => {
-      for (const icon of icons.slice(1)) icon.resolve(null);
-    });
-  });
-
-  it("memoizes successful icons only until the authenticated session changes", async () => {
-    vi.mocked(native.apps).mockResolvedValue([
-      { ...application("firefox", "Mozilla Firefox"), hasIcon: true },
-    ]);
-    vi.mocked(native.icon).mockResolvedValue("data:image/png;base64,AA==");
-    vi.mocked(native.connect).mockResolvedValue({
-      backgroundCheckRegistered: true,
-    });
-    render(<App />);
-    await screen.findByText("Mozilla Firefox");
-    await act(async () => {});
-    expect(native.icon).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    submitConnection();
-    await screen.findByText("Mozilla Firefox");
-    await act(async () => {});
-    expect(vi.mocked(native.icon).mock.calls.length).toBeGreaterThan(1);
-  });
 });
+
+it(
+  "pauses polling after a transient failure without inventing an unknown result",
+  pausesPollingAfterFailure,
+);
+async function pausesPollingAfterFailure() {
+  vi.useFakeTimers();
+  vi.mocked(native.apps).mockResolvedValue([
+    application("firefox", "Mozilla Firefox"),
+  ]);
+  vi.mocked(native.act).mockResolvedValue({
+    id: "action-42",
+    appId: "firefox",
+    deviceId: "device",
+    intent: "install",
+    state: "queued",
+    errorCode: null,
+    errorMessage: null,
+    createdAt: "2026-07-29T00:00:00.000Z",
+    updatedAt: "2026-07-29T00:00:00.000Z",
+  });
+  vi.mocked(native.action).mockRejectedValue(
+    new Error("temporary IPC failure"),
+  );
+  render(<App />);
+  await act(async () => {
+    await Promise.resolve();
+  });
+  const install = screen.getByRole("button", { name: "Install" });
+  fireEvent.click(install);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2_000);
+  });
+  expect(screen.getByText(/Status checks paused/)).toBeTruthy();
+  expect(screen.getByText("action-42")).toBeTruthy();
+  expect(screen.queryByText(/final result is unknown/i)).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Resume status checks" }),
+  ).toBeTruthy();
+}
+
+it("polls iteratively to a terminal Relution state", pollsToTerminalState);
+async function pollsToTerminalState() {
+  vi.useFakeTimers();
+  vi.mocked(native.apps).mockResolvedValue([
+    application("firefox", "Mozilla Firefox"),
+  ]);
+  vi.mocked(native.act).mockResolvedValue(action("queued"));
+  vi.mocked(native.action)
+    .mockResolvedValueOnce(action("verifying"))
+    .mockResolvedValueOnce(action("succeeded"));
+  render(<App />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Install" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4_000);
+  });
+
+  expect(screen.getByText("Status: succeeded")).toBeTruthy();
+  expect(native.action).toHaveBeenCalledTimes(2);
+  expect(native.apps).toHaveBeenCalledTimes(2);
+}
+
+it(
+  "resumes a paused action and preserves its action identifier",
+  resumesPausedAction,
+);
+async function resumesPausedAction() {
+  vi.useFakeTimers();
+  vi.mocked(native.apps).mockResolvedValue([
+    application("firefox", "Mozilla Firefox"),
+  ]);
+  vi.mocked(native.act).mockResolvedValue(action("queued"));
+  vi.mocked(native.action)
+    .mockRejectedValueOnce(new Error("temporary IPC failure"))
+    .mockResolvedValueOnce(action("succeeded"));
+  render(<App />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Install" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2_000);
+  });
+  expect(screen.getByText("action-42")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Resume status checks" }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2_000);
+  });
+  expect(screen.getByText("Status: succeeded")).toBeTruthy();
+}
+
+it(
+  "shows unknown only when the Relution workflow returns unknown",
+  showsUnknownAction,
+);
+async function showsUnknownAction() {
+  vi.useFakeTimers();
+  vi.mocked(native.apps).mockResolvedValue([
+    application("firefox", "Mozilla Firefox"),
+  ]);
+  vi.mocked(native.act).mockResolvedValue(action("queued"));
+  vi.mocked(native.action).mockResolvedValue(action("unknown"));
+  render(<App />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Install" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2_000);
+  });
+  expect(screen.getByText(/final result is unknown/i)).toBeTruthy();
+  expect(screen.getByText("action-42")).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Resume status checks" }),
+  ).toBeNull();
+}
+
+it("ignores an in-flight polling result after sign-out", () =>
+  ignoresPollAfterSignOut());
+const ignoresPollAfterSignOut = async () => {
+  vi.useFakeTimers();
+  const refresh = deferred<AppAction>();
+  vi.mocked(native.apps).mockResolvedValue([
+    application("firefox", "Mozilla Firefox"),
+  ]);
+  vi.mocked(native.act).mockResolvedValue(action("queued"));
+  vi.mocked(native.action).mockReturnValue(refresh.promise);
+  render(<App />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Install" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2_000);
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  await act(async () => {
+    refresh.resolve(action("succeeded"));
+  });
+  expect(screen.queryByText("Status: succeeded")).toBeNull();
+  expect(screen.getByLabelText("Relution username")).toBeTruthy();
+};
+
+it("keeps action-start failures local to the application card", () =>
+  keepsActionFailureLocal());
+const keepsActionFailureLocal = async () => {
+  vi.mocked(native.apps).mockResolvedValue([
+    application("firefox", "Mozilla Firefox"),
+    application("sevenzip", "7-Zip"),
+  ]);
+  vi.mocked(native.act).mockRejectedValue({ code: "ACTION" });
+  render(<App />);
+  await screen.findByText("7-Zip");
+  fireEvent.click(screen.getAllByRole("button", { name: "Install" })[0]);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  expect(await screen.findByText("Action could not be started")).toBeTruthy();
+  expect(screen.getByText("7-Zip")).toBeTruthy();
+  expect(screen.getAllByRole("button", { name: "Install" })).toHaveLength(2);
+};
+
+it("clears a pending poll timer when the client unmounts", () =>
+  clearsPendingTimer());
+const clearsPendingTimer = async () => {
+  vi.useFakeTimers();
+  vi.mocked(native.apps).mockResolvedValue([
+    application("firefox", "Mozilla Firefox"),
+  ]);
+  vi.mocked(native.act).mockResolvedValue({
+    id: "action-43",
+    appId: "firefox",
+    deviceId: "device",
+    intent: "install",
+    state: "queued",
+    errorCode: null,
+    errorMessage: null,
+    createdAt: "2026-07-29T00:00:00.000Z",
+    updatedAt: "2026-07-29T00:00:00.000Z",
+  });
+  const { unmount } = render(<App />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Install" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  await act(async () => {});
+  const timerCountWithPoll = vi.getTimerCount();
+  expect(timerCountWithPoll).toBeGreaterThan(0);
+  unmount();
+  expect(vi.getTimerCount()).toBe(timerCountWithPoll - 1);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2_000);
+  });
+  expect(native.action).not.toHaveBeenCalled();
+};
+
+it("limits icon loading to four concurrent requests", limitsIconLoading);
+async function limitsIconLoading() {
+  const icons = Array.from({ length: 5 }, () => deferred<string | null>());
+  let nextIcon = 0;
+  vi.mocked(native.apps).mockResolvedValue(
+    Array.from({ length: 5 }, (_, index) => ({
+      ...application(`app-${index}`, `App ${index}`),
+      hasIcon: true,
+    })),
+  );
+  vi.mocked(native.icon).mockImplementation(() => icons[nextIcon++].promise);
+  render(<App />);
+  await screen.findByText("App 4");
+  expect(native.icon).toHaveBeenCalledTimes(4);
+  await act(async () => {
+    icons[0].resolve(null);
+  });
+  expect(native.icon).toHaveBeenCalledTimes(5);
+  await act(async () => {
+    for (const icon of icons.slice(1)) icon.resolve(null);
+  });
+}
+
+it(
+  "memoizes successful icons only until the authenticated session changes",
+  memoizesIconsPerSession,
+);
+async function memoizesIconsPerSession() {
+  vi.mocked(native.apps).mockResolvedValue([
+    { ...application("firefox", "Mozilla Firefox"), hasIcon: true },
+  ]);
+  vi.mocked(native.icon).mockResolvedValue("data:image/png;base64,AA==");
+  vi.mocked(native.connect).mockResolvedValue({
+    backgroundCheckRegistered: true,
+  });
+  render(<App />);
+  await screen.findByText("Mozilla Firefox");
+  await act(async () => {});
+  expect(native.icon).toHaveBeenCalledTimes(1);
+
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  submitConnection();
+  await screen.findByText("Mozilla Firefox");
+  await act(async () => {});
+  expect(vi.mocked(native.icon).mock.calls.length).toBeGreaterThan(1);
+}

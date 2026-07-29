@@ -1,4 +1,4 @@
-import { text, type Locale } from "./appCopy";
+import { copyFor, type Locale } from "./appCopy";
 import { AppIcon } from "./AppIcon";
 import { AppActionState } from "./AppActionState";
 import type { AppAction, AvailableApp } from "./models";
@@ -25,7 +25,7 @@ export function AppCard({
   polling?: PollingState;
   onResume: (appId: string) => void;
 }) {
-  const copy = text[locale];
+  const copy = copyFor(locale);
   return (
     <article className="card">
       <div className="card-heading">

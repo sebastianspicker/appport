@@ -20,6 +20,12 @@ struct Report {
     destructive_probes: &'static str,
     checks: Vec<Check>,
 }
+struct QualificationInput {
+    device: String,
+    user_a_token: String,
+    user_b_token: String,
+    confirmed: bool,
+}
 fn prompt(label: &str) -> Result<String, String> {
     eprint!("{label}: ");
     io::stderr().flush().map_err(|_| "console unavailable")?;
@@ -34,6 +40,7 @@ fn prompt(label: &str) -> Result<String, String> {
         Ok(s)
     }
 }
+#[cfg(windows)]
 fn token(label: &str) -> Result<String, String> {
     eprint!("{label}: ");
     io::stderr().flush().map_err(|_| "console unavailable")?;
@@ -44,6 +51,11 @@ fn token(label: &str) -> Result<String, String> {
         Ok(s)
     }
 }
+
+#[cfg(not(windows))]
+fn token(label: &str) -> Result<String, String> {
+    prompt(label)
+}
 fn base() -> Result<(Url, String), String> {
     let base = Url::parse(
         option_env!("APPPORT_RELUTION_API_BASE_URL").ok_or("embedded base unavailable")?,
@@ -52,16 +64,18 @@ fn base() -> Result<(Url, String), String> {
     let org = option_env!("APPPORT_RELUTION_ORGANIZATION_UUID")
         .ok_or("embedded organization unavailable")?
         .to_owned();
-    if base.scheme() != "https"
-        || base.host_str().is_none()
-        || base.username() != ""
-        || base.query().is_some()
-        || base.fragment().is_some()
-        || base.path() != "/"
-    {
+    if !fixed_https(&base) {
         return Err("embedded base is not fixed HTTPS".into());
     }
     Ok((base, org))
+}
+fn fixed_https(base: &Url) -> bool {
+    base.scheme() == "https"
+        && base.host_str().is_some()
+        && base.username().is_empty()
+        && base.query().is_none()
+        && base.fragment().is_none()
+        && base.path() == "/"
 }
 async fn denied(client: &Client, base: &Url, org: &str, token: &str, path: &str) -> Check {
     let name = path.to_owned();
@@ -119,76 +133,117 @@ fn report(checks: Vec<Check>, status: &'static str) -> Report {
         checks,
     }
 }
-fn main() {
-    let result = (|| -> Result<Report, String> {
-        let (base, org) = base()?;
-        let _user_a = prompt("Ordinary user A username")?;
-        let _user_b = prompt("Ordinary user B username")?;
-        let device_b = prompt("Disposable user B device UUID")?;
-        let a = token("Ordinary user A Relution access token")?;
-        let b = token("Ordinary user B Relution access token")?;
-        let confirmation = prompt(
-            "Type QUALIFICATION_READ_ONLY to confirm that this run is restricted to read-only denial checks",
-        )?;
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|_| "runtime unavailable")?;
-        let client = Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|_| "client unavailable")?;
-        let mut checks = Vec::new();
-        if confirmation != "QUALIFICATION_READ_ONLY" {
-            checks.push(Check {
-                name: "disposable_resource_confirmation".into(),
-                qualified: false,
-                reason: "negative mutation probes not authorized".into(),
-            });
-            return Ok(report(checks, "unqualified_confirmation_required"));
-        }
-        checks.push(rt.block_on(denied(
-            &client,
-            &base,
-            &org,
-            &b,
+fn unavailable_destructive_checks() -> Vec<Check> {
+    [
+        "unreleased_version_denied",
+        "unapproved_application_denied",
+        "substituted_version_denied",
+        "uninstall_wipe_script_shell_policy_user_app_management_denied",
+        "individual_action_attribution",
+        "permission_removal_propagation",
+        "reassignment_propagation",
+        "token_revocation_propagation",
+        "account_disablement_propagation",
+    ]
+    .into_iter()
+    .map(|name| Check {
+        name: name.into(),
+        qualified: false,
+        reason: "requires explicit destructive probe plan; writes remain disabled".into(),
+    })
+    .collect()
+}
+fn confirmation_report() -> Report {
+    report(
+        vec![Check {
+            name: "disposable_resource_confirmation".into(),
+            qualified: false,
+            reason: "negative mutation probes not authorized".into(),
+        }],
+        "unqualified_confirmation_required",
+    )
+}
+fn live_checks(
+    rt: &tokio::runtime::Runtime,
+    client: &Client,
+    base: &Url,
+    org: &str,
+    token: &str,
+    device: &str,
+) -> Vec<Check> {
+    let mut checks = vec![
+        rt.block_on(denied(
+            client,
+            base,
+            org,
+            token,
             "/api/management/v1/security/users/baseInfo",
-        )));
-        checks.push(rt.block_on(denied(
-            &client,
-            &base,
-            &org,
-            &b,
-            &format!("/api/management/v1/devices/{device_b}/installedApps"),
-        )));
-        checks.push(rt.block_on(denied(
-            &client,
-            &base,
-            &org,
-            &b,
-            &format!("/api/management/v1/devices/{device_b}/actions"),
-        )));
-        for name in [
-            "unreleased_version_denied",
-            "unapproved_application_denied",
-            "substituted_version_denied",
-            "uninstall_wipe_script_shell_policy_user_app_management_denied",
-            "individual_action_attribution",
-            "permission_removal_propagation",
-            "reassignment_propagation",
-            "token_revocation_propagation",
-            "account_disablement_propagation",
-        ] {
-            checks.push(Check {
-                name: name.into(),
-                qualified: false,
-                reason: "requires explicit destructive probe plan; writes remain disabled".into(),
-            })
-        }
-        drop(a);
-        drop(b);
-        Ok(report(checks, "unqualified_incomplete_live_probes"))
-    })();
+        )),
+        rt.block_on(denied(
+            client,
+            base,
+            org,
+            token,
+            &format!("/api/management/v1/devices/{device}/installedApps"),
+        )),
+        rt.block_on(denied(
+            client,
+            base,
+            org,
+            token,
+            &format!("/api/management/v1/devices/{device}/actions"),
+        )),
+    ];
+    checks.extend(unavailable_destructive_checks());
+    checks
+}
+fn qualify() -> Result<Report, String> {
+    let (base, org) = base()?;
+    let input = qualification_input()?;
+    if !input.confirmed {
+        return Ok(confirmation_report());
+    }
+    let rt = qualification_runtime()?;
+    let client = qualification_client()?;
+    let checks = live_checks(
+        &rt,
+        &client,
+        &base,
+        &org,
+        &input.user_b_token,
+        &input.device,
+    );
+    drop(input.user_a_token);
+    Ok(report(checks, "unqualified_incomplete_live_probes"))
+}
+fn qualification_input() -> Result<QualificationInput, String> {
+    let _user_a = prompt("Ordinary user A username")?;
+    let _user_b = prompt("Ordinary user B username")?;
+    let device = prompt("Disposable user B device UUID")?;
+    let user_a_token = token("Ordinary user A Relution access token")?;
+    let user_b_token = token("Ordinary user B Relution access token")?;
+    let confirmed = prompt("Type QUALIFICATION_READ_ONLY to confirm that this run is restricted to read-only denial checks")? == "QUALIFICATION_READ_ONLY";
+    Ok(QualificationInput {
+        device,
+        user_a_token,
+        user_b_token,
+        confirmed,
+    })
+}
+fn qualification_runtime() -> Result<tokio::runtime::Runtime, String> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|_| "runtime unavailable".into())
+}
+fn qualification_client() -> Result<Client, String> {
+    Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "client unavailable".into())
+}
+fn main() {
+    let result = qualify();
     let output = match result {
         Ok(v) => v,
         Err(reason) => report(

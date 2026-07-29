@@ -27,7 +27,9 @@ function drainIconPool() {
           successfulIcons.set(request.appId, value);
         request.resolve(request.session === session ? value : null);
       })
-      .catch(() => request.resolve(null))
+      .catch(() => {
+        request.resolve(null);
+      })
       .finally(() => {
         activeLoads -= 1;
         drainIconPool();

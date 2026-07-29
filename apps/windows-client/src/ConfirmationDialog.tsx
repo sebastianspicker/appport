@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { text, type Locale } from "./appCopy";
+import { copyFor, type Locale } from "./appCopy";
 import type { AvailableApp } from "./models";
 import { handleDialogKeyDown } from "./dialogFocus";
 
@@ -18,7 +18,7 @@ export function ConfirmationDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const copy = text[locale];
+  const copy = copyFor(locale);
   const dialogRef = useRef<HTMLElement>(null);
   const intent = application.installedVersionId
     ? copy.confirmUpdate

@@ -126,7 +126,50 @@ pub fn record(id: &str, _app: &str, state: &str) -> Result<(), String> {
 }
 pub fn action(id: &str) -> Result<Option<Action>, String> {
     let c = open()?;
-    c.query_row("SELECT id,device_id,app_id,version_id,package_id,intent,baseline,correlation,state,error_code,error_message,created_at,updated_at FROM actions WHERE id=?1",params![id],|r|Ok(Action{id:r.get(0)?,device_id:r.get(1)?,app_id:r.get(2)?,version_id:r.get(3)?,package_id:r.get(4)?,intent:r.get(5)?,baseline:r.get(6)?,correlation:r.get(7)?,state:r.get(8)?,error_code:r.get(9)?,error_message:r.get(10)?,created_at:r.get(11)?,updated_at:r.get(12)?})).optional().map_err(|_|"unknown: action journal is unavailable".into())
+    c.query_row(
+        "SELECT id,device_id,app_id,version_id,package_id,intent,baseline,correlation,state,error_code,error_message,created_at,updated_at FROM actions WHERE id=?1",
+        params![id],
+        action_from_row,
+    )
+    .optional()
+    .map_err(|_| "unknown: action journal is unavailable".into())
+}
+fn action_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Action> {
+    let identity = action_identity(row)?;
+    let detail = action_detail(row)?;
+    let state = action_state(row)?;
+    let times = action_times(row)?;
+    Ok(Action {
+        id: identity.0,
+        device_id: identity.1,
+        app_id: identity.2,
+        version_id: identity.3,
+        package_id: detail.0,
+        intent: detail.1,
+        baseline: detail.2,
+        correlation: detail.3,
+        state: state.0,
+        error_code: state.1,
+        error_message: state.2,
+        created_at: times.0,
+        updated_at: times.1,
+    })
+}
+fn action_identity(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, String, String, String)> {
+    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+}
+fn action_detail(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<(Option<String>, String, String, Option<String>)> {
+    Ok((row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?))
+}
+fn action_state(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<(String, Option<String>, Option<String>)> {
+    Ok((row.get(8)?, row.get(9)?, row.get(10)?))
+}
+fn action_times(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, i64)> {
+    Ok((row.get(11)?, row.get(12)?))
 }
 fn prune(c: &Connection, t: i64) -> Result<(), String> {
     c.execute(
@@ -176,7 +219,10 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn journal_acl_removes_broad_current_machine_grants() {
-        let directory = std::env::temp_dir().join(format!("appport-acl-{}", now()));
+        let directory = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(format!("appport-acl-test-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         secure_current_user(&directory).unwrap();
         let sid = current_user_sid().unwrap();

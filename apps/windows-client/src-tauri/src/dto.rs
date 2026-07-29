@@ -18,6 +18,7 @@ pub struct User {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[derive(Clone)]
 pub struct Device {
     pub uuid: String,
     #[serde(rename = "deviceId")]

@@ -86,7 +86,7 @@ fn write_background_task(task_xml: &str) -> Result<std::path::PathBuf, String> {
     let utf16: Vec<u16> = std::iter::once(0xfeff)
         .chain(task_xml.encode_utf16())
         .collect();
-    let bytes = unsafe { std::slice::from_raw_parts(utf16.as_ptr().cast::<u8>(), utf16.len() * 2) };
+    let bytes: Vec<u8> = utf16.iter().flat_map(|unit| unit.to_le_bytes()).collect();
     fs::write(&task_file, bytes).map_err(|_| "unknown: task definition unavailable")?;
     Ok(task_file)
 }
@@ -156,7 +156,7 @@ fn current_user_sid() -> Result<String, String> {
 fn local_data_directory() -> std::path::PathBuf {
     std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("Relution")
         .join("Appport")
 }
@@ -172,56 +172,25 @@ fn xml_escape(value: &str) -> String {
 
 #[cfg(windows)]
 fn write_registry_string(path: &str, name: Option<&str>, value: &str) -> Result<(), String> {
-    use windows::{
-        core::PCWSTR,
-        Win32::{
-            Foundation::ERROR_SUCCESS,
-            System::Registry::{
-                RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
-                KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ,
-            },
-        },
-    };
-    let path = wide(path);
-    let mut key = HKEY::default();
-    if unsafe {
-        RegCreateKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(path.as_ptr()),
-            None,
-            PCWSTR::null(),
-            REG_OPTION_NON_VOLATILE,
-            KEY_READ | KEY_SET_VALUE,
-            None,
-            &mut key,
-            None,
-        )
-    } != ERROR_SUCCESS
-    {
-        return Err("unknown: protocol registry unavailable".into());
+    let key = format!("HKCU\\{path}");
+    let mut command = std::process::Command::new("reg.exe");
+    command.args(["add", &key]);
+    if let Some(name) = name {
+        command.args(["/v", name]);
+    } else {
+        command.arg("/ve");
     }
-    let name = name.map(wide);
-    let encoded: Vec<u16> = value.encode_utf16().chain(Some(0)).collect();
-    let bytes =
-        unsafe { std::slice::from_raw_parts(encoded.as_ptr().cast::<u8>(), encoded.len() * 2) };
-    let name_pointer = match &name {
-        Some(value) => PCWSTR(value.as_ptr()),
-        None => PCWSTR::null(),
-    };
-    let status = unsafe { RegSetValueExW(key, name_pointer, None, REG_SZ, Some(bytes)) };
-    unsafe {
-        let _ = RegCloseKey(key);
-    }
-    if status == ERROR_SUCCESS {
+    let status = command
+        .args(["/t", "REG_SZ", "/d"])
+        .arg(value)
+        .arg("/f")
+        .status()
+        .map_err(|_| "unknown: protocol registry unavailable")?;
+    if status.success() {
         Ok(())
     } else {
         Err("unknown: protocol registration failed".into())
     }
-}
-
-#[cfg(windows)]
-fn wide(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(Some(0)).collect()
 }
 
 #[cfg(test)]

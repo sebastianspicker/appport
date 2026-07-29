@@ -1,4 +1,4 @@
-import { text, type Locale } from "./appCopy";
+import { copyFor, type Locale } from "./appCopy";
 import { ActionButton } from "./ActionButton";
 import { isTerminalActionState } from "./useAppCatalog";
 import type { AvailableApp } from "./models";
@@ -21,11 +21,15 @@ export function ActionControl({
   polling?: PollingState;
   onResume: (appId: string) => void;
 }) {
-  const copy = text[locale];
+  const copy = copyFor(locale);
   if (state === "unknown") return null;
   if (polling === "paused")
     return (
-      <button onClick={() => onResume(application.id)}>
+      <button
+        onClick={() => {
+          onResume(application.id);
+        }}
+      >
         {copy.resumePolling}
       </button>
     );

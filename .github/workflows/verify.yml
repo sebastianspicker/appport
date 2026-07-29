@@ -21,12 +21,14 @@ jobs:
       APPPORT_RELUTION_WRITES_ENABLED: "false"
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
+      # v6, pinned to the immutable release commit.
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
       - uses: actions/setup-node@v6
         with:
           node-version: 26.5.0
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
+      # stable as resolved for this qualification run, pinned immutably.
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
           components: clippy,rustfmt
       - name: Install Tauri Linux prerequisites
@@ -66,12 +68,14 @@ jobs:
       APPPORT_RELUTION_WRITES_ENABLED: "false"
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
+      # v6, pinned to the immutable release commit.
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
       - uses: actions/setup-node@v6
         with:
           node-version: 26.5.0
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
+      # stable as resolved for this qualification run, pinned immutably.
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
           components: clippy,rustfmt
           targets: x86_64-pc-windows-msvc
