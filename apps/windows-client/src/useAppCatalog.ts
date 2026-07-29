@@ -34,7 +34,7 @@ const pollIntervalMs = 2_000;
 const maxPollAttempts = 150;
 
 function problemFor(error: unknown): ClientProblem {
-  const code = (error as { code?: string })?.code;
+  const code = (error as { code?: string } | null | undefined)?.code;
   const problems: Record<string, ClientProblem> = {
     OFFLINE: "offline",
     SESSION_EXPIRED: "session-expired",
