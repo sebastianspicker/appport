@@ -3,7 +3,7 @@ name: Verify
 on:
   pull_request:
   push:
-    branches: [main, codacy-remediation]
+    branches: [main]
 
 permissions:
   contents: read
@@ -57,7 +57,7 @@ jobs:
       - run: pnpm client:rust:check
 
   windows:
-    name: Unsigned qualification MSI candidate
+    name: Windows MSVC gates
     runs-on: windows-latest
     env:
       # Repository variables are non-secret, approved qualification-tenant build
@@ -80,12 +80,32 @@ jobs:
           components: clippy,rustfmt
           targets: x86_64-pc-windows-msvc
       - run: pnpm install --frozen-lockfile
-      - run: pnpm client:tauri -- --target x86_64-pc-windows-msvc
+      - name: Check qualification configuration
+        id: qualification
+        shell: pwsh
+        run: |
+          $ready = -not [string]::IsNullOrWhiteSpace($env:APPPORT_RELUTION_API_BASE_URL) -and
+            -not [string]::IsNullOrWhiteSpace($env:APPPORT_RELUTION_ORGANIZATION_UUID) -and
+            -not [string]::IsNullOrWhiteSpace($env:APPPORT_NATIVE_APP_UUID)
+          "ready=$($ready.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if (-not $ready) {
+            Write-Host "Approved qualification-tenant variables are not configured; MSI candidate steps will remain unqualified."
+          }
       - run: pnpm client:rust:fmt
       - run: cargo clippy --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --all-targets --all-features -- -D warnings
+        env:
+          APPPORT_SOURCE_VERIFICATION: "true"
       - run: cargo test --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+        env:
+          APPPORT_SOURCE_VERIFICATION: "true"
       - run: cargo check --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+        env:
+          APPPORT_SOURCE_VERIFICATION: "true"
+      - name: Build unsigned qualification MSI candidate
+        if: steps.qualification.outputs.ready == 'true'
+        run: pnpm client:tauri -- --target x86_64-pc-windows-msvc
       - name: Locate MSI
+        if: steps.qualification.outputs.ready == 'true'
         shell: pwsh
         run: |
           $msi = Get-ChildItem -Path apps/windows-client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi -Filter *.msi -File -Recurse | Select-Object -First 1
@@ -96,14 +116,17 @@ jobs:
           Copy-Item -LiteralPath $msi.FullName -Destination $candidateMsi -Force
           "APPPORT_MSI=$((Resolve-Path $candidateMsi).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Record unsigned candidate evidence
+        if: steps.qualification.outputs.ready == 'true'
         run: pnpm alpha:evidence -- --msi $env:APPPORT_MSI
       - name: Require candidate-ready unsigned evidence
+        if: steps.qualification.outputs.ready == 'true'
         shell: pwsh
         run: |
           $evidence = Get-Content release-artifacts/0.1.0-alpha.3/evidence.json -Raw | ConvertFrom-Json
           if (-not $evidence.candidateReady) { throw "candidateReady must be true for the qualification MSI." }
           if ($evidence.signed -or $evidence.distributable) { throw "alpha.3 evidence must remain unsigned and non-distributable." }
       - name: Upload unsigned candidate evidence
+        if: steps.qualification.outputs.ready == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: appport-0.1.0-alpha.3-unsigned-qualification-candidate
