@@ -430,7 +430,7 @@ function createSignOut(
   cancel: () => void,
   setBootstrap: (bootstrap: NativeBootstrap | undefined) => void,
   setApps: (apps: AvailableApp[]) => void,
-  setActions: (actions: Map<string, AppAction>) => void,
+  setActions: React.Dispatch<React.SetStateAction<Map<string, AppAction>>>,
   setPhase: (phase: Phase) => void,
   setWarning: (warning: string | undefined) => void,
 ) {
@@ -463,7 +463,7 @@ export function useSignOut(
   locale: Locale,
   cancel: () => void,
   setters: CatalogSetters,
-  setActions: (actions: Map<string, AppAction>) => void,
+  setActions: React.Dispatch<React.SetStateAction<Map<string, AppAction>>>,
 ) {
   const [signOutWarning, setSignOutWarning] = useState<string>();
   const signOut = useMemo(

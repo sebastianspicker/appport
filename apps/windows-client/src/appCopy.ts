@@ -164,11 +164,10 @@ export function copyFor(locale: Locale): Copy {
   return locale === "de" ? text.de : text.en;
 }
 
-const problemCopiers = new Map<
-  ClientProblem,
-  (copy: Copy) => readonly string[]
->([
-  ["loading", (copy) => copy.loading],
+const loadingProblemCopy = (copy: Copy): readonly string[] => copy.loading;
+
+const problemCopiers = new Map<ClientProblem, typeof loadingProblemCopy>([
+  ["loading", loadingProblemCopy],
   ["empty", (copy) => copy.empty],
   ["offline", (copy) => copy.offline],
   ["session-expired", (copy) => copy.sessionExpired],

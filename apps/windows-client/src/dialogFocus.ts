@@ -21,7 +21,6 @@ function trapTab(event: KeyboardEvent, dialog: HTMLElement | null) {
   if (controls.length === 0) return;
   const first = controls[0];
   const last = controls[controls.length - 1];
-  if (!last) return;
   const boundary = event.shiftKey ? first : last;
   if (document.activeElement !== boundary) return;
   event.preventDefault();

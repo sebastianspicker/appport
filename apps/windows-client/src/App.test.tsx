@@ -263,7 +263,7 @@ describe("App connection", () => {
       screen.getByLabelText<HTMLInputElement>("Personal access token").value,
     ).toBe("");
 
-    await act(() => {
+    act(() => {
       pending.resolve({ backgroundCheckRegistered: true });
     });
   });
