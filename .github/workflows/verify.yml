@@ -20,15 +20,28 @@ jobs:
       APPPORT_SOURCE_VERIFICATION: "true"
       APPPORT_RELUTION_WRITES_ENABLED: "false"
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 26.5.0
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy,rustfmt
+      - name: Install Tauri Linux prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            wget
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify:toolchain
       - run: pnpm format:check
@@ -52,9 +65,9 @@ jobs:
       APPPORT_NATIVE_APP_UUID: ${{ vars.APPPORT_NATIVE_APP_UUID }}
       APPPORT_RELUTION_WRITES_ENABLED: "false"
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 26.5.0
           cache: pnpm
@@ -87,7 +100,7 @@ jobs:
           if (-not $evidence.candidateReady) { throw "candidateReady must be true for the qualification MSI." }
           if ($evidence.signed -or $evidence.distributable) { throw "alpha.3 evidence must remain unsigned and non-distributable." }
       - name: Upload unsigned candidate evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: appport-0.1.0-alpha.3-unsigned-qualification-candidate
           if-no-files-found: error
