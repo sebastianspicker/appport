@@ -10,6 +10,8 @@ The client connects directly to a fixed HTTPS Relution API endpoint. The Windows
 
 This mockup illustrates the catalog layout. It does not contain qualification-tenant or managed-device data and is not release evidence.
 
+[Open the static Appport demo](https://sebastianspicker.github.io/appport/). It uses sanitized fixture data, and every command-capable action is visibly simulated.
+
 ## Workspace
 
     apps/windows-client/  Tauri, Rust, React, and Vite client

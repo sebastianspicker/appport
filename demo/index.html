@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A static, fixture-only demonstration of the Appport managed software catalog."
+    />
+    <title>Appport static demo</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#catalog">Skip to catalog</a>
+    <aside class="demo-notice" aria-label="Demo disclosure">
+      <strong>Static demo</strong>
+      <span>
+        Sanitized fixture data only. Every install or update action is
+        simulated; this page sends no native commands and makes no network
+        requests.
+      </span>
+      <a href="https://github.com/sebastianspicker/appport">View source</a>
+    </aside>
+
+    <div class="window-shell">
+      <div class="window-bar" aria-hidden="true">
+        <div class="window-controls"><i></i><i></i><i></i></div>
+        <span>Appport</span>
+      </div>
+
+      <main id="catalog">
+        <header class="catalog-header">
+          <div class="brand-lockup">
+            <div class="brand-mark" aria-hidden="true">
+              <i></i><i></i><i></i><i></i>
+            </div>
+            <div>
+              <p class="eyebrow">Managed software</p>
+              <h1>Appport</h1>
+              <p class="subtitle">Software approved for this device</p>
+            </div>
+          </div>
+          <div class="device-chip">
+            <span class="status-dot" aria-hidden="true"></span>
+            DEMO-WORKSTATION · Fixture data
+          </div>
+        </header>
+
+        <nav class="catalog-nav" aria-label="Catalog views">
+          <button
+            type="button"
+            class="active"
+            data-view="available"
+            aria-selected="true"
+          >
+            Available
+          </button>
+          <button type="button" data-view="updates" aria-selected="false">
+            Updates <span class="count" aria-label="1 update">1</span>
+          </button>
+        </nav>
+
+        <section class="toolbar" aria-label="Catalog filters">
+          <label>
+            <span>Search</span>
+            <input
+              id="search"
+              type="search"
+              placeholder="Search applications"
+              autocomplete="off"
+            />
+          </label>
+          <label>
+            <span>Source</span>
+            <select id="source-filter">
+              <option value="all">All sources</option>
+              <option value="winget">Winget</option>
+              <option value="windows_msi">MSI</option>
+              <option value="windows_exe">EXE</option>
+            </select>
+          </label>
+          <p id="result-summary" class="result-summary" aria-live="polite"></p>
+        </section>
+
+        <section id="app-grid" class="grid" aria-label="Applications"></section>
+        <section id="empty-state" class="empty-state" hidden>
+          <h2>No applications found</h2>
+          <p>Try another search or source filter.</p>
+        </section>
+      </main>
+    </div>
+
+    <footer>
+      Illustrative interface demo · No tenant or managed-device data · Not
+      release evidence
+    </footer>
+
+    <dialog
+      id="confirmation-dialog"
+      class="confirmation"
+      aria-labelledby="dialog-title"
+    >
+      <form method="dialog">
+        <p class="simulation-label">Simulated action</p>
+        <h2 id="dialog-title">Confirm simulated action</h2>
+        <p id="dialog-description"></p>
+        <dl>
+          <div>
+            <dt>Application</dt>
+            <dd id="dialog-app"></dd>
+          </div>
+          <div>
+            <dt>Target version</dt>
+            <dd id="dialog-version"></dd>
+          </div>
+          <div>
+            <dt>Demo device</dt>
+            <dd>DEMO-WORKSTATION</dd>
+          </div>
+        </dl>
+        <p class="dialog-note">
+          No native command or network request will be made. The result changes
+          only this page.
+        </p>
+        <div class="dialog-actions">
+          <button type="submit" value="cancel" class="secondary">Cancel</button>
+          <button type="submit" value="confirm" id="confirm-action">
+            Confirm simulation
+          </button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>
