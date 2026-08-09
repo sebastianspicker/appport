@@ -20,6 +20,7 @@ playwright-report/
 *.log
 
 # Local tools and private workspace files
+/docs/agent/
 /.local/
 /.agents/
 /.claude/
