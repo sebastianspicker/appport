@@ -1,0 +1,143 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    name: Ubuntu source gates
+    runs-on: ubuntu-latest
+    env:
+      APPPORT_SOURCE_VERIFICATION: "true"
+      APPPORT_RELUTION_WRITES_ENABLED: "false"
+    steps:
+      # actions/checkout v6.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+      # actions/setup-node v6.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 26.5.0
+          cache: pnpm
+      # stable as resolved for this qualification run, pinned immutably.
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          components: clippy,rustfmt
+      - name: Install Tauri Linux prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            wget
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify:toolchain
+      - run: pnpm format:check
+      - run: pnpm docs:verify
+      - run: pnpm client:typecheck
+      - run: pnpm client:test:coverage
+      - run: pnpm client:build
+      - run: pnpm client:rust:fmt
+      - run: pnpm client:rust:clippy
+      - run: pnpm client:rust:test
+      - run: pnpm client:rust:check
+
+  windows:
+    name: Windows MSVC gates
+    runs-on: windows-latest
+    env:
+      # Repository variables are non-secret, approved qualification-tenant build
+      # inputs. A missing value fails the release build closed in build.rs.
+      APPPORT_RELUTION_API_BASE_URL: ${{ vars.APPPORT_RELUTION_API_BASE_URL }}
+      APPPORT_RELUTION_ORGANIZATION_UUID: ${{ vars.APPPORT_RELUTION_ORGANIZATION_UUID }}
+      APPPORT_NATIVE_APP_UUID: ${{ vars.APPPORT_NATIVE_APP_UUID }}
+      APPPORT_RELUTION_WRITES_ENABLED: "false"
+    steps:
+      # actions/checkout v6.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+      # actions/setup-node v6.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 26.5.0
+          cache: pnpm
+      # stable as resolved for this qualification run, pinned immutably.
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          components: clippy,rustfmt
+          targets: x86_64-pc-windows-msvc
+      - run: pnpm install --frozen-lockfile
+      - name: Check qualification configuration
+        id: qualification
+        shell: pwsh
+        run: |
+          $ready = -not [string]::IsNullOrWhiteSpace($env:APPPORT_RELUTION_API_BASE_URL) -and
+            -not [string]::IsNullOrWhiteSpace($env:APPPORT_RELUTION_ORGANIZATION_UUID) -and
+            -not [string]::IsNullOrWhiteSpace($env:APPPORT_NATIVE_APP_UUID)
+          "ready=$($ready.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if (-not $ready) {
+            Write-Host "Approved qualification-tenant variables are not configured; MSI candidate steps will remain unqualified."
+          }
+      - run: pnpm client:rust:fmt
+      - run: cargo clippy --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --all-targets --all-features -- -D warnings
+        env:
+          APPPORT_SOURCE_VERIFICATION: "true"
+      - run: cargo test --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+        env:
+          APPPORT_SOURCE_VERIFICATION: "true"
+      - run: cargo check --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+        env:
+          APPPORT_SOURCE_VERIFICATION: "true"
+      - name: Build unsigned qualification MSI candidate
+        if: steps.qualification.outputs.ready == 'true'
+        run: pnpm client:tauri -- --target x86_64-pc-windows-msvc
+      - name: Locate MSI
+        if: steps.qualification.outputs.ready == 'true'
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem -Path apps/windows-client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi -Filter *.msi -File -Recurse | Select-Object -First 1
+          if ($null -eq $msi) { throw "Tauri did not produce an MSI." }
+          $evidenceDirectory = "release-artifacts/0.1.0-alpha.3"
+          New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+          $candidateMsi = Join-Path $evidenceDirectory "Appport-0.1.0-alpha.3.msi"
+          Copy-Item -LiteralPath $msi.FullName -Destination $candidateMsi -Force
+          "APPPORT_MSI=$((Resolve-Path $candidateMsi).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Record unsigned candidate evidence
+        if: steps.qualification.outputs.ready == 'true'
+        run: pnpm alpha:evidence -- --msi $env:APPPORT_MSI
+      - name: Require candidate-ready unsigned evidence
+        if: steps.qualification.outputs.ready == 'true'
+        shell: pwsh
+        run: |
+          $evidence = Get-Content release-artifacts/0.1.0-alpha.3/evidence.json -Raw | ConvertFrom-Json
+          if (-not $evidence.candidateReady) { throw "candidateReady must be true for the qualification MSI." }
+          if ($evidence.signed -or $evidence.distributable) { throw "alpha.3 evidence must remain unsigned and non-distributable." }
+      - name: Upload unsigned candidate evidence
+        if: steps.qualification.outputs.ready == 'true'
+        # actions/upload-artifact v7.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: appport-0.1.0-alpha.3-unsigned-qualification-candidate
+          if-no-files-found: error
+          path: |
+            release-artifacts/0.1.0-alpha.3/Appport-0.1.0-alpha.3.msi
+            release-artifacts/0.1.0-alpha.3/evidence.json
+            release-artifacts/0.1.0-alpha.3/msi-sha256.txt
+            release-artifacts/0.1.0-alpha.3/source-revision-state.json
+            release-artifacts/0.1.0-alpha.3/configuration-fingerprint.json
+            release-artifacts/0.1.0-alpha.3/embedded-secret-scan.json

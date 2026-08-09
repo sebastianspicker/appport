@@ -1,488 +1,313 @@
-use crate::{callbacks, evidence, platform, session::SessionStore};
-use base64::{engine::general_purpose::STANDARD, engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use rand::Rng;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::time::Duration;
-use tokio::net::TcpListener;
+use crate::{
+    client_support::*,
+    dto, evidence,
+    wire::{
+        AppAction, AppInstallState, AvailableApp, CatalogView, NativeBootstrap, NativeDevice,
+        NativeUpdates, NativeUser,
+    },
+};
+use reqwest::{header, Method};
+use serde::de::DeserializeOwned;
+use serde_json::json;
+use std::{collections::HashMap, sync::Mutex as StdMutex, time::Duration};
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use url::Url;
-
-const MAX_JSON_BYTES: usize = 2 * 1024 * 1024;
-const MAX_ICON_BYTES: usize = 512 * 1024;
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SignOutOutcome {
-    pub remote_revocation: &'static str,
-    pub credential_deletion: &'static str,
-    pub scheduled_task_removal: &'static str,
+const MAX_JSON_BYTES: usize = 10 * 1024 * 1024;
+const PAGE_SIZE: usize = 100;
+const MAX_PAGES: usize = 100;
+#[derive(Clone)]
+pub struct RelutionConfig {
+    pub base: Url,
+    pub organization_uuid: String,
+    pub native_app_uuid: String,
+    pub writes_enabled: bool,
 }
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NativeSessionExchangeRequest {
-    request_id: String,
-    code: String,
-    verifier: String,
-    client_version: String,
-    locale: String,
-    device_evidence: evidence::NativeDeviceEvidenceV1,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ExchangeResponse {
-    token: String,
-}
-
-#[derive(Deserialize)]
-struct ApplicationsResponse {
-    applications: Vec<AvailableApp>,
-}
-
-#[derive(Deserialize)]
-struct InstalledResponse {
-    applications: Vec<InstalledApplication>,
-}
-
-#[derive(Deserialize)]
-struct ActionResponse {
-    action: AppAction,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConnectStarted {
-    pub request_id: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeBootstrap {
-    pub user: NativeUser,
-    pub device: NativeDevice,
-    pub session_expires_at: String,
-    pub update_count: u32,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeUser {
-    pub display_name: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeDevice {
-    pub name: String,
-    pub status: String,
-    pub last_seen_at: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AvailableApp {
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub publisher: Option<String>,
-    pub source: String,
-    pub package_identifier: Option<String>,
-    pub released_version_id: String,
-    pub released_version_label: Option<String>,
-    pub installed_version_id: Option<String>,
-    pub installed_version_label: Option<String>,
-    pub install_state: String,
-    pub active_action_id: Option<String>,
-    pub active_action_state: Option<String>,
-    pub icon_url: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InstalledApplication {
-    pub app_id: Option<String>,
-    pub package_id: String,
-    pub name: String,
-    pub version_id: Option<String>,
-    pub version: String,
-    pub source: Option<String>,
-    pub update_available: bool,
-    pub approved: bool,
-    pub icon_url: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AppAction {
-    pub id: String,
-    pub device_id: String,
-    pub app_id: String,
-    pub intent: String,
-    pub state: String,
-    pub error_code: Option<String>,
-    pub error_message: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-pub struct BrokerClient {
-    base: Url,
+pub struct RelutionClient {
+    config: RelutionConfig,
     http: reqwest::Client,
+    cache: StdMutex<CredentialCache>,
+    catalog_refresh: AsyncMutex<()>,
+    icon_requests: Semaphore,
 }
-
-impl BrokerClient {
-    pub fn new(endpoint: &str) -> Result<Self, String> {
-        let base =
-            Url::parse(endpoint).map_err(|_| "configuration: invalid broker URL".to_owned())?;
-        if !is_fixed_broker_base(&base) {
-            return Err("configuration: broker URL must be a fixed HTTPS URL".into());
+pub struct ConnectedIdentity {
+    pub username: String,
+    pub user_uuid: String,
+}
+struct CurrentDevice {
+    id: String,
+    wire: NativeDevice,
+}
+#[derive(Default)]
+struct CredentialCache {
+    generation: Option<u64>,
+    apps: Option<Vec<AvailableApp>>,
+    icons: HashMap<String, Option<String>>,
+}
+impl RelutionConfig {
+    pub fn embedded() -> Result<Self, String> {
+        let base = Url::parse(option_env!("APPPORT_RELUTION_API_BASE_URL").ok_or(
+            "configuration: APPPORT_RELUTION_API_BASE_URL was not embedded in this build",
+        )?)
+        .map_err(|_| "configuration: invalid Relution API URL")?;
+        if !fixed_https(&base) {
+            return Err("configuration: Relution API URL must be a fixed HTTPS origin".into());
         }
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(20))
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|_| "configuration: HTTP client unavailable".to_owned())?;
-        Ok(Self { base, http })
+        let organization_uuid = option_env!("APPPORT_RELUTION_ORGANIZATION_UUID")
+            .filter(|x| valid_id(x))
+            .ok_or(
+                "configuration: APPPORT_RELUTION_ORGANIZATION_UUID was not embedded in this build",
+            )?
+            .into();
+        let native_app_uuid = option_env!("APPPORT_NATIVE_APP_UUID")
+            .filter(|x| valid_id(x))
+            .ok_or("configuration: APPPORT_NATIVE_APP_UUID was not embedded in this build")?
+            .into();
+        Ok(Self {
+            base,
+            organization_uuid,
+            native_app_uuid,
+            writes_enabled: false,
+        })
     }
-
-    pub async fn begin_connect(
-        &self,
-        session: &mut SessionStore,
-    ) -> Result<ConnectStarted, String> {
-        let evidence = evidence::collect()?;
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "offline: loopback listener unavailable")?;
-        let port = listener
-            .local_addr()
-            .map_err(|_| "unknown: loopback address unavailable")?
-            .port();
-        let request_id = uuid_key();
-        let verifier = random_url_value();
-        let state = random_url_value();
-        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-        let mut connect = self.url("native/connect")?;
-        connect
-            .query_pairs_mut()
-            .append_pair("requestId", &request_id)
-            .append_pair("challenge", &challenge)
-            .append_pair("state", &state)
-            .append_pair("port", &port.to_string());
-        platform::open_system_browser(connect.as_str())?;
-        let code = callbacks::receive_code(listener, &state).await?;
-        let exchange: ExchangeResponse = self
-            .post(
-                "api/native/session/exchange",
-                &NativeSessionExchangeRequest {
-                    request_id: request_id.clone(),
-                    code,
-                    verifier,
-                    client_version: env!("CARGO_PKG_VERSION").into(),
-                    locale: platform::current_locale(),
-                    device_evidence: evidence,
-                },
-                None,
+}
+impl RelutionClient {
+    pub fn new(config: RelutionConfig) -> Result<Self, String> {
+        Ok(Self {
+            config,
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(20))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|_| "configuration: HTTP client unavailable")?,
+            cache: StdMutex::new(CredentialCache::default()),
+            catalog_refresh: AsyncMutex::new(()),
+            icon_requests: Semaphore::new(4),
+        })
+    }
+    pub async fn connect(&self, username: &str, token: &str) -> Result<ConnectedIdentity, String> {
+        if username.trim().is_empty() || token.trim().is_empty() {
+            return Err("session-expired: invalid Relution credentials".into());
+        }
+        let users: Vec<dto::User> = self
+            .post_pages(
+                "/api/management/v1/security/users/baseInfo/query",
+                token,
+                json!({"searches":[username.trim()],"getItems":true,"getNonpagedCount":true}),
             )
             .await?;
-        session.save(exchange.token)?;
-        Ok(ConnectStarted { request_id })
+        let m: Vec<_> = users
+            .into_iter()
+            .filter(|u| {
+                u.name.eq_ignore_ascii_case(username.trim())
+                    && u.organization_uuid == self.config.organization_uuid
+                    && u.activated
+            })
+            .collect();
+        if m.len() != 1 {
+            return Err(
+                "device_match_failed: Relution identity is not a single active organization user"
+                    .into(),
+            );
+        }
+        Ok(ConnectedIdentity {
+            username: username.trim().into(),
+            user_uuid: m[0].uuid.clone(),
+        })
     }
-
-    pub async fn bootstrap(&self, session: &SessionStore) -> Result<NativeBootstrap, String> {
-        self.get("api/native/bootstrap", session).await
-    }
-
-    pub async fn apps(
+    pub async fn bootstrap(
         &self,
-        view: &str,
-        session: &SessionStore,
+        t: &str,
+        u: &str,
+        id: &str,
+        generation: u64,
+    ) -> Result<NativeBootstrap, String> {
+        let d = self.current_device(t, id).await?;
+        let a = self.cached_apps(t, id, &d, generation).await?;
+        let keys = a
+            .iter()
+            .filter(|x| x.install_state == crate::wire::AppInstallState::UpdateAvailable)
+            .map(|x| format!("{}:{}", x.id, x.released_version_id))
+            .collect::<Vec<_>>();
+        Ok(NativeBootstrap {
+            user: NativeUser {
+                display_name: u.into(),
+            },
+            device: d.wire,
+            updates: NativeUpdates {
+                count: keys.len() as u32,
+                keys,
+            },
+            writes_enabled: self.config.writes_enabled,
+        })
+    }
+    pub async fn list_apps(
+        &self,
+        t: &str,
+        u: &str,
+        generation: u64,
+        view: CatalogView,
     ) -> Result<Vec<AvailableApp>, String> {
-        let path = match view {
-            "apps" => "api/native/apps",
-            "updates" => "api/native/updates",
-            _ => return Err("unknown: invalid software view".into()),
-        };
-        Ok(self
-            .get::<ApplicationsResponse>(path, session)
-            .await?
-            .applications)
+        let d = self.current_device(t, u).await?;
+        Ok(filter_catalog_view(
+            self.cached_apps(t, u, &d, generation).await?,
+            view,
+        ))
     }
-
-    pub async fn installed(
+    async fn cached_apps(
         &self,
-        session: &SessionStore,
-    ) -> Result<Vec<InstalledApplication>, String> {
-        Ok(self
-            .get::<InstalledResponse>("api/native/installed", session)
-            .await?
-            .applications)
-    }
-
-    pub async fn action(&self, app_id: &str, session: &SessionStore) -> Result<AppAction, String> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Action {
-            idempotency_key: String,
+        t: &str,
+        u: &str,
+        d: &CurrentDevice,
+        generation: u64,
+    ) -> Result<Vec<AvailableApp>, String> {
+        if let Some(apps) = self.cache_for(generation)?.apps.clone() {
+            return Ok(apps);
         }
-        let path = self.resource_path(&["api", "native", "apps", app_id, "actions"])?;
-        Ok(self
-            .post::<ActionResponse, _>(
-                &path,
-                &Action {
-                    idempotency_key: uuid_key(),
-                },
-                session.bearer(),
+        let _refresh = self.catalog_refresh.lock().await;
+        if let Some(apps) = self.cache_for(generation)?.apps.clone() {
+            return Ok(apps);
+        }
+        let apps = self.list_apps_for(t, u, d).await?;
+        self.cache_for(generation)?.apps = Some(apps.clone());
+        Ok(apps)
+    }
+    async fn list_apps_for(
+        &self,
+        t: &str,
+        u: &str,
+        d: &CurrentDevice,
+    ) -> Result<Vec<AvailableApp>, String> {
+        let locale = crate::platform::current_locale();
+        let catalog: Vec<dto::Catalog> = self
+            .get_pages(
+                "/api/management/v1/content/apps/baseInfo",
+                t,
+                vec![("extend", "versions"), ("locale", locale.as_str())],
             )
-            .await?
-            .action)
-    }
-
-    pub async fn get_action(
-        &self,
-        action_id: &str,
-        session: &SessionStore,
-    ) -> Result<AppAction, String> {
-        let path = self.resource_path(&["api", "native", "actions", action_id])?;
-        Ok(self.get::<ActionResponse>(&path, session).await?.action)
-    }
-
-    pub async fn icon(
-        &self,
-        app_id: &str,
-        session: &SessionStore,
-    ) -> Result<Option<String>, String> {
-        let token = session
-            .bearer()
-            .ok_or("session-expired: no stored session")?;
-        let path = self.resource_path(&["api", "native", "apps", app_id, "icon"])?;
-        let response = self
-            .http
-            .get(self.url(&path)?)
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(map_network_error)?;
-        let content_type = match icon_content_type(&response)? {
-            Some(content_type) => content_type,
-            None => return Ok(None),
-        };
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|_| "server: icon response failed")?;
-        ensure_icon_size(bytes.len())?;
-        Ok(Some(format!(
-            "data:{content_type};base64,{}",
-            STANDARD.encode(bytes)
-        )))
-    }
-
-    pub async fn sign_out(&self, session: &mut SessionStore) -> SignOutOutcome {
-        let mut remote_revocation = "not_attempted";
-        if let Some(token) = session.bearer() {
-            let result = self
-                .url("api/native/session")
-                .map(|url| self.http.delete(url).bearer_auth(token));
-            remote_revocation = match result {
-                Ok(request) => classify_remote_revocation(
-                    request
-                        .send()
-                        .await
-                        .map(|response| response.status().as_u16())
-                        .map_err(|_| ()),
+            .await?;
+        let groups: dto::Groups = self
+            .get(
+                "/api/management/v1/security/users/".to_string() + &encode(u) + "/groups",
+                t,
+                vec![],
+            )
+            .await?;
+        let group_ids: Vec<String> = groups.groups.into_iter().map(|g| g.uuid).collect();
+        let inventory: Vec<dto::Inventory> = self
+            .post_pages(
+                &format!(
+                    "/api/management/v2/devices/{}/installedApps/baseInfo/query",
+                    encode(&d.id)
                 ),
-                Err(_) => "failed",
-            };
+                t,
+                json!({"getItems":true,"getNonpagedCount":true}),
+            )
+            .await?;
+        let mut out = Vec::new();
+        for catalog_entry in catalog {
+            self.add_allowed_app(&mut out, catalog_entry, t, u, &group_ids, &inventory)
+                .await?;
         }
-        let credential_deletion = if session.clear().is_ok() {
-            "deleted"
-        } else {
-            "failed"
+        out.sort_by_key(|a| a.name.to_lowercase());
+        Ok(out)
+    }
+    async fn add_allowed_app(
+        &self,
+        out: &mut Vec<AvailableApp>,
+        catalog: dto::Catalog,
+        token: &str,
+        user: &str,
+        groups: &[String],
+        inventory: &[dto::Inventory],
+    ) -> Result<(), String> {
+        let Some(mut app) = app_from(catalog, &self.config.native_app_uuid) else {
+            return Ok(());
         };
-        SignOutOutcome {
-            remote_revocation,
-            credential_deletion,
-            scheduled_task_removal: "not_attempted",
+        if !self.allowed(token, user, groups, &app.id).await? {
+            return Ok(());
         }
+        let app_id = app.id.clone();
+        let installed = inventory
+            .iter()
+            .find(|item| item.app_uuid.as_deref() == Some(&app_id));
+        apply_inventory(&mut app, installed);
+        out.push(app);
+        Ok(())
     }
-
-    pub async fn sign_out_with_task(
+    async fn allowed(
         &self,
-        session: &mut SessionStore,
-        task_result: Result<(), String>,
-    ) -> SignOutOutcome {
-        let mut outcome = self.sign_out(session).await;
-        outcome.scheduled_task_removal = if task_result.is_ok() {
-            "removed"
-        } else {
-            "failed"
-        };
-        outcome
-    }
-
-    async fn get<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        session: &SessionStore,
-    ) -> Result<T, String> {
-        let token = session
-            .bearer()
-            .ok_or("session-expired: no stored session")?;
-        decode(
-            self.http
-                .get(self.url(path)?)
-                .bearer_auth(token)
-                .send()
-                .await,
-        )
-        .await
-    }
-
-    async fn post<T: DeserializeOwned, B: Serialize>(
-        &self,
-        path: &str,
-        body: &B,
-        token: Option<&str>,
-    ) -> Result<T, String> {
-        let mut request = self.http.post(self.url(path)?).json(body);
-        if let Some(value) = token {
-            request = request.bearer_auth(value);
-        }
-        decode(request.send().await).await
-    }
-
-    fn url(&self, relative: &str) -> Result<Url, String> {
-        let url = self
-            .base
-            .join(relative)
-            .map_err(|_| "unknown: invalid broker URL")?;
-        if url.origin() != self.base.origin() {
-            return Err("unknown: broker origin changed".into());
-        }
-        Ok(url)
-    }
-
-    fn resource_path(&self, segments: &[&str]) -> Result<String, String> {
-        let mut url = self.base.clone();
-        url.set_path("/");
-        {
-            let mut target = url
-                .path_segments_mut()
-                .map_err(|_| "unknown: invalid broker URL")?;
-            target.clear();
-            for segment in segments {
-                target.push(segment);
+        t: &str,
+        u: &str,
+        groups: &[String],
+        app: &str,
+    ) -> Result<bool, String> {
+        let p: dto::Page<dto::Permission> = self
+            .get(
+                &format!(
+                    "/api/management/v1/content/apps/{}/permissions/RELEASE",
+                    encode(app)
+                ),
+                t,
+                vec![],
+            )
+            .await?;
+        for permission in p.results {
+            if self.permission_allows(t, u, groups, &permission).await? {
+                return Ok(true);
             }
         }
-        Ok(url.path().trim_start_matches('/').to_owned())
+        Ok(false)
     }
-}
-
-fn icon_content_type(response: &reqwest::Response) -> Result<Option<String>, String> {
-    match response.status().as_u16() {
-        404 => Ok(None),
-        401 => Err("session-expired: authorization required".into()),
-        _ if !response.status().is_success() => Err("server: icon request rejected".into()),
-        _ => response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.split(';').next())
-            .filter(|value| matches!(*value, "image/png" | "image/jpeg" | "image/webp"))
-            .map(str::to_owned)
-            .map(Some)
-            .ok_or("server: unsupported icon type".into()),
-    }
-}
-
-fn ensure_icon_size(size: usize) -> Result<(), String> {
-    (size <= MAX_ICON_BYTES)
-        .then_some(())
-        .ok_or("server: icon response is too large".into())
-}
-
-fn is_fixed_broker_base(base: &Url) -> bool {
-    [
-        base.scheme() == "https",
-        base.host_str().is_some(),
-        base.username().is_empty(),
-        base.password().is_none(),
-        base.query().is_none(),
-        base.fragment().is_none(),
-        base.path() == "/",
-    ]
-    .into_iter()
-    .all(|valid| valid)
-}
-
-async fn decode<T: DeserializeOwned>(
-    response: Result<reqwest::Response, reqwest::Error>,
-) -> Result<T, String> {
-    let response = response.map_err(map_network_error)?;
-    match response.status().as_u16() {
-        200..=299 => {
-            let bytes = response
-                .bytes()
-                .await
-                .map_err(|_| "server: response could not be read")?;
-            if bytes.len() > MAX_JSON_BYTES {
-                return Err("server: response is too large".into());
-            }
-            serde_json::from_slice(&bytes).map_err(|_| "server: invalid broker response".into())
+    async fn permission_allows(
+        &self,
+        token: &str,
+        user: &str,
+        groups: &[String],
+        permission: &dto::Permission,
+    ) -> Result<bool, String> {
+        if !permission.read {
+            return Ok(false);
         }
-        401 => Err("session-expired: authorization required".into()),
-        403 => Err("device_match_failed: device not assigned".into()),
-        429 => Err("server: too many requests".into()),
-        500..=599 => Err("server: broker unavailable".into()),
-        _ => Err("server: broker rejected request".into()),
+        if permission.subject.kind == "USER" {
+            return Ok(permission.subject.uuid == user);
+        }
+        Ok(permission.subject.kind == "GROUP"
+            && (groups.contains(&permission.subject.uuid)
+                || self
+                    .group_contains(token, &permission.subject.uuid, user)
+                    .await?))
+    }
+    async fn group_contains(&self, t: &str, group: &str, user: &str) -> Result<bool, String> {
+        let members: Vec<dto::Group> = self
+            .get_pages(
+                &format!(
+                    "/api/management/v1/security/groups/{}/members",
+                    encode(group)
+                ),
+                t,
+                vec![("recursive", "true")],
+            )
+            .await?;
+        Ok(members.into_iter().any(|member| member.uuid == user))
     }
 }
 
-fn map_network_error(error: reqwest::Error) -> String {
-    if error.is_connect() || error.is_timeout() {
-        "offline: broker unreachable".to_owned()
-    } else {
-        "server: request failed".to_owned()
-    }
+fn filter_catalog_view(apps: Vec<AvailableApp>, view: CatalogView) -> Vec<AvailableApp> {
+    let expected_state = match view {
+        CatalogView::Apps => AppInstallState::Available,
+        CatalogView::Updates => AppInstallState::UpdateAvailable,
+    };
+    apps.into_iter()
+        .filter(|app| app.install_state == expected_state)
+        .collect()
 }
 
-fn random_url_value() -> String {
-    let bytes: [u8; 32] = rand::rng().random();
-    URL_SAFE_NO_PAD.encode(bytes)
-}
-
-fn uuid_key() -> String {
-    let mut bytes: [u8; 16] = rand::rng().random();
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0],
-        bytes[1],
-        bytes[2],
-        bytes[3],
-        bytes[4],
-        bytes[5],
-        bytes[6],
-        bytes[7],
-        bytes[8],
-        bytes[9],
-        bytes[10],
-        bytes[11],
-        bytes[12],
-        bytes[13],
-        bytes[14],
-        bytes[15]
-    )
-}
-
-fn classify_remote_revocation(result: Result<u16, ()>) -> &'static str {
-    match result {
-        Ok(204 | 401) => "revoked",
-        _ => "failed",
-    }
-}
+#[path = "client_actions.rs"]
+mod actions;
+#[path = "client_icons.rs"]
+mod icons;
+#[path = "client_transport.rs"]
+mod transport;
 
 #[cfg(test)]
 #[path = "client_tests.rs"]
