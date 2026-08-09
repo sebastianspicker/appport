@@ -29,6 +29,14 @@ playwright-report/
 /.serena/
 /.windsurf/
 /.cache/
+/.mcp.json
+/.repowise/
+/.codegraph/
+/AUDIT_LEDGER.md
+/logs/
+/wip/
+/WIP/
+/work-in-progress/
 .DS_Store
 *.tmp
 *.swp

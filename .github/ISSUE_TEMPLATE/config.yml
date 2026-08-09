@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/sebastianspicker/appport/security/advisories/new
+    about: Please report security-sensitive issues privately.
+  - name: Contribution guidance
+    url: https://github.com/sebastianspicker/appport/blob/main/CONTRIBUTING.md
+    about: Read the Windows-client and qualification boundaries before opening an issue.
