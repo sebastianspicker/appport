@@ -75,15 +75,17 @@ fn ent_dmid() -> Option<String> {
 
 #[cfg(windows)]
 fn firmware() -> (Option<String>, Option<String>) {
-    use windows::Win32::System::SystemInformation::GetSystemFirmwareTable;
+    use windows::Win32::System::SystemInformation::{
+        GetSystemFirmwareTable, FIRMWARE_TABLE_PROVIDER,
+    };
     unsafe {
-        let provider = u32::from_le_bytes(*b"RSMB");
-        let size = GetSystemFirmwareTable(provider, 0, None, 0);
+        let provider = FIRMWARE_TABLE_PROVIDER(u32::from_le_bytes(*b"RSMB"));
+        let size = GetSystemFirmwareTable(provider, 0, None);
         if size == 0 {
             return (None, None);
         }
         let mut buffer = vec![0_u8; size as usize];
-        if GetSystemFirmwareTable(provider, 0, Some(buffer.as_mut_ptr().cast()), size) != size {
+        if GetSystemFirmwareTable(provider, 0, Some(&mut buffer)) != size {
             return (None, None);
         }
         parse_raw_smbios(&buffer)

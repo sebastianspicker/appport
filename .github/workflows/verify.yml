@@ -1,0 +1,216 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      qualification_profile:
+        description: Qualification build profile
+        required: true
+        type: choice
+        default: read_only
+        options:
+          - read_only
+          - write_qualification
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    name: Ubuntu source gates
+    runs-on: ubuntu-latest
+    env:
+      APPPORT_SOURCE_VERIFICATION: "true"
+      APPPORT_QUALIFICATION_PROFILE: read_only
+      APPPORT_RELUTION_WRITES_ENABLED: "false"
+    steps:
+      # actions/checkout v6.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+      # actions/setup-node v6.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 26.5.0
+          cache: pnpm
+      # stable as resolved for this qualification run, pinned immutably.
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          components: clippy,rustfmt
+      - name: Install Tauri Linux prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            wget
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+
+  windows:
+    name: Windows MSVC candidate
+    runs-on: windows-latest
+    environment: qualification
+    env:
+      # These repository/environment variables are non-secret, approved
+      # qualification inputs. Tokens are never supplied to this workflow.
+      APPPORT_RELUTION_API_BASE_URL: ${{ vars.APPPORT_RELUTION_API_BASE_URL }}
+      APPPORT_RELUTION_ORGANIZATION_UUID: ${{ vars.APPPORT_RELUTION_ORGANIZATION_UUID }}
+      APPPORT_NATIVE_APP_UUID: ${{ vars.APPPORT_NATIVE_APP_UUID }}
+      APPPORT_QUALIFICATION_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.qualification_profile || 'read_only' }}
+      APPPORT_RELUTION_WRITES_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.qualification_profile == 'write_qualification' && 'true' || 'false' }}
+      APPPORT_QUALIFICATION_TENANT_APPROVED: ${{ vars.APPPORT_QUALIFICATION_TENANT_APPROVED }}
+      APPPORT_RELUTION_TENANT_CLASS: ${{ vars.APPPORT_RELUTION_TENANT_CLASS }}
+      APPPORT_DISPOSABLE_RESOURCES_APPROVED: ${{ vars.APPPORT_DISPOSABLE_RESOURCES_APPROVED }}
+      APPPORT_SOURCE_REVISION: ${{ github.sha }}
+    steps:
+      # actions/checkout v6.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+      # actions/setup-node v6.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 26.5.0
+          cache: pnpm
+      # stable as resolved for this qualification run, pinned immutably.
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          components: clippy,rustfmt
+          targets: x86_64-pc-windows-msvc
+      - run: pnpm install --frozen-lockfile
+      - name: Validate exact qualification configuration
+        shell: pwsh
+        run: |
+          @'
+          const env = process.env;
+          const fail = (message) => { throw new Error(message); };
+          let origin;
+          try { origin = new URL(env.APPPORT_RELUTION_API_BASE_URL ?? ""); } catch { fail("invalid origin"); }
+          const placeholder = /(^|\.)(localhost|invalid|example\.com|example\.test)$/i;
+          if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash || placeholder.test(origin.hostname)) fail("origin is not an approved fixed HTTPS qualification origin");
+          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!uuid.test(env.APPPORT_RELUTION_ORGANIZATION_UUID ?? "") || !uuid.test(env.APPPORT_NATIVE_APP_UUID ?? "")) fail("UUID input is not canonical");
+          if (env.APPPORT_RELUTION_ORGANIZATION_UUID.toLowerCase() === env.APPPORT_NATIVE_APP_UUID.toLowerCase()) fail("UUID inputs must differ");
+          if (!['read_only', 'write_qualification'].includes(env.APPPORT_QUALIFICATION_PROFILE)) fail("invalid profile");
+          const expectedWrites = env.APPPORT_QUALIFICATION_PROFILE === 'write_qualification' ? 'true' : 'false';
+          if (env.APPPORT_RELUTION_WRITES_ENABLED !== expectedWrites) fail("write flag does not match profile");
+          if (env.APPPORT_QUALIFICATION_TENANT_APPROVED !== 'true' || env.APPPORT_RELUTION_TENANT_CLASS !== 'qualification') fail("tenant is not explicitly approved as qualification-only");
+          if (env.APPPORT_QUALIFICATION_PROFILE === 'write_qualification' && env.APPPORT_DISPOSABLE_RESOURCES_APPROVED !== 'true') fail("disposable resources are not approved");
+          '@ | node --input-type=module
+      - run: pnpm client:rust:fmt
+      - run: cargo clippy --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --all-targets --all-features -- -D warnings
+        env:
+          APPPORT_SOURCE_VERIFICATION: "true"
+          APPPORT_QUALIFICATION_PROFILE: read_only
+          APPPORT_RELUTION_WRITES_ENABLED: "false"
+      - run: cargo test --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+        env:
+          APPPORT_SOURCE_VERIFICATION: "true"
+          APPPORT_QUALIFICATION_PROFILE: read_only
+          APPPORT_RELUTION_WRITES_ENABLED: "false"
+      - run: cargo check --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+        env:
+          APPPORT_SOURCE_VERIFICATION: "true"
+          APPPORT_QUALIFICATION_PROFILE: read_only
+          APPPORT_RELUTION_WRITES_ENABLED: "false"
+      - name: Build unsigned qualification MSI candidate
+        run: pnpm client:tauri -- --target x86_64-pc-windows-msvc
+      - name: Build candidate-bound operator utility
+        run: cargo build --manifest-path apps/windows-client/src-tauri/Cargo.toml --release --target x86_64-pc-windows-msvc --bin relution-appport-qualification
+      - name: Locate candidate MSI
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem -Path apps/windows-client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi -Filter *.msi -File -Recurse | Select-Object -First 1
+          if ($null -eq $msi) { throw "Tauri did not produce an MSI." }
+          $evidenceDirectory = "release-artifacts/0.1.0-alpha.4"
+          New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+          $candidateMsi = Join-Path $evidenceDirectory "Appport-0.1.0-alpha.4.msi"
+          Copy-Item -LiteralPath $msi.FullName -Destination $candidateMsi -Force
+          $utility = "apps/windows-client/src-tauri/target/x86_64-pc-windows-msvc/release/relution-appport-qualification.exe"
+          if (-not (Test-Path -LiteralPath $utility -PathType Leaf)) { throw "Qualification utility was not built." }
+          $candidateUtility = Join-Path $evidenceDirectory "relution-appport-qualification.exe"
+          Copy-Item -LiteralPath $utility -Destination $candidateUtility -Force
+          "APPPORT_MSI=$((Resolve-Path $candidateMsi).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "APPPORT_QUALIFICATION_UTILITY=$((Resolve-Path $candidateUtility).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Install, self-check, and uninstall candidate
+        shell: pwsh
+        run: |
+          $roots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }
+          $before = @{}
+          Get-ChildItem -Path $roots -Filter Appport.exe -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            $before[$_.FullName] = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash
+          }
+          $install = Start-Process msiexec.exe -ArgumentList @('/i', $env:APPPORT_MSI, '/qn', '/norestart') -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "MSI install failed with $($install.ExitCode)." }
+          try {
+            $after = Get-ChildItem -Path $roots -Filter Appport.exe -File -Recurse -ErrorAction SilentlyContinue
+            $installed = @($after | Where-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash
+              -not $before.ContainsKey($_.FullName) -or $before[$_.FullName] -ne $hash
+            })
+            if ($installed.Count -ne 1) { throw "MSI did not create exactly one identifiable Appport executable." }
+            $app = $installed[0]
+            $uninstallRoots = @(
+              'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+              'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+              'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+            )
+            $products = @(Get-ItemProperty -Path $uninstallRoots -ErrorAction SilentlyContinue | Where-Object {
+              $_.DisplayName -eq 'Appport' -and $_.DisplayVersion -eq '0.1.0.4'
+            })
+            if ($products.Count -ne 1) { throw "Installed MSI product registration was not unique or version-matched." }
+            $report = "release-artifacts/0.1.0-alpha.4/windows-self-check.json"
+            & $app.FullName --qualification-self-check | Set-Content -Path $report -Encoding utf8NoBOM
+            if ($LASTEXITCODE -ne 0) { throw "Installed MSI self-check failed." }
+            $selfCheck = Get-Content $report -Raw | ConvertFrom-Json
+            if (-not $selfCheck.qualified -or -not $selfCheck.cleanupComplete) { throw "Installed MSI self-check did not qualify or clean up." }
+            $installedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $app.FullName).Hash.ToLowerInvariant()
+          } finally {
+            $uninstall = Start-Process msiexec.exe -ArgumentList @('/x', $env:APPPORT_MSI, '/qn', '/norestart') -Wait -PassThru
+            if ($uninstall.ExitCode -ne 0) { throw "MSI uninstall failed with $($uninstall.ExitCode)." }
+          }
+          if (Test-Path -LiteralPath $app.FullName) { throw "Installed Appport executable remained after MSI uninstall." }
+          $candidateMsiSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $env:APPPORT_MSI).Hash.ToLowerInvariant()
+          $qualificationUtilitySha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $env:APPPORT_QUALIFICATION_UTILITY).Hash.ToLowerInvariant()
+          if ($selfCheck.sourceRevision -ne $env:APPPORT_SOURCE_REVISION) { throw "Installed MSI self-check source revision did not match the candidate." }
+          $selfCheck | Add-Member -NotePropertyName msiUninstalled -NotePropertyValue $true
+          $selfCheck | Add-Member -NotePropertyName installedExecutableSha256 -NotePropertyValue $installedHash
+          $selfCheck | Add-Member -NotePropertyName installedProductVersion -NotePropertyValue '0.1.0.4'
+          $selfCheck | Add-Member -NotePropertyName candidateMsiSha256 -NotePropertyValue $candidateMsiSha256
+          $selfCheck | Add-Member -NotePropertyName qualificationUtilitySha256 -NotePropertyValue $qualificationUtilitySha256
+          $selfCheck | ConvertTo-Json -Depth 8 | Set-Content -Path $report -Encoding utf8NoBOM
+      - name: Record candidate evidence
+        run: pnpm alpha:evidence -- --msi $env:APPPORT_MSI --qualification-utility $env:APPPORT_QUALIFICATION_UTILITY --windows-self-check release-artifacts/0.1.0-alpha.4/windows-self-check.json
+      - name: Require candidate-ready unsigned evidence
+        shell: pwsh
+        run: |
+          $evidence = Get-Content release-artifacts/0.1.0-alpha.4/evidence.json -Raw | ConvertFrom-Json
+          if (-not $evidence.candidateReady) { throw "candidateReady must be true." }
+          if ($evidence.signed -or $evidence.distributable) { throw "Alpha.4 must remain unsigned and non-distributable." }
+          if ($evidence.profile -ne $env:APPPORT_QUALIFICATION_PROFILE) { throw "Evidence profile mismatch." }
+      # actions/upload-artifact v7.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: appport-0.1.0-alpha.4-${{ env.APPPORT_QUALIFICATION_PROFILE }}-unsigned-candidate
+          if-no-files-found: error
+          path: |
+            release-artifacts/0.1.0-alpha.4/Appport-0.1.0-alpha.4.msi
+            release-artifacts/0.1.0-alpha.4/relution-appport-qualification.exe
+            release-artifacts/0.1.0-alpha.4/evidence.json
+            release-artifacts/0.1.0-alpha.4/windows-self-check.json
+            release-artifacts/0.1.0-alpha.4/msi-sha256.txt
+            release-artifacts/0.1.0-alpha.4/source-revision-state.json
+            release-artifacts/0.1.0-alpha.4/configuration-fingerprint.json
+            release-artifacts/0.1.0-alpha.4/embedded-secret-scan.json

@@ -1,22 +1,16 @@
 {
-  "name": "@relution/appport-broker",
-  "version": "0.1.0-alpha.1",
+  "name": "@relution/appport",
+  "version": "0.1.0-alpha.4",
   "description": "Self-service software for managed Windows devices.",
   "private": true,
   "packageManager": "pnpm@11.6.0",
   "engines": {
-    "node": ">=24.18.0 <25"
+    "node": ">=26.5.0 <26.6.0"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
     "client:typecheck": "pnpm --dir apps/windows-client exec tsc --noEmit",
     "client:test": "pnpm --dir apps/windows-client test",
+    "client:test:coverage": "pnpm --dir apps/windows-client test:coverage",
     "client:build": "pnpm --dir apps/windows-client build",
     "client:rust:test": "cargo test --manifest-path apps/windows-client/src-tauri/Cargo.toml",
     "client:rust:check": "cargo check --manifest-path apps/windows-client/src-tauri/Cargo.toml",
@@ -24,24 +18,15 @@
     "client:rust:clippy": "cargo clippy --manifest-path apps/windows-client/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
     "client:tauri": "pnpm --dir apps/windows-client tauri build",
     "verify:toolchain": "node scripts/verify-toolchain.mjs",
-    "verify": "pnpm verify:toolchain && pnpm lint && pnpm typecheck && pnpm test && pnpm client:typecheck && pnpm client:test && pnpm client:build && pnpm client:rust:fmt && pnpm client:rust:clippy && pnpm client:rust:test && pnpm client:rust:check && pnpm build",
-    "revoke-native-sessions": "node scripts/revoke-native-sessions.mjs",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,css}\"",
+    "docs:verify": "node --test scripts/verify-docs.test.mjs && node scripts/verify-docs.mjs",
+    "evidence:test": "node --test scripts/create-alpha-evidence.test.mjs",
+    "verify": "pnpm verify:toolchain && pnpm format:check && pnpm docs:verify && pnpm evidence:test && pnpm client:typecheck && pnpm client:test:coverage && pnpm client:build && pnpm client:rust:fmt && pnpm client:rust:clippy && pnpm client:rust:test && pnpm client:rust:check",
     "alpha:evidence": "node scripts/create-alpha-evidence.mjs"
   },
-  "dependencies": {
-    "@relution/appport-contracts": "workspace:*",
-    "better-auth": "1.6.23",
-    "next": "16.2.12",
-    "react": "19.2.0",
-    "react-dom": "19.2.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@types/node": "^24.10.13",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "eslint": "^9.39.4",
-    "eslint-config-next": "16.2.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "prettier": "3.6.2"
   }
 }
