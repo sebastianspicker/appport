@@ -1,58 +1,50 @@
-# Release status: 0.1.0-alpha.1
+# Release status: 0.1.0-alpha.4
 
-Status date: 2026-07-24
+Status date: 2026-08-10
 
-## Local source evidence
+## Repository scope
 
-The current host uses Node 26.5.0. The repository requires Node 24.18.x, and
-`pnpm verify:toolchain` rejects Node 26 as intended.
+The active repository contains the standalone Tauri 2 Windows client, its React interface, native Rust implementation, source tests, documentation, and candidate-evidence tooling. It does not contain the retired web service or PWA implementation.
 
-The remaining portable stages have been run individually on the available
-host:
+## Verified locally
 
-- ESLint;
-- broker and client TypeScript checks;
-- 77 broker tests;
-- 7 client interface tests;
-- client web build;
-- Rust formatting and Clippy with warnings denied;
-- 15 Rust tests and `cargo check`;
-- broker production build;
-- documentation link and presentation checks.
+The alpha.4 source implementation is available for local verification in this
+dirty shared working tree. No command result is recorded here as alpha.4 release
+evidence. Documentation validation is a local source check only; it does not
+establish a reproducible clean checkout, a Windows build, an MSI, a signature,
+or a managed-tenant result.
 
-This is diagnostic source evidence. It is not a passing `pnpm verify` result
-under the pinned Node version.
+## Qualification contract
 
-## Unverified local-candidate gates
+`APPPORT_QUALIFICATION_PROFILE` is compile-time only and must be `read_only` or
+`write_qualification`. `APPPORT_RELUTION_WRITES_ENABLED` must exactly match the
+selected profile. Release builds require
+`APPPORT_QUALIFICATION_TENANT_APPROVED=true` and
+`APPPORT_RELUTION_TENANT_CLASS=qualification`. The write profile also requires
+`APPPORT_DISPOSABLE_RESOURCES_APPROVED=true` and an externally supplied,
+non-secret qualification plan.
 
-- clean-checkout installation with Node 24.18.x;
-- a complete `pnpm verify` run;
-- coverage thresholds, because no coverage provider is configured;
-- Docker image build and non-root container health checks.
+Tokens are supplied only through masked console input. They must never appear in
+arguments, environment variables, files, logs, or reports.
 
-## Unverified pilot-ready gates
+## Not qualified
 
-- trusted HTTPS proxy behavior;
-- read-only production secret mounts;
-- encrypted backup and restore;
-- signed Windows x64 MSI creation;
-- managed Windows installation, upgrade, rollback, and uninstall;
-- Credential Manager, Task Scheduler, notification, and accessibility checks;
-- live Relution read qualification and deployment canaries.
+- No clean-checkout source-gate result, approved tenant inputs, Windows MSVC MSI,
+  MSI hash, configuration fingerprint, or Windows ACL and Credential Manager
+  result has been recorded for alpha.4.
+- No `candidateReady=true` evidence has been recorded.
+- No live read-only or write-qualification pilot evidence has been recorded; in
+  particular, no `pilotQualified=true` result has been recorded.
+- Managed-device connection, catalog, icon, inventory, background checks,
+  disposable-resource write qualification, and destructive authorization remain
+  unrun external gates.
+- Signing, publication, production qualification, administrative operations, and
+  Relution application uninstall are outside alpha.4 and have no authorization or
+  evidence. MSI uninstall is used only to clean up candidate verification.
 
-## Unverified pilot-validation gates
+An alpha.4 MSI is tenant-fixed, unsigned, and non-distributable.
+`candidateReady` describes completed candidate build evidence. `pilotQualified`
+describes separately completed live qualification under the selected profile; it
+must not be inferred from `candidateReady`.
 
-- one week of restricted-pilot operation;
-- monitored authentication, device matching, action, and `unknown` outcomes;
-- live Relution evidence;
-- exercised rollback readiness.
-
-## Accepted restricted-pilot risks
-
-Native sessions are portable bearer tokens. Initial Relution user resolution
-uses a username claim before the immutable Relution user UUID is pinned. These
-risks are acceptable only under the restrictions in
-[docs/RUNTIME_CONTRACT.md](docs/RUNTIME_CONTRACT.md).
-
-Promotion requirements are in
-[docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+See the [release checklist](docs/RELEASE_CHECKLIST.md), [alpha.4 release notes](docs/releases/0.1.0-alpha.4.md), and [alpha.3 historical release notes](docs/releases/0.1.0-alpha.3.md).

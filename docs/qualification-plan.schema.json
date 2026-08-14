@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://appport.invalid/schemas/qualification-plan-v1.json",
+  "title": "Appport alpha.4 write qualification plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "disposableDeviceUuid",
+    "cleanupOwner",
+    "install",
+    "update",
+    "unauthorized"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "disposableDeviceUuid": { "$ref": "#/$defs/uuid" },
+    "cleanupOwner": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "install": { "$ref": "#/$defs/actionFixture" },
+    "update": { "$ref": "#/$defs/actionFixture" },
+    "unauthorized": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicationUuid", "versionUuid"],
+      "properties": {
+        "applicationUuid": { "$ref": "#/$defs/uuid" },
+        "versionUuid": { "$ref": "#/$defs/uuid" }
+      }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+    },
+    "actionFixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicationUuid", "versionUuid", "expectedVersion"],
+      "properties": {
+        "applicationUuid": { "$ref": "#/$defs/uuid" },
+        "versionUuid": { "$ref": "#/$defs/uuid" },
+        "expectedVersion": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

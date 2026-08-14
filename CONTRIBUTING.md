@@ -1,62 +1,13 @@
 # Contributing
 
-## Before making a change
+Keep changes within the standalone Windows-client boundary. This repository does not contain browser routes, server routes, or Relution administrative credentials.
 
-1. Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-2. Read the reference document for the component being changed.
-3. Preserve Relution as the authority for users, groups, devices,
-   entitlements, inventory, released versions, and deployment execution.
-4. Do not add a production dependency without an explicit project decision.
-5. Do not add credentials, tenant exports, user or device data, production
-   databases, backups, logs, signing material, or build, test, or evidence
-   output.
+1. Use Node 26.5.x and pnpm 11.6.0.
+2. Run pnpm install --frozen-lockfile.
+3. Keep version values aligned across both package manifests, Cargo manifest and lockfile, Tauri configuration, and WiX configuration.
+4. For alpha.4 candidate builds, use approved non-secret qualification-tenant origin and UUIDs, keep the HTTPS origin fixed, select `APPPORT_QUALIFICATION_PROFILE=read_only` or `write_qualification`, and set `APPPORT_RELUTION_WRITES_ENABLED` to the exact matching value.
+5. Run `APPPORT_SOURCE_VERIFICATION=true APPPORT_QUALIFICATION_PROFILE=read_only APPPORT_RELUTION_WRITES_ENABLED=false pnpm verify` before requesting review when qualification values are unavailable.
 
-## Development process
+Place React tests beside the client source and Rust tests in the Windows-client crate. Local transport mocks may verify decoding, pagination, retry, permission, inventory, icon, and correlation behavior. Do not add a production mock mode or represent mocked responses as tenant evidence.
 
-Install the pinned workspace:
-
-```sh
-corepack enable
-pnpm install --frozen-lockfile
-```
-
-Make the smallest change that satisfies the intended behavior. Follow the
-existing component boundaries and shared contracts. Add or update tests when a
-behavior, validation rule, state transition, or failure path changes.
-
-Test placement:
-
-- broker tests beside the TypeScript module under `src`;
-- client interface tests under `apps/windows-client/src`;
-- Rust tests in the module they cover.
-
-Run focused checks while developing and `pnpm verify` before requesting review.
-The complete command list and platform boundaries are in
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
-
-## Documentation changes
-
-Documentation must describe the current implementation. Update commands,
-paths, environment variables, route tables, and operational constraints in the
-same change that modifies them.
-
-Use the established terminology:
-
-- broker for the Next.js service;
-- Windows client for the Tauri application;
-- Relution Windows Agent for the external deployment executor;
-- native session for the broker-issued bearer session.
-
-Do not present mock-adapter results as evidence for a signed Windows package,
-the production container, live Relution, or a managed pilot.
-
-## Review information
-
-A review request should state:
-
-- the behavior changed;
-- the files and contracts affected;
-- the commands run and their results;
-- Windows, container, or live-service checks that were not run;
-- schema, migration, security, and operational consequences;
-- any remaining uncertainty.
+Windows MSI creation, Windows Credential Manager behavior, code signing, service connectivity, destructive authorization, and managed-device testing require their respective environments. Alpha.3 evidence must retain those external gates as unqualified until separately authorized and performed.

@@ -7,5 +7,22 @@ export default defineConfig({
   server: { strictPort: true, port: 1420, host: "127.0.0.1" },
   envPrefix: ["VITE_"],
   build: { target: ["es2022", "chrome105"] },
-  test: { environment: "jsdom", globals: true },
+  test: {
+    include: ["src/**/*.test.{ts,tsx}"],
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/testSetup.ts"],
+    testTimeout: 10_000,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "lcov"],
+      reportsDirectory: "coverage",
+      thresholds: {
+        statements: 80,
+        lines: 80,
+        functions: 80,
+        branches: 75,
+      },
+    },
+  },
 });

@@ -1,0 +1,13 @@
+.codacy/
+.codegraph/
+.git/
+.mcp.json
+.next/
+.repowise/
+.vscode/
+.worktrees/
+apps/windows-client/dist/
+apps/windows-client/src-tauri/target/
+coverage/
+node_modules/
+release-artifacts/
