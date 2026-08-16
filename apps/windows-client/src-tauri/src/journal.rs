@@ -385,7 +385,8 @@ fn best_effort_prune(connection: &Connection, timestamp: i64) {
 
 #[cfg(windows)]
 fn current_user_sid() -> Result<String, String> {
-    let output = std::process::Command::new("whoami.exe")
+    let output = crate::system_tools::command("whoami.exe")
+        .map_err(|_| "unknown: current-user security identity is unavailable")?
         .args(["/user", "/fo", "csv", "/nh"])
         .output()
         .map_err(|_| "unknown: current-user security identity is unavailable")?;
@@ -408,7 +409,8 @@ pub(crate) fn secure_current_user(path: &std::path::Path) -> Result<(), String> 
     } else {
         format!("*{sid}:F")
     };
-    let status = std::process::Command::new("icacls.exe")
+    let status = crate::system_tools::command("icacls.exe")
+        .map_err(|_| "unknown: action journal ACL could not be applied")?
         .arg(path)
         .args(["/inheritance:r", "/grant:r"])
         .arg(grant)

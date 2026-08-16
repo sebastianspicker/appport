@@ -215,13 +215,21 @@ function cleanupRequirements(context) {
 }
 
 function reportResult(contents, report, valid, failedReason) {
+  const details = reportDetails(contents, report);
+  if (valid) return { status: "passed", ...details, reason: null };
   return {
-    status: valid ? "passed" : "failed",
+    status: "failed",
+    ...details,
+    reason: failedReason,
+  };
+}
+
+function reportDetails(contents, report) {
+  return {
     startedAtUnix: report.startedAtUnix ?? null,
     completedAtUnix: report.completedAtUnix ?? null,
     outputSha256: hash(contents),
     planFingerprintSha256: report.planFingerprintSha256 ?? null,
-    reason: valid ? null : failedReason,
   };
 }
 
