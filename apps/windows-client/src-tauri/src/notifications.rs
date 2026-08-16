@@ -82,7 +82,8 @@ fn windows_locale_is_german() -> bool {
 
 #[cfg(windows)]
 fn read_notification_keys() -> Option<BTreeSet<String>> {
-    let output = std::process::Command::new("reg.exe")
+    let output = crate::system_tools::command("reg.exe")
+        .ok()?
         .args([
             "query",
             r"HKCU\Software\Relution\Appport",
@@ -112,7 +113,8 @@ fn read_notification_keys() -> Option<BTreeSet<String>> {
 fn persist_notification_keys(keys: &BTreeSet<String>) -> Result<(), String> {
     let value = serde_json::to_string(&keys.iter().collect::<Vec<_>>())
         .map_err(|_| "unknown: notification state could not be saved")?;
-    let status = std::process::Command::new("reg.exe")
+    let status = crate::system_tools::command("reg.exe")
+        .map_err(|_| "unknown: notification state registry unavailable")?
         .args([
             "add",
             r"HKCU\Software\Relution\Appport",
@@ -140,7 +142,8 @@ fn persist_notification_keys(_: &BTreeSet<String>) -> Result<(), String> {
 
 #[cfg(windows)]
 fn clear_notification_state() -> Result<(), String> {
-    let status = std::process::Command::new("reg.exe")
+    let status = crate::system_tools::command("reg.exe")
+        .map_err(|_| "unknown: notification state registry unavailable")?
         .args([
             "delete",
             r"HKCU\Software\Relution\Appport",
@@ -170,7 +173,8 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
     );
     let value = serde_json::to_string(&["qualification@1"])
         .map_err(|_| "unknown: qualification notification value invalid")?;
-    let result = std::process::Command::new("reg.exe")
+    let result = crate::system_tools::command("reg.exe")
+        .map_err(|_| "unknown: qualification notification registry unavailable")?
         .args([
             "add",
             &key,
@@ -193,7 +197,8 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
                 .ok_or_else(|| "unknown: qualification notification write failed".into())
         })
         .and_then(|_| {
-            let output = std::process::Command::new("reg.exe")
+            let output = crate::system_tools::command("reg.exe")
+                .map_err(|_| "unknown: qualification notification query failed")?
                 .args(["query", &key, "/v", "UpdateNotificationKeys"])
                 .output()
                 .map_err(|_| "unknown: qualification notification query failed")?;
@@ -202,7 +207,8 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
             .then_some(())
             .ok_or_else(|| "unknown: qualification notification state missing".into())
         });
-    let cleanup = std::process::Command::new("reg.exe")
+    let cleanup = crate::system_tools::command("reg.exe")
+        .map_err(|_| "unknown: qualification notification cleanup failed")?
         .args(["delete", &key, "/f"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -214,11 +220,15 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
                 .then_some(())
                 .ok_or_else(|| "unknown: qualification notification cleanup failed".into())
         });
-    let absent = std::process::Command::new("reg.exe")
-        .args(["query", &key])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
+    let absent = crate::system_tools::command("reg.exe")
+        .and_then(|mut command| {
+            command
+                .args(["query", &key])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map_err(|_| "unknown: qualification notification query failed".into())
+        })
         .map(|status| !status.success())
         .unwrap_or(false)
         .then_some(())

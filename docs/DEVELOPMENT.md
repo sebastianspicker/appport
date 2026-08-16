@@ -31,10 +31,11 @@ The write-plan format is defined by
 candidate-built operator utility with `relution-appport-qualification
 --candidate-evidence C:\absolute\path\evidence.json --plan
 C:\absolute\path\qualification-plan.json`. Omit `--plan` for the read-only
-profile. The utility verifies its own hash, embedded configuration fingerprint,
-and embedded source revision against candidate evidence before prompting for
-credentials. Candidate evidence binds the live report to the exact MSI and
-utility. The plan contains only disposable
+profile. The utility verifies its embedded configuration fingerprint and source
+revision against candidate evidence before prompting for credentials. It copies
+the candidate-evidence utility digest into the live report as correlation data;
+`alpha:evidence` later rehashes the supplied utility artifact and verifies that
+digest when binding the report to the exact MSI and utility. The plan contains only disposable
 resource identifiers, expected versions, and cleanup ownership. The utility
 prints only their SHA-256 fingerprints.
 

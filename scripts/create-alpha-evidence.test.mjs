@@ -229,7 +229,13 @@ test("Windows self-check producer and workflow enrichment bind the candidate", (
     const path = join(directory, "self-check.json");
     const sourceRevision = "a".repeat(40);
     const msi = Buffer.from("candidate MSI");
-    const qualificationUtility = Buffer.from("candidate utility");
+    const qualificationUtilityPath = join(directory, "qualification.exe");
+    const qualificationUtility = Buffer.from([
+      0x4d,
+      0x5a,
+      ...Buffer.from("candidate utility"),
+    ]);
+    writeFileSync(qualificationUtilityPath, qualificationUtility);
     const binding = {
       candidateMsiSha256: sha256(msi),
       qualificationUtilitySha256: sha256(qualificationUtility),
@@ -266,6 +272,31 @@ test("Windows self-check producer and workflow enrichment bind the candidate", (
       inspectReport(path, "windows_runtime", "read_only", false, binding)
         .status,
       "passed",
+    );
+    assert.equal(
+      inspectQualificationUtility(qualificationUtilityPath, []).sha256,
+      binding.qualificationUtilitySha256,
+    );
+    writeFileSync(
+      qualificationUtilityPath,
+      Buffer.from([0x4d, 0x5a, ...Buffer.from("replacement utility")]),
+    );
+    const replacementBinding = {
+      ...binding,
+      qualificationUtilitySha256: inspectQualificationUtility(
+        qualificationUtilityPath,
+        [],
+      ).sha256,
+    };
+    assert.equal(
+      inspectReport(
+        path,
+        "windows_runtime",
+        "read_only",
+        false,
+        replacementBinding,
+      ).status,
+      "failed",
     );
     const workflow = read(".github/workflows/verify.yml");
     assert.match(

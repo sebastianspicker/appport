@@ -28,6 +28,19 @@ fn migration_result(
     let remove_obsolete = current.is_some() || obsolete_present;
     (current, remove_obsolete)
 }
+
+#[cfg(any(windows, test))]
+unsafe fn credential_blob_bytes(blob: *const u8, blob_size: u32) -> Option<Vec<u8>> {
+    let blob_size = blob_size as usize;
+    if blob_size == 0 {
+        return Some(Vec::new());
+    }
+    let blob = std::ptr::NonNull::new(blob as *mut u8)?;
+    // SAFETY: The caller guarantees that a non-empty CredentialBlob points to
+    // CredentialBlobSize readable bytes for the lifetime of this copy.
+    Some(unsafe { std::slice::from_raw_parts(blob.as_ptr(), blob_size).to_vec() })
+}
+
 #[derive(Default)]
 pub struct SessionStore {
     credential: Option<CredentialRecord>,
@@ -163,7 +176,8 @@ impl SessionCoordinator {
 }
 #[cfg(windows)]
 mod credential {
-    use super::CredentialRecord;
+    use super::{credential_blob_bytes, CredentialRecord};
+    use std::ptr::NonNull;
     use windows::{
         core::PCWSTR,
         Win32::Security::Credentials::{
@@ -178,6 +192,29 @@ mod credential {
     fn wide(value: &str) -> Vec<u16> {
         value.encode_utf16().chain(Some(0)).collect()
     }
+
+    struct CredentialGuard(NonNull<CREDENTIALW>);
+
+    impl CredentialGuard {
+        fn new(credential: *mut CREDENTIALW) -> Option<Self> {
+            NonNull::new(credential).map(Self)
+        }
+
+        fn credential(&self) -> &CREDENTIALW {
+            // SAFETY: CredReadW returned this non-null pointer and the guard keeps the
+            // allocation alive until after this borrowed credential is no longer used.
+            unsafe { self.0.as_ref() }
+        }
+    }
+
+    impl Drop for CredentialGuard {
+        fn drop(&mut self) {
+            // SAFETY: CredentialGuard is constructed only from a non-null pointer
+            // returned by CredReadW, which must be released with CredFree exactly once.
+            unsafe { CredFree(self.0.as_ptr().cast()) };
+        }
+    }
+
     pub(super) fn read(target_name: &str) -> Option<Vec<u8>> {
         unsafe {
             let target = wide(target_name);
@@ -192,13 +229,9 @@ mod credential {
             {
                 return None;
             }
-            let bytes = std::slice::from_raw_parts(
-                (*credential).CredentialBlob,
-                (*credential).CredentialBlobSize as usize,
-            );
-            let value = bytes.to_vec();
-            CredFree(credential.cast());
-            Some(value)
+            let credential = CredentialGuard::new(credential)?;
+            let credential = credential.credential();
+            credential_blob_bytes(credential.CredentialBlob, credential.CredentialBlobSize)
         }
     }
     pub fn load() -> Option<CredentialRecord> {
@@ -305,6 +338,32 @@ mod windows_tests {
         assert_eq!(migration_result(None, true), (None, true));
         assert_eq!(migration_result(Some(b"not-json"), true), (None, true));
         assert_eq!(migration_result(None, false), (None, false));
+    }
+}
+
+#[cfg(test)]
+mod credential_blob_tests {
+    use super::*;
+
+    #[test]
+    fn credential_blob_reader_accepts_empty_null_blobs_and_rejects_nonempty_null_blobs() {
+        // SAFETY: A zero-length blob is never dereferenced.
+        assert_eq!(
+            unsafe { credential_blob_bytes(std::ptr::null(), 0) },
+            Some(vec![])
+        );
+        // SAFETY: A non-empty null blob is rejected before dereferencing.
+        assert_eq!(unsafe { credential_blob_bytes(std::ptr::null(), 1) }, None);
+    }
+
+    #[test]
+    fn credential_blob_reader_copies_nonempty_blobs() {
+        let blob = [1, 2, 3];
+        // SAFETY: blob is valid and readable for its full length during the copy.
+        assert_eq!(
+            unsafe { credential_blob_bytes(blob.as_ptr(), blob.len() as u32) },
+            Some(blob.to_vec())
+        );
     }
 }
 
