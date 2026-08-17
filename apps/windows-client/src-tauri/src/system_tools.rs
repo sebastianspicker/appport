@@ -66,8 +66,9 @@ mod tests {
 
     #[test]
     fn command_uses_system32_instead_of_hostile_path_or_current_directory() {
-        let system32 = PathBuf::from("/trusted/System32");
-        let hostile_directory = PathBuf::from("/attacker");
+        let base = std::env::current_dir().unwrap();
+        let system32 = base.join("trusted").join("System32");
+        let hostile_directory = base.join("attacker");
         let mut command = command_in(&system32, "whoami.exe").unwrap();
         command.env("PATH", &hostile_directory);
 
@@ -85,6 +86,12 @@ mod tests {
     #[test]
     fn command_rejects_nonabsolute_resolver_output_and_unknown_tools() {
         assert!(validated_system_directory(PathBuf::from("System32")).is_err());
-        assert!(command_in(&PathBuf::from("/trusted/System32"), "cmd.exe").is_err());
+
+        let system32 = std::env::current_dir()
+            .unwrap()
+            .join("trusted")
+            .join("System32");
+
+        assert!(command_in(&system32, "cmd.exe").is_err());
     }
 }
