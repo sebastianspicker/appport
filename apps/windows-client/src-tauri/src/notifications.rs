@@ -208,12 +208,12 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
             .ok_or_else(|| "unknown: qualification notification state missing".into())
         });
     let cleanup = crate::system_tools::command("reg.exe")
-        .map_err(|_| "unknown: qualification notification cleanup failed")?
+        .map_err(|_| "unknown: qualification notification cleanup failed".to_owned())?
         .args(["delete", &key, "/f"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map_err(|_| "unknown: qualification notification cleanup failed")
+        .map_err(|_| "unknown: qualification notification cleanup failed".to_owned())
         .and_then(|status| {
             status
                 .success()
