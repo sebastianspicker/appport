@@ -524,12 +524,20 @@ mod tests {
     #[test]
     fn bounded_reader_rejects_a_final_reparse_point() {
         use std::os::windows::fs::symlink_file;
+        use windows::Win32::Foundation::ERROR_PRIVILEGE_NOT_HELD;
 
         let directory = test_directory();
         let target = directory.join("target.json");
         let link = directory.join("candidate.json");
         fs::write(&target, b"trusted").unwrap();
-        symlink_file(&target, &link).unwrap();
+        match symlink_file(&target, &link) {
+            Ok(()) => {}
+            Err(error) if error.raw_os_error() == Some(ERROR_PRIVILEGE_NOT_HELD.0 as i32) => {
+                fs::remove_dir_all(directory).unwrap();
+                return;
+            }
+            Err(error) => panic!("failed to create test symlink: {error}"),
+        }
 
         assert!(read_bounded_regular(&link, "candidate evidence", MAX_JSON_BYTES).is_err());
         fs::remove_dir_all(directory).unwrap();
