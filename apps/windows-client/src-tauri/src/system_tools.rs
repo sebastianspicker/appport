@@ -1,11 +1,11 @@
 #[cfg(windows)]
-use std::{ffi::OsString, os::windows::ffi::OsStringExt, path::Path};
+use std::{ffi::OsString, os::windows::ffi::OsStringExt};
 
 #[cfg(any(windows, test))]
 use std::path::PathBuf;
 
 #[cfg(windows)]
-use windows::{core::PWSTR, Win32::System::SystemInformation::GetSystemDirectoryW};
+use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
 
 #[cfg(windows)]
 pub(crate) fn command(tool: &str) -> Result<std::process::Command, String> {
@@ -18,9 +18,8 @@ fn system_directory() -> Result<PathBuf, String> {
     let mut capacity = 260usize;
     loop {
         let mut buffer = vec![0; capacity];
-        // SAFETY: buffer is writable for capacity UTF-16 code units.
-        let length =
-            unsafe { GetSystemDirectoryW(PWSTR(buffer.as_mut_ptr()), capacity as u32) } as usize;
+        // SAFETY: buffer is a valid writable UTF-16 slice.
+        let length = unsafe { GetSystemDirectoryW(Some(&mut buffer)) } as usize;
         if length == 0 {
             return Err("unknown: Windows System32 directory is unavailable".into());
         }

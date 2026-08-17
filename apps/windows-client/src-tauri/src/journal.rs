@@ -449,7 +449,8 @@ pub fn qualification_acl_self_check() -> Result<(), String> {
             .ok_or_else(|| "unknown: qualification ACL read failed".into())
     });
     result.and(
-        fs::remove_dir_all(&directory).map_err(|_| "unknown: qualification ACL cleanup failed"),
+        fs::remove_dir_all(&directory)
+            .map_err(|_| "unknown: qualification ACL cleanup failed".to_owned()),
     )
 }
 
