@@ -174,7 +174,7 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
     let value = serde_json::to_string(&["qualification@1"])
         .map_err(|_| "unknown: qualification notification value invalid")?;
     let result = crate::system_tools::command("reg.exe")
-        .map_err(|_| "unknown: qualification notification registry unavailable")?
+        .map_err(|_| "unknown: qualification notification registry unavailable".to_owned())?
         .args([
             "add",
             &key,
@@ -189,23 +189,23 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map_err(|_| "unknown: qualification notification registry unavailable")
+        .map_err(|_| "unknown: qualification notification registry unavailable".to_owned())
         .and_then(|status| {
             status
                 .success()
                 .then_some(())
-                .ok_or_else(|| "unknown: qualification notification write failed".into())
+                .ok_or_else(|| "unknown: qualification notification write failed".to_owned())
         })
         .and_then(|_| {
             let output = crate::system_tools::command("reg.exe")
-                .map_err(|_| "unknown: qualification notification query failed")?
+                .map_err(|_| "unknown: qualification notification query failed".to_owned())?
                 .args(["query", &key, "/v", "UpdateNotificationKeys"])
                 .output()
-                .map_err(|_| "unknown: qualification notification query failed")?;
+                .map_err(|_| "unknown: qualification notification query failed".to_owned())?;
             (output.status.success()
                 && String::from_utf8_lossy(&output.stdout).contains("qualification@1"))
             .then_some(())
-            .ok_or_else(|| "unknown: qualification notification state missing".into())
+            .ok_or_else(|| "unknown: qualification notification state missing".to_owned())
         });
     let cleanup = crate::system_tools::command("reg.exe")
         .map_err(|_| "unknown: qualification notification cleanup failed".to_owned())?
@@ -218,7 +218,7 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
             status
                 .success()
                 .then_some(())
-                .ok_or_else(|| "unknown: qualification notification cleanup failed".into())
+                .ok_or_else(|| "unknown: qualification notification cleanup failed".to_owned())
         });
     let absent = crate::system_tools::command("reg.exe")
         .and_then(|mut command| {
