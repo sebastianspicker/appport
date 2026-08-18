@@ -53,6 +53,7 @@ playwright-report/
 /progress.md
 
 # Local editor integration
+/.mcp.json
 /.kilo/
 /.vscode/mcp.json
 /.vscode/extensions.json

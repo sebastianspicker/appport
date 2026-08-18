@@ -1,10 +1,7 @@
 use std::path::Path;
 
 #[cfg(windows)]
-use std::{
-    fs,
-    process::{Command, Stdio},
-};
+use std::{fs, process::Stdio};
 
 #[cfg(windows)]
 const BACKGROUND_TASK_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-16"?>
@@ -115,7 +112,8 @@ pub fn qualification_platform_self_check() -> Result<(), String> {
     let result = (|| {
         write_registry_string(&registry_path, None, "URL:Appport qualification self-check")?;
         write_registry_string(&registry_path, Some("URL Protocol"), "")?;
-        let query = Command::new("reg.exe")
+        let query = crate::system_tools::command("reg.exe")
+            .map_err(|_| "unknown: qualification registry query failed")?
             .args(["query", &registry_key])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -128,7 +126,8 @@ pub fn qualification_platform_self_check() -> Result<(), String> {
         let xml = background_task_xml(&executable, &sid)?;
         let task_file = write_background_task_named(&xml, &task_file_name)?;
         create_scheduled_task(&task_name, &task_file)?;
-        let query = Command::new("schtasks.exe")
+        let query = crate::system_tools::command("schtasks.exe")
+            .map_err(|_| "unknown: qualification task query failed")?
             .args(["/Query", "/TN", &task_name])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -139,18 +138,26 @@ pub fn qualification_platform_self_check() -> Result<(), String> {
             .then_some(())
             .ok_or_else(|| "unknown: qualification task state missing".into())
     })();
-    let registry_cleanup = Command::new("reg.exe")
-        .args(["delete", &registry_key, "/f"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+    let registry_cleanup = crate::system_tools::command("reg.exe")
+        .and_then(|mut command| {
+            command
+                .args(["delete", &registry_key, "/f"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|_| "unknown: qualification registry cleanup failed".into())
+        })
         .map(|status| status.success())
         .unwrap_or(false);
-    let task_cleanup = Command::new("schtasks.exe")
-        .args(["/Delete", "/F", "/TN", &task_name])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+    let task_cleanup = crate::system_tools::command("schtasks.exe")
+        .and_then(|mut command| {
+            command
+                .args(["/Delete", "/F", "/TN", &task_name])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|_| "unknown: qualification task cleanup failed".into())
+        })
         .map(|status| status.success())
         .unwrap_or(false);
     let task_file_cleanup = (!task_file_path.exists() || fs::remove_file(&task_file_path).is_ok())
@@ -158,18 +165,26 @@ pub fn qualification_platform_self_check() -> Result<(), String> {
     if !registry_cleanup || !task_cleanup || !task_file_cleanup {
         return Err("unknown: qualification platform cleanup failed".into());
     }
-    let registry_absent = !Command::new("reg.exe")
-        .args(["query", &registry_key])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+    let registry_absent = !crate::system_tools::command("reg.exe")
+        .and_then(|mut command| {
+            command
+                .args(["query", &registry_key])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|_| "unknown: qualification registry query failed".into())
+        })
         .map(|status| status.success())
         .unwrap_or(true);
-    let task_absent = !Command::new("schtasks.exe")
-        .args(["/Query", "/TN", &task_name])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+    let task_absent = !crate::system_tools::command("schtasks.exe")
+        .and_then(|mut command| {
+            command
+                .args(["/Query", "/TN", &task_name])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|_| "unknown: qualification task query failed".into())
+        })
         .map(|status| status.success())
         .unwrap_or(true);
     if !registry_absent || !task_absent {
@@ -185,7 +200,8 @@ pub fn qualification_platform_self_check() -> Result<(), String> {
 
 #[cfg(windows)]
 fn create_scheduled_task(task_name: &str, task_file: &Path) -> Result<(), String> {
-    let status = Command::new("schtasks.exe")
+    let status = crate::system_tools::command("schtasks.exe")
+        .map_err(|_| "unknown: Task Scheduler unavailable")?
         .args(["/Create", "/F", "/TN", task_name, "/XML"])
         .arg(task_file)
         .stdout(Stdio::null())
@@ -207,7 +223,8 @@ pub fn register_background_check(_: &Path) -> Result<(), String> {
 #[cfg(windows)]
 pub fn remove_background_check() -> Result<(), String> {
     let task_name = format!(r"\Relution\Appport\{}", current_user_sid()?);
-    let status = Command::new("schtasks.exe")
+    let status = crate::system_tools::command("schtasks.exe")
+        .map_err(|_| "unknown: Task Scheduler unavailable")?
         .args(["/Delete", "/F", "/TN", &task_name])
         .status()
         .map_err(|_| "unknown: Task Scheduler unavailable")?;
@@ -225,7 +242,8 @@ pub fn remove_background_check() -> Result<(), String> {
 
 #[cfg(windows)]
 fn current_user_sid() -> Result<String, String> {
-    let output = Command::new("whoami.exe")
+    let output = crate::system_tools::command("whoami.exe")
+        .map_err(|_| "unknown: Windows user identity unavailable")?
         .args(["/user", "/fo", "csv", "/nh"])
         .output()
         .map_err(|_| "unknown: Windows user identity unavailable")?;
@@ -267,7 +285,8 @@ fn xml_escape(value: &str) -> String {
 #[cfg(windows)]
 fn write_registry_string(path: &str, name: Option<&str>, value: &str) -> Result<(), String> {
     let key = format!("HKCU\\{path}");
-    let mut command = std::process::Command::new("reg.exe");
+    let mut command = crate::system_tools::command("reg.exe")
+        .map_err(|_| "unknown: protocol registry unavailable")?;
     command.args(["add", &key]);
     if let Some(name) = name {
         command.args(["/v", name]);

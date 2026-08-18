@@ -8,11 +8,11 @@ The active repository contains the standalone Tauri 2 Windows client, its React 
 
 ## Verified locally
 
-The alpha.4 source implementation is available for local verification in this
-dirty shared working tree. No command result is recorded here as alpha.4 release
-evidence. Documentation validation is a local source check only; it does not
-establish a reproducible clean checkout, a Windows build, an MSI, a signature,
-or a managed-tenant result.
+The alpha.4 source implementation is available for local verification. No
+command result is recorded here as alpha.4 release evidence. Documentation
+validation is a local source check only; it does not establish a reproducible
+clean checkout, a Windows build, an MSI, a signature, or a managed-tenant
+result.
 
 ## Qualification contract
 
@@ -32,6 +32,8 @@ arguments, environment variables, files, logs, or reports.
 - No clean-checkout source-gate result, approved tenant inputs, Windows MSVC MSI,
   MSI hash, configuration fingerprint, or Windows ACL and Credential Manager
   result has been recorded for alpha.4.
+- No public license is recorded. Licensing and third-party attribution require
+  owner review before publication.
 - No `candidateReady=true` evidence has been recorded.
 - No live read-only or write-qualification pilot evidence has been recorded; in
   particular, no `pilotQualified=true` result has been recorded.

@@ -6,7 +6,12 @@
     )
 )]
 
+#[allow(
+    dead_code,
+    reason = "build.rs consumes the full module; the library uses only shared qualification types and validators"
+)]
 mod build_config;
+
 mod client;
 mod client_support;
 mod dto;
@@ -19,6 +24,7 @@ pub mod qualification;
 mod runtime;
 mod self_check;
 mod session;
+mod system_tools;
 mod task;
 mod wire;
 
