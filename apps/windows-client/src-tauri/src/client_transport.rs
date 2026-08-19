@@ -136,8 +136,12 @@ impl RelutionClient {
         read: bool,
         attempt: u32,
     ) -> RequestAttempt<T> {
+        let diagnostic = ResponseDiagnostic {
+            method: input.method.as_str().to_owned(),
+            path: input.path,
+        };
         match self.send_request(input).await {
-            Ok(response) => response_attempt(response, read, attempt).await,
+            Ok(response) => response_attempt(response, read, attempt, &diagnostic).await,
             Err(SendFailure::Network(error)) => network_attempt(error, read, attempt),
             Err(SendFailure::Path(error)) => RequestAttempt::Complete(Err(error)),
         }
@@ -196,6 +200,11 @@ struct RequestInput<'a> {
     query: &'a [(&'a str, &'a str)],
 }
 
+struct ResponseDiagnostic<'a> {
+    method: String,
+    path: &'a str,
+}
+
 enum SendFailure {
     Network(reqwest::Error),
     Path(String),
@@ -213,7 +222,11 @@ async fn response_attempt<T: DeserializeOwned>(
     response: reqwest::Response,
     read: bool,
     attempt: u32,
+    diagnostic: &ResponseDiagnostic<'_>,
 ) -> RequestAttempt<T> {
+    if crate::logging::relution_diagnostics_enabled() {
+        return diagnostic_response_attempt(response, read, attempt, diagnostic).await;
+    }
     if response.status().is_success() {
         return RequestAttempt::Complete(decode_response(response).await);
     }
@@ -222,6 +235,121 @@ async fn response_attempt<T: DeserializeOwned>(
     } else {
         RequestAttempt::Complete(Err(status(response.status())))
     }
+}
+
+async fn diagnostic_response_attempt<T: DeserializeOwned>(
+    response: reqwest::Response,
+    read: bool,
+    attempt: u32,
+    diagnostic: &ResponseDiagnostic<'_>,
+) -> RequestAttempt<T> {
+    let status_code = response.status();
+    if status_code.is_success() && response.content_length().unwrap_or(0) > MAX_JSON_BYTES as u64 {
+        crate::logging::write_relution_response(
+            &diagnostic.method,
+            diagnostic.path,
+            status_code.as_u16(),
+            attempt + 1,
+            "complete",
+            b"[response omitted: exceeds configured JSON limit]",
+        );
+        return RequestAttempt::Complete(Err("server: response is too large".into()));
+    }
+    let maximum = if status_code.is_success() {
+        MAX_JSON_BYTES
+    } else {
+        crate::logging::MAX_RELUTION_DIAGNOSTIC_BODY_BYTES
+    };
+    match read_response_for_diagnostics(response, maximum).await {
+        DiagnosticBody::Complete(bytes) => {
+            if status_code.is_success() {
+                crate::logging::write_relution_response(
+                    &diagnostic.method,
+                    diagnostic.path,
+                    status_code.as_u16(),
+                    attempt + 1,
+                    "complete",
+                    &bytes,
+                );
+                RequestAttempt::Complete(decode_response_bytes(&bytes))
+            } else {
+                let retry = can_retry_status(status_code, read, attempt);
+                crate::logging::write_relution_response(
+                    &diagnostic.method,
+                    diagnostic.path,
+                    status_code.as_u16(),
+                    attempt + 1,
+                    if retry { "retry" } else { "complete" },
+                    &bytes,
+                );
+                if retry {
+                    RequestAttempt::Retry
+                } else {
+                    RequestAttempt::Complete(Err(status(status_code)))
+                }
+            }
+        }
+        DiagnosticBody::TooLarge if status_code.is_success() => {
+            crate::logging::write_relution_response(
+                &diagnostic.method,
+                diagnostic.path,
+                status_code.as_u16(),
+                attempt + 1,
+                "complete",
+                b"[response omitted: exceeds configured JSON limit]",
+            );
+            RequestAttempt::Complete(Err("server: response is too large".into()))
+        }
+        body @ (DiagnosticBody::TooLarge | DiagnosticBody::Unavailable) => {
+            crate::logging::write_relution_response(
+                &diagnostic.method,
+                diagnostic.path,
+                status_code.as_u16(),
+                attempt + 1,
+                if can_retry_status(status_code, read, attempt) {
+                    "retry"
+                } else {
+                    "complete"
+                },
+                if matches!(body, DiagnosticBody::TooLarge) {
+                    b"[response body omitted: diagnostic limit]"
+                } else {
+                    b"[response body unavailable]"
+                },
+            );
+            if can_retry_status(status_code, read, attempt) {
+                RequestAttempt::Retry
+            } else {
+                RequestAttempt::Complete(Err(status(status_code)))
+            }
+        }
+    }
+}
+
+async fn read_response_for_diagnostics(
+    mut response: reqwest::Response,
+    maximum: usize,
+) -> DiagnosticBody {
+    let mut body = Vec::new();
+    loop {
+        let chunk = match response.chunk().await {
+            Ok(chunk) => chunk,
+            Err(_) => return DiagnosticBody::Unavailable,
+        };
+        let Some(chunk) = chunk else {
+            return DiagnosticBody::Complete(body);
+        };
+        if body.len().saturating_add(chunk.len()) > maximum {
+            return DiagnosticBody::TooLarge;
+        }
+        body.extend_from_slice(&chunk);
+    }
+}
+
+enum DiagnosticBody {
+    Complete(Vec<u8>),
+    TooLarge,
+    Unavailable,
 }
 
 fn network_attempt<T>(error: reqwest::Error, read: bool, attempt: u32) -> RequestAttempt<T> {
@@ -240,10 +368,14 @@ async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> Re
         .bytes()
         .await
         .map_err(|_| "server: response could not be read")?;
+    decode_response_bytes(&bytes)
+}
+
+fn decode_response_bytes<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
     if bytes.len() > MAX_JSON_BYTES {
         return Err("server: response is too large".into());
     }
-    serde_json::from_slice(&bytes).map_err(|_| "server: invalid Relution response".into())
+    serde_json::from_slice(bytes).map_err(|_| "server: invalid Relution response".into())
 }
 
 fn can_retry_status(status_code: reqwest::StatusCode, read: bool, attempt: u32) -> bool {
@@ -260,4 +392,104 @@ fn append_query(url: &mut Url, query: &[(&str, &str)], tenant: &str) {
         pairs.append_pair(key, value);
     }
     pairs.append_pair("tenantOrganizationUuid", tenant);
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
+
+    #[test]
+    fn diagnostic_mode_uses_the_same_json_deserialization() {
+        let body = br#"{"message":"forbidden","items":[1,2]}"#;
+        let decoded: serde_json::Value = decode_response_bytes(body).unwrap();
+        let direct: serde_json::Value = serde_json::from_slice(body).unwrap();
+        assert_eq!(decoded, direct);
+    }
+
+    #[test]
+    fn chunked_success_over_the_json_limit_keeps_the_existing_error() {
+        let (url, server) = chunked_server(200, vec![b'x'; MAX_JSON_BYTES + 1]);
+        let result = run(async {
+            let response = reqwest::Client::new().get(url).send().await.unwrap();
+            diagnostic_response_attempt::<serde_json::Value>(response, true, 0, &diagnostic()).await
+        });
+        server.join().unwrap();
+        assert_complete_error(result, "server: response is too large");
+    }
+
+    #[test]
+    fn oversized_retryable_bodies_remain_bounded_across_attempts() {
+        for attempt in 0..3 {
+            let (url, server) = chunked_server(
+                503,
+                vec![b'x'; crate::logging::MAX_RELUTION_DIAGNOSTIC_BODY_BYTES + 1],
+            );
+            let result = run(async {
+                let response = reqwest::Client::new().get(url).send().await.unwrap();
+                diagnostic_response_attempt::<serde_json::Value>(
+                    response,
+                    true,
+                    attempt,
+                    &diagnostic(),
+                )
+                .await
+            });
+            server.join().unwrap();
+            if attempt < 2 {
+                assert!(matches!(result, RequestAttempt::Retry));
+            } else {
+                assert_complete_error(result, &status(reqwest::StatusCode::SERVICE_UNAVAILABLE));
+            }
+        }
+    }
+
+    fn diagnostic() -> ResponseDiagnostic<'static> {
+        ResponseDiagnostic {
+            method: "GET".into(),
+            path: "/api/management/v1/devices/device/actions",
+        }
+    }
+
+    fn assert_complete_error(result: RequestAttempt<serde_json::Value>, expected: &str) {
+        match result {
+            RequestAttempt::Complete(Err(error)) => assert_eq!(error, expected),
+            RequestAttempt::Complete(Ok(_)) => panic!("expected an error response"),
+            RequestAttempt::Retry => panic!("expected a complete response"),
+        }
+    }
+
+    fn chunked_server(status: u16, body: Vec<u8>) -> (Url, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request).unwrap();
+            write!(
+                stream,
+                "HTTP/1.1 {status} Test\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{:X}\r\n",
+                body.len()
+            )
+            .unwrap();
+            stream.write_all(&body).unwrap();
+            stream.write_all(b"\r\n0\r\n\r\n").unwrap();
+        });
+        (
+            Url::parse(&format!("http://{address}/api/management/v1/test")).unwrap(),
+            server,
+        )
+    }
+
+    fn run<F: std::future::Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(future)
+    }
 }

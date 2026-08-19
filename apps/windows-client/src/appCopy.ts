@@ -12,9 +12,14 @@ export const text = {
     replaceToken: "Renew or replace token",
     manageToken: "Manage token in Relution",
     relutionUsername: "Relution username",
+    authMethod: "Sign-in method",
+    personalTokenMethod: "Personal token",
     accessToken: "Personal access token",
+    password: "Password",
     tokenGuidance:
       "Use your personal, expiring Relution token. Appport cannot revoke it; revoke replaced or exposed tokens in your Relution profile.",
+    passwordGuidance:
+      "Use your Relution password only when your organization enables password sign-in.",
     apps: "Available",
     updates: "Updates",
     search: "Search",
@@ -26,6 +31,14 @@ export const text = {
     empty: ["Nothing to show", "There is no approved software in this view."],
     offline: ["You are offline", "Connect to the internet and try again."],
     sessionExpired: ["Your session expired", "Sign in again to continue."],
+    authorizationDenied: [
+      "Access is not authorized",
+      "Your account or token lacks required Relution access. Contact the Relution administrator.",
+    ],
+    authMethodUnsupported: [
+      "This sign-in method is unavailable",
+      "This Relution service does not support the selected sign-in method. Use a personal token or contact IT.",
+    ],
     deviceFailed: [
       "This device is not assigned",
       "Use the device assigned to your account or contact support.",
@@ -83,9 +96,14 @@ export const text = {
     replaceToken: "Token erneuern oder ersetzen",
     manageToken: "Token in Relution verwalten",
     relutionUsername: "Relution-Benutzername",
+    authMethod: "Anmeldemethode",
+    personalTokenMethod: "Persönlicher Token",
     accessToken: "Persönlicher Zugriffstoken",
+    password: "Passwort",
     tokenGuidance:
       "Verwenden Sie Ihren persönlichen, ablaufenden Relution-Token. Appport kann ihn nicht widerrufen; widerrufen Sie ersetzte oder offengelegte Token in Ihrem Relution-Profil.",
+    passwordGuidance:
+      "Verwenden Sie Ihr Relution-Passwort nur, wenn Ihre Organisation die Passwortanmeldung aktiviert hat.",
     apps: "Verfügbar",
     updates: "Updates",
     search: "Suchen",
@@ -108,6 +126,14 @@ export const text = {
     sessionExpired: [
       "Ihre Sitzung ist abgelaufen",
       "Melden Sie sich erneut an.",
+    ],
+    authorizationDenied: [
+      "Zugriff nicht autorisiert",
+      "Ihr Konto oder Token hat nicht den erforderlichen Relution-Zugriff. Wenden Sie sich an die Relution-Administration.",
+    ],
+    authMethodUnsupported: [
+      "Diese Anmeldemethode ist nicht verfügbar",
+      "Dieser Relution-Dienst unterstützt die gewählte Anmeldemethode nicht. Verwenden Sie einen persönlichen Token oder wenden Sie sich an die IT.",
     ],
     deviceFailed: [
       "Dieses Gerät ist nicht zugeordnet",
@@ -174,6 +200,8 @@ const problemCopiers = new Map<ClientProblem, typeof loadingProblemCopy>([
   ["empty", (copy) => copy.empty],
   ["offline", (copy) => copy.offline],
   ["session-expired", (copy) => copy.sessionExpired],
+  ["authorization-denied", (copy) => copy.authorizationDenied],
+  ["auth-method-unsupported", (copy) => copy.authMethodUnsupported],
   ["device-match-failed", (copy) => copy.deviceFailed],
   ["server", (copy) => copy.server],
   ["action", (copy) => copy.action],

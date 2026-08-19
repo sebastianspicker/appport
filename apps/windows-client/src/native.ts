@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppAction,
   AvailableApp,
+  AuthCapabilities,
+  ConnectRequest,
   ConnectOutcome,
   NativeBootstrap,
   SignOutOutcome,
@@ -9,8 +11,9 @@ import type {
 
 export const native = {
   initialView: () => invoke<"apps" | "updates">("initial_view"),
-  connect: (relutionUsername: string, accessToken: string) =>
-    invoke<ConnectOutcome>("connect", { relutionUsername, accessToken }),
+  connect: (request: ConnectRequest) =>
+    invoke<ConnectOutcome>("connect", { request }),
+  authCapabilities: () => invoke<AuthCapabilities>("auth_capabilities"),
   bootstrap: () => invoke<NativeBootstrap>("bootstrap"),
   apps: (view: "apps" | "updates") =>
     invoke<AvailableApp[]>("list_apps", { view }),

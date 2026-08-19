@@ -43,6 +43,10 @@ fn native_error(message: String) -> NativeError {
         "OFFLINE"
     } else if message.starts_with("session-expired:") {
         "SESSION_EXPIRED"
+    } else if message.starts_with("auth-method-unsupported:") {
+        "AUTH_METHOD_UNSUPPORTED"
+    } else if message.starts_with("authorization:") || message.starts_with("forbidden:") {
+        "AUTHORIZATION_DENIED"
     } else if message.starts_with("device_match_failed:") {
         "DEVICE_MATCH_FAILED"
     } else if message.starts_with("server:") {
@@ -89,6 +93,20 @@ async fn generated_session_credential(
 
 #[tauri::command]
 async fn connect(
+    request: wire::ConnectRequest,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<wire::ConnectStarted, NativeError> {
+    match request {
+        wire::ConnectRequest::PersonalToken {
+            relution_username,
+            access_token,
+        } => connect_personal_token(relution_username, access_token, app, state).await,
+        wire::ConnectRequest::Password { password, .. } => reject_password_authentication(password),
+    }
+}
+
+async fn connect_personal_token(
     relution_username: String,
     access_token: String,
     app: tauri::AppHandle,
@@ -120,6 +138,14 @@ async fn connect(
         .and_then(|executable| task::register_background_check(&executable).ok())
         .is_some();
     Ok(connect_started(background_check_registered))
+}
+
+fn reject_password_authentication(
+    _password: wire::PasswordSecret,
+) -> Result<wire::ConnectStarted, NativeError> {
+    Err(native_error(
+        "auth-method-unsupported: password authentication is not available".into(),
+    ))
 }
 
 fn connect_started(background_check_registered: bool) -> wire::ConnectStarted {
@@ -217,6 +243,18 @@ async fn sign_out(
 #[tauri::command]
 fn initial_view(state: tauri::State<'_, Arc<AppState>>) -> String {
     state.initial_view.clone()
+}
+
+#[tauri::command]
+fn auth_capabilities() -> wire::AuthCapabilities {
+    wire::AuthCapabilities {
+        personal_token: true,
+        password: password_authentication_enabled(),
+    }
+}
+
+fn password_authentication_enabled() -> bool {
+    option_env!("APPPORT_RELUTION_PASSWORD_AUTH_ENABLED") == Some("true")
 }
 
 #[tauri::command]
@@ -329,6 +367,7 @@ fn launch_tauri(client: client::RelutionClient, arguments: Vec<String>) {
             load_app_icon,
             sign_out,
             initial_view,
+            auth_capabilities,
             open_relution_portal
         ])
         .run(tauri::generate_context!())
@@ -355,5 +394,45 @@ mod tests {
         let error = sign_in_completion_error(session::SignInCompletionError::StaleCredential);
         assert_eq!(error.code, "SESSION_EXPIRED");
         assert_eq!(error.message, "session-expired: sign-in was superseded");
+    }
+
+    #[test]
+    fn authorization_error_has_a_distinct_public_code() {
+        let error = native_error("authorization: account lacks required access".into());
+        assert_eq!(error.code, "AUTHORIZATION_DENIED");
+    }
+
+    #[test]
+    fn password_authentication_is_rejected_before_session_or_network_access() {
+        let request = serde_json::from_str::<wire::ConnectRequest>(
+            r#"{"authMethod":"password","relutionUsername":"user","password":"secret"}"#,
+        )
+        .unwrap();
+        let wire::ConnectRequest::Password { password, .. } = request else {
+            panic!("expected password authentication request");
+        };
+        let Err(error) = reject_password_authentication(password) else {
+            panic!("password authentication must be rejected");
+        };
+        assert_eq!(error.code, "AUTH_METHOD_UNSUPPORTED");
+        assert_eq!(
+            error.message,
+            "auth-method-unsupported: password authentication is not available"
+        );
+    }
+
+    #[test]
+    fn authentication_capabilities_keep_password_authentication_disabled() {
+        let capabilities = auth_capabilities();
+        assert!(capabilities.personal_token);
+        assert!(!capabilities.password);
+    }
+
+    #[test]
+    fn unsupported_authentication_errors_have_a_stable_public_code() {
+        let error = native_error(
+            "auth-method-unsupported: password authentication is not available".into(),
+        );
+        assert_eq!(error.code, "AUTH_METHOD_UNSUPPORTED");
     }
 }

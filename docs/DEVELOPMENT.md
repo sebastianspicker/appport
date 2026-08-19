@@ -11,10 +11,31 @@ Windows host with the required compile-time inputs.
 The root workspace orchestrates the Windows client only. Its source gate covers the client application, documentation, and candidate-evidence helpers. For source-only checks without qualification inputs, run:
 
 ```sh
-APPPORT_SOURCE_VERIFICATION=true APPPORT_QUALIFICATION_PROFILE=read_only APPPORT_RELUTION_WRITES_ENABLED=false pnpm verify
+APPPORT_SOURCE_VERIFICATION=true APPPORT_QUALIFICATION_PROFILE=read_only APPPORT_RELUTION_WRITES_ENABLED=false APPPORT_RELUTION_DIAGNOSTICS=false APPPORT_RELUTION_PASSWORD_AUTH_ENABLED=false APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT=none pnpm verify
 ```
 
 This mode embeds an invalid test origin that cannot contact a tenant. Release builds reject it.
+
+To build a controlled diagnostic candidate on Windows, set the usual approved
+qualification inputs plus `APPPORT_RELUTION_DIAGNOSTICS=true`; for example,
+use `APPPORT_QUALIFICATION_PROFILE=read_only`,
+`APPPORT_RELUTION_WRITES_ENABLED=false`, and
+`APPPORT_RELUTION_DIAGNOSTICS=true` with the required approved tenant values.
+The flag is compile-time only and changes the configuration fingerprint, so a
+diagnostic binary is never normal-candidate-equivalent. It writes sanitized,
+bounded response diagnostics to
+`%LOCALAPPDATA%\\Relution\\Appport\\relution-debug.log` and rotates one
+`.log.1` file. Both files expire at the next diagnostic write after seven days. Treat them as sensitive
+troubleshooting data and remove them after the investigation unless a documented
+retention requirement applies.
+
+The password-authentication UI and native command contracts are scaffolding
+only. Source verification defaults the capability to disabled, and qualification
+builds must set `APPPORT_RELUTION_PASSWORD_AUTH_ENABLED=false` with
+`APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT=none`. Enabling either value is a build
+error until a supported Relution password-to-token contract is implemented and
+qualified. Tests may render the gated UI with mocked capabilities; they must not
+send a password to a network endpoint or persistence layer.
 
 For a Windows alpha.4 MSI, use a Windows x64 MSVC environment and the approved
 non-secret qualification-tenant origin, organization UUID, and native application
@@ -40,8 +61,9 @@ resource identifiers, expected versions, and cleanup ownership. The utility
 prints only their SHA-256 fingerprints.
 
 Do not use a production Relution API endpoint for source-only verification.
-Tokens are provided only by masked console input, never arguments, environment
-variables, files, logs, or reports. Any alpha.4 MSI is unsigned, tenant-fixed,
+The client receives its token through the masked sign-in field; qualification
+tokens use masked console input. Tokens are never accepted from arguments,
+environment variables, files, logs, or reports. Any alpha.4 MSI is unsigned, tenant-fixed,
 and non-distributable. `candidateReady` build evidence and `pilotQualified` live
 qualification are separate. Live authentication, device assignment, notification
 delivery, managed-tenant reads, and write-profile validation need separate

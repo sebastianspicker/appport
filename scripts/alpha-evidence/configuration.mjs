@@ -9,14 +9,19 @@ export function inspectConfiguration(environment = process.env) {
   const values = qualificationConfigurationValues(environment);
   const failures = configurationFailures(values);
   const writesEnabled = values.writes === "true";
+  const diagnosticsEnabled = values.diagnostics === "true";
+  const passwordAuthEnabled = values.passwordAuthEnabled === "true";
   return {
     profile: values.profile || "invalid",
     valid: failures.length === 0,
     failures,
     fingerprintSha256: hash(
-      `origin=${values.origin}\norganization=${values.organization}\nnativeApplication=${values.nativeApp}\nprofile=${values.profile}\nwrites=${values.writes}\ntenantApproved=${values.tenantApproved}\ntenantClass=${values.tenantClass}\ndisposableApproved=${values.disposableApproved}\n`,
+      `origin=${values.origin}\norganization=${values.organization}\nnativeApplication=${values.nativeApp}\nprofile=${values.profile}\nwrites=${values.writes}\ndiagnostics=${values.diagnostics}\npasswordAuthEnabled=${values.passwordAuthEnabled}\npasswordAuthContract=${values.passwordAuthContract}\ntenantApproved=${values.tenantApproved}\ntenantClass=${values.tenantClass}\ndisposableApproved=${values.disposableApproved}\n`,
     ),
     writesEnabled,
+    diagnosticsEnabled,
+    passwordAuthEnabled,
+    passwordAuthContract: values.passwordAuthContract,
   };
 }
 
@@ -27,6 +32,11 @@ function qualificationConfigurationValues(environment) {
     nativeApp: environment.APPPORT_NATIVE_APP_UUID ?? "",
     profile: environment.APPPORT_QUALIFICATION_PROFILE ?? "",
     writes: environment.APPPORT_RELUTION_WRITES_ENABLED ?? "",
+    diagnostics: environment.APPPORT_RELUTION_DIAGNOSTICS ?? "",
+    passwordAuthEnabled:
+      environment.APPPORT_RELUTION_PASSWORD_AUTH_ENABLED ?? "",
+    passwordAuthContract:
+      environment.APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT ?? "",
     tenantApproved: environment.APPPORT_QUALIFICATION_TENANT_APPROVED ?? "",
     tenantClass: environment.APPPORT_RELUTION_TENANT_CLASS ?? "",
     disposableApproved: environment.APPPORT_DISPOSABLE_RESOURCES_APPROVED ?? "",
@@ -62,6 +72,18 @@ function configurationRules(values, expectedWrites) {
     invalidRule(
       values.writes === expectedWrites,
       "writes do not exactly match profile",
+    ),
+    invalidRule(
+      ["true", "false"].includes(values.diagnostics),
+      "diagnostics must be exactly true or false",
+    ),
+    invalidRule(
+      values.passwordAuthEnabled === "false",
+      "password authentication scaffold must be explicitly disabled",
+    ),
+    invalidRule(
+      values.passwordAuthContract === "none",
+      "password authentication scaffold contract must be none",
     ),
     invalidRule(
       values.tenantApproved === "true",

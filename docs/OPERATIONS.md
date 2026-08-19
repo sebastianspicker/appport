@@ -2,12 +2,12 @@
 
 Operational ownership is split as follows:
 
-| Area | Owner |
-| --- | --- |
-| Windows MSI build and signing | Appport release process |
-| Fixed Relution API endpoint | Relution operator |
-| Authentication, authorization, audit, and deployments | Relution operator |
-| Managed-device deployment and inventory | Relution operator |
+| Area                                                  | Owner                   |
+| ----------------------------------------------------- | ----------------------- |
+| Windows MSI build and signing                         | Appport release process |
+| Fixed Relution API endpoint                           | Relution operator       |
+| Authentication, authorization, audit, and deployments | Relution operator       |
+| Managed-device deployment and inventory               | Relution operator       |
 
 Build the client MSI on Windows with the MSVC toolchain. Supply the approved
 non-secret fixed qualification-tenant origin, organization UUID, and native
@@ -18,6 +18,20 @@ exactly match it. Release builds also require
 `APPPORT_RELUTION_TENANT_CLASS=qualification`. Write qualification additionally
 requires `APPPORT_DISPOSABLE_RESOURCES_APPROVED=true` and an externally supplied,
 non-secret qualification plan.
+
+Normal source and qualification candidate builds must set
+`APPPORT_RELUTION_DIAGNOSTICS=false` exactly. Setting it to `true` creates a
+local troubleshooting artifact, not a candidate-ready or distributable build.
+The bounded response logs are redacted but can still contain sensitive tenant
+response data. Delete them after diagnosis unless the applicable incident-data
+policy requires retention.
+
+Qualification candidates must also set
+`APPPORT_RELUTION_PASSWORD_AUTH_ENABLED=false` and
+`APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT=none`. These values identify a dormant
+compatibility scaffold, not an available authentication method. Operators must
+not enable password authentication without a vendor-supported exchange contract,
+an expiring and revocable issued token, and separate live qualification.
 
 Install the MSI on the Windows build host, run `Appport.exe
 --qualification-self-check`, capture its JSON output, and uninstall the MSI.
@@ -34,7 +48,8 @@ uninstall action.
 Do not infer Relution availability from a client source gate. `candidateReady`
 records completed candidate build evidence; `pilotQualified` is a distinct record
 of completed live qualification under the selected profile. Record every unrun
-external gate explicitly. Tokens are masked-console-only and must not appear in
+external gate explicitly. Client tokens use the masked sign-in field and
+qualification tokens use masked console input; tokens must not appear in
 arguments, environment variables, files, logs, or reports. The unsigned,
 tenant-fixed artifact is non-distributable. Uninstall, administrative,
 production, signing, and publication operations are outside alpha.4.

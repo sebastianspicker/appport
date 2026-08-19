@@ -16,6 +16,9 @@ pub struct SelfCheckReport {
     pub qualified: bool,
     pub profile: &'static str,
     pub writes_enabled: bool,
+    pub diagnostics_enabled: bool,
+    pub password_auth_enabled: bool,
+    pub password_auth_contract: &'static str,
     pub configuration_fingerprint_sha256: &'static str,
     pub source_revision: &'static str,
     pub started_at_unix: u64,
@@ -65,6 +68,11 @@ pub fn run() -> SelfCheckReport {
         qualified,
         profile: option_env!("APPPORT_QUALIFICATION_PROFILE").unwrap_or("invalid"),
         writes_enabled: option_env!("APPPORT_RELUTION_WRITES_ENABLED") == Some("true"),
+        diagnostics_enabled: option_env!("APPPORT_RELUTION_DIAGNOSTICS") == Some("true"),
+        password_auth_enabled: option_env!("APPPORT_RELUTION_PASSWORD_AUTH_ENABLED")
+            == Some("true"),
+        password_auth_contract: option_env!("APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT")
+            .unwrap_or("invalid"),
         configuration_fingerprint_sha256: option_env!("APPPORT_CONFIGURATION_FINGERPRINT_SHA256")
             .unwrap_or("invalid"),
         source_revision: option_env!("APPPORT_SOURCE_REVISION").unwrap_or("invalid"),
@@ -106,6 +114,18 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&report).unwrap()["sourceRevision"],
             "source-verification"
+        );
+        assert_eq!(
+            serde_json::to_value(&report).unwrap()["diagnosticsEnabled"],
+            option_env!("APPPORT_RELUTION_DIAGNOSTICS") == Some("true")
+        );
+        assert_eq!(
+            serde_json::to_value(&report).unwrap()["passwordAuthEnabled"],
+            false
+        );
+        assert_eq!(
+            serde_json::to_value(&report).unwrap()["passwordAuthContract"],
+            "none"
         );
     }
 }

@@ -7,7 +7,9 @@ import test from "node:test";
 import {
   configurationFailures,
   inspectCleanupReport,
+  inspectConfiguration,
   inspectReport,
+  isCandidateReady,
   parseArguments,
 } from "./create-alpha-evidence.mjs";
 import {
@@ -21,6 +23,9 @@ const baseConfiguration = {
   nativeApp: "20000000-0000-4000-8000-000000000002",
   profile: "read_only",
   writes: "false",
+  diagnostics: "false",
+  passwordAuthEnabled: "false",
+  passwordAuthContract: "none",
   tenantApproved: "true",
   tenantClass: "qualification",
   disposableApproved: "",
@@ -46,6 +51,60 @@ test("configuration profiles match exact write and approval flags", () => {
       disposableApproved: "true",
     }),
     [],
+  );
+});
+
+test("diagnostic and password-auth configuration cannot be candidate-ready", () => {
+  const environment = {
+    APPPORT_RELUTION_API_BASE_URL: baseConfiguration.origin,
+    APPPORT_RELUTION_ORGANIZATION_UUID: baseConfiguration.organization,
+    APPPORT_NATIVE_APP_UUID: baseConfiguration.nativeApp,
+    APPPORT_QUALIFICATION_PROFILE: baseConfiguration.profile,
+    APPPORT_RELUTION_WRITES_ENABLED: baseConfiguration.writes,
+    APPPORT_RELUTION_DIAGNOSTICS: "false",
+    APPPORT_RELUTION_PASSWORD_AUTH_ENABLED:
+      baseConfiguration.passwordAuthEnabled,
+    APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT:
+      baseConfiguration.passwordAuthContract,
+    APPPORT_QUALIFICATION_TENANT_APPROVED: baseConfiguration.tenantApproved,
+    APPPORT_RELUTION_TENANT_CLASS: baseConfiguration.tenantClass,
+    APPPORT_DISPOSABLE_RESOURCES_APPROVED: baseConfiguration.disposableApproved,
+  };
+  const normal = inspectConfiguration(environment);
+  const diagnostic = inspectConfiguration({
+    ...environment,
+    APPPORT_RELUTION_DIAGNOSTICS: "true",
+  });
+  assert.equal(normal.valid, true);
+  assert.equal(normal.diagnosticsEnabled, false);
+  assert.equal(
+    normal.fingerprintSha256,
+    sha256(
+      `origin=${baseConfiguration.origin}\norganization=${baseConfiguration.organization}\nnativeApplication=${baseConfiguration.nativeApp}\nprofile=${baseConfiguration.profile}\nwrites=${baseConfiguration.writes}\ndiagnostics=false\npasswordAuthEnabled=false\npasswordAuthContract=none\ntenantApproved=${baseConfiguration.tenantApproved}\ntenantClass=${baseConfiguration.tenantClass}\ndisposableApproved=${baseConfiguration.disposableApproved}\n`,
+    ),
+  );
+  assert.equal(diagnostic.valid, true);
+  assert.equal(diagnostic.diagnosticsEnabled, true);
+  assert.notEqual(normal.fingerprintSha256, diagnostic.fingerprintSha256);
+  assert.equal(isCandidateReady(candidateContext(normal)), true);
+  assert.equal(isCandidateReady(candidateContext(diagnostic)), false);
+  const passwordAuthEnabled = inspectConfiguration({
+    ...environment,
+    APPPORT_RELUTION_PASSWORD_AUTH_ENABLED: "true",
+  });
+  assert.equal(passwordAuthEnabled.valid, false);
+  assert.equal(isCandidateReady(candidateContext(passwordAuthEnabled)), false);
+  const passwordAuthContract = inspectConfiguration({
+    ...environment,
+    APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT: "exchange-v1",
+  });
+  assert.equal(passwordAuthContract.valid, false);
+  assert.equal(isCandidateReady(candidateContext(passwordAuthContract)), false);
+  assert(
+    configurationFailures({
+      ...baseConfiguration,
+      diagnostics: "True",
+    }).includes("diagnostics must be exactly true or false"),
   );
 });
 
@@ -153,6 +212,9 @@ test("live and cleanup reports must match profile, redaction, and plan fingerpri
         profile: "write_qualification",
         qualified: true,
         writesEnabled: true,
+        diagnosticsEnabled: false,
+        passwordAuthEnabled: false,
+        passwordAuthContract: "none",
         tokenRedacted: true,
         startedAtUnix: 10,
         completedAtUnix: 20,
@@ -169,6 +231,72 @@ test("live and cleanup reports must match profile, redaction, and plan fingerpri
       binding,
     );
     assert.equal(live.status, "passed");
+    writeFileSync(
+      livePath,
+      JSON.stringify({
+        ...JSON.parse(read(livePath)),
+        diagnosticsEnabled: true,
+      }),
+    );
+    assert.equal(
+      inspectReport(
+        livePath,
+        "live_qualification",
+        "write_qualification",
+        true,
+        binding,
+      ).status,
+      "failed",
+    );
+    writeFileSync(
+      livePath,
+      JSON.stringify({
+        ...JSON.parse(read(livePath)),
+        diagnosticsEnabled: false,
+      }),
+    );
+    writeFileSync(
+      livePath,
+      JSON.stringify({
+        ...JSON.parse(read(livePath)),
+        passwordAuthEnabled: true,
+      }),
+    );
+    assert.equal(
+      inspectReport(
+        livePath,
+        "live_qualification",
+        "write_qualification",
+        true,
+        binding,
+      ).status,
+      "failed",
+    );
+    writeFileSync(
+      livePath,
+      JSON.stringify({
+        ...JSON.parse(read(livePath)),
+        passwordAuthEnabled: false,
+        passwordAuthContract: "exchange-v1",
+      }),
+    );
+    assert.equal(
+      inspectReport(
+        livePath,
+        "live_qualification",
+        "write_qualification",
+        true,
+        binding,
+      ).status,
+      "failed",
+    );
+    writeFileSync(
+      livePath,
+      JSON.stringify({
+        ...JSON.parse(read(livePath)),
+        passwordAuthContract: "none",
+      }),
+    );
     const cleanupPath = join(directory, "cleanup.json");
     writeFileSync(
       cleanupPath,
@@ -247,6 +375,9 @@ test("Windows self-check producer and workflow enrichment bind the candidate", (
       profile: "read_only",
       qualified: true,
       writesEnabled: false,
+      diagnosticsEnabled: false,
+      passwordAuthEnabled: false,
+      passwordAuthContract: "none",
       cleanupComplete: true,
       startedAtUnix: 10,
       completedAtUnix: 20,
@@ -319,6 +450,12 @@ test("Windows self-check producer and workflow enrichment bind the candidate", (
       workflow,
       /Add-Member -NotePropertyName qualificationUtilitySha256 -NotePropertyValue \$qualificationUtilitySha256/,
     );
+    assert.match(workflow, /APPPORT_RELUTION_DIAGNOSTICS: "false"/);
+    assert.match(workflow, /\$selfCheck\.diagnosticsEnabled -ne \$false/);
+    assert.match(workflow, /APPPORT_RELUTION_PASSWORD_AUTH_ENABLED: "false"/);
+    assert.match(workflow, /APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT: none/);
+    assert.match(workflow, /\$selfCheck\.passwordAuthEnabled -ne \$false/);
+    assert.match(workflow, /\$selfCheck\.passwordAuthContract -ne 'none'/);
     for (const field of [
       "candidateMsiSha256",
       "qualificationUtilitySha256",
@@ -375,6 +512,24 @@ function enrichWindowsSelfCheck(
 
 function sha256(contents) {
   return createHash("sha256").update(contents).digest("hex");
+}
+
+function candidateContext(configuration) {
+  return {
+    sourceGatesPassed: true,
+    repository: { state: "clean" },
+    artifact: {
+      formatValid: true,
+      embeddedSecretScanPassed: true,
+      signatureStatus: "not_signed",
+    },
+    qualificationUtility: {
+      formatValid: true,
+      embeddedSecretScanPassed: true,
+    },
+    configuration,
+    windowsRuntime: { status: "passed" },
+  };
 }
 
 function read(path) {
