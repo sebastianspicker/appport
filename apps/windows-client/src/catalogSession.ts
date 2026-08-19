@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { copyFor, type Copy, type Locale } from "./appCopy";
+import type { ConnectRequest } from "./models";
 import { native } from "./native";
 import { problemFor, type CatalogSetters } from "./catalogTypes";
 
@@ -23,14 +24,14 @@ function createConnect({
   setWarning,
   copy,
 }: ConnectContext) {
-  return async (relutionUsername: string, accessToken: string) => {
+  return async (request: ConnectRequest) => {
     cancel();
     resetActions();
     const requestGeneration = generation.current;
     setWarning(undefined);
     setPhase("loading");
     try {
-      const started = await native.connect(relutionUsername, accessToken);
+      const started = await native.connect(request);
       if (generation.current !== requestGeneration) return;
       setWarning(
         started.backgroundCheckRegistered

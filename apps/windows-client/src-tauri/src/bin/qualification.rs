@@ -196,6 +196,8 @@ struct CandidateEvidence {
     candidate_ready: bool,
     profile: String,
     writes_enabled: bool,
+    password_auth_enabled: bool,
+    password_auth_contract: String,
     repository: CandidateRepository,
     qualification_configuration: CandidateConfiguration,
     windows_artifact: CandidateArtifact,
@@ -221,6 +223,8 @@ struct CandidateArtifact {
 struct EmbeddedBinding {
     profile: &'static str,
     writes_enabled: bool,
+    password_auth_enabled: bool,
+    password_auth_contract: &'static str,
     configuration_fingerprint_sha256: &'static str,
     source_revision: &'static str,
 }
@@ -256,6 +260,10 @@ fn embedded_binding() -> EmbeddedBinding {
     EmbeddedBinding {
         profile: option_env!("APPPORT_QUALIFICATION_PROFILE").unwrap_or("invalid"),
         writes_enabled: option_env!("APPPORT_RELUTION_WRITES_ENABLED") == Some("true"),
+        password_auth_enabled: option_env!("APPPORT_RELUTION_PASSWORD_AUTH_ENABLED")
+            == Some("true"),
+        password_auth_contract: option_env!("APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT")
+            .unwrap_or("invalid"),
         configuration_fingerprint_sha256: option_env!("APPPORT_CONFIGURATION_FINGERPRINT_SHA256")
             .unwrap_or("invalid"),
         source_revision: option_env!("APPPORT_SOURCE_REVISION").unwrap_or("invalid"),
@@ -269,6 +277,10 @@ impl CandidateEvidence {
             self.candidate_ready,
             self.profile == embedded.profile,
             self.writes_enabled == embedded.writes_enabled,
+            !self.password_auth_enabled,
+            self.password_auth_contract == "none",
+            self.password_auth_enabled == embedded.password_auth_enabled,
+            self.password_auth_contract == embedded.password_auth_contract,
             is_sha256(&self.windows_artifact.sha256),
             is_sha256(&self.qualification_configuration.fingerprint_sha256),
             self.qualification_configuration.fingerprint_sha256
@@ -312,6 +324,11 @@ fn setup_failure(reason: &str) -> QualificationReport {
         completed_at_unix: 0,
         token_redacted: true,
         writes_enabled: false,
+        diagnostics_enabled: option_env!("APPPORT_RELUTION_DIAGNOSTICS") == Some("true"),
+        password_auth_enabled: option_env!("APPPORT_RELUTION_PASSWORD_AUTH_ENABLED")
+            == Some("true"),
+        password_auth_contract: option_env!("APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT")
+            .unwrap_or("invalid"),
         plan_fingerprint_sha256: None,
         candidate_msi_sha256: None,
         qualification_utility_sha256: None,
@@ -389,6 +406,8 @@ mod tests {
                 candidate_ready: true,
                 profile: "read_only".into(),
                 writes_enabled: false,
+                password_auth_enabled: false,
+                password_auth_contract: "none".into(),
                 repository: CandidateRepository {
                     commit: source_revision.into(),
                 },
@@ -405,6 +424,8 @@ mod tests {
             EmbeddedBinding {
                 profile: "read_only",
                 writes_enabled: false,
+                password_auth_enabled: false,
+                password_auth_contract: "none",
                 configuration_fingerprint_sha256: configuration_fingerprint,
                 source_revision,
             },
@@ -442,6 +463,14 @@ mod tests {
 
         let (mut evidence, embedded) = matching_candidate_evidence();
         evidence.writes_enabled = true;
+        assert!(!evidence.matches(&embedded));
+
+        let (mut evidence, embedded) = matching_candidate_evidence();
+        evidence.password_auth_enabled = true;
+        assert!(!evidence.matches(&embedded));
+
+        let (mut evidence, embedded) = matching_candidate_evidence();
+        evidence.password_auth_contract = "exchange-v1".into();
         assert!(!evidence.matches(&embedded));
 
         let (mut evidence, embedded) = matching_candidate_evidence();

@@ -61,6 +61,8 @@ export function problemFor(error: unknown): ClientProblem {
   const problems: Record<string, ClientProblem> = {
     OFFLINE: "offline",
     SESSION_EXPIRED: "session-expired",
+    AUTHORIZATION_DENIED: "authorization-denied",
+    AUTH_METHOD_UNSUPPORTED: "auth-method-unsupported",
     DEVICE_MATCH_FAILED: "device-match-failed",
     SERVER: "server",
     ACTION: "action",

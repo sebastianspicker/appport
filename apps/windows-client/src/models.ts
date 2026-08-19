@@ -21,6 +21,25 @@ export interface ConnectOutcome {
   backgroundCheckRegistered: boolean;
 }
 
+export type AuthMethod = "personal_token" | "password";
+
+export type ConnectRequest =
+  | {
+      authMethod: "personal_token";
+      relutionUsername: string;
+      accessToken: string;
+    }
+  | {
+      authMethod: "password";
+      relutionUsername: string;
+      password: string;
+    };
+
+export interface AuthCapabilities {
+  personalToken: true;
+  password: boolean;
+}
+
 export interface SignOutOutcome {
   tokenRevocationRequired: boolean;
   credentialRemoved: boolean;
@@ -69,6 +88,8 @@ export type ClientProblem =
   | "empty"
   | "offline"
   | "session-expired"
+  | "authorization-denied"
+  | "auth-method-unsupported"
   | "device-match-failed"
   | "server"
   | "action"
@@ -77,6 +98,8 @@ export type ClientProblem =
 export type NativeErrorCode =
   | "OFFLINE"
   | "SESSION_EXPIRED"
+  | "AUTHORIZATION_DENIED"
+  | "AUTH_METHOD_UNSUPPORTED"
   | "DEVICE_MATCH_FAILED"
   | "SERVER"
   | "ACTION"

@@ -30,6 +30,9 @@ jobs:
       APPPORT_SOURCE_VERIFICATION: "true"
       APPPORT_QUALIFICATION_PROFILE: read_only
       APPPORT_RELUTION_WRITES_ENABLED: "false"
+      APPPORT_RELUTION_DIAGNOSTICS: "false"
+      APPPORT_RELUTION_PASSWORD_AUTH_ENABLED: "false"
+      APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT: none
     steps:
       # actions/checkout v6.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -71,6 +74,9 @@ jobs:
       APPPORT_NATIVE_APP_UUID: ${{ vars.APPPORT_NATIVE_APP_UUID }}
       APPPORT_QUALIFICATION_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.qualification_profile || 'read_only' }}
       APPPORT_RELUTION_WRITES_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.qualification_profile == 'write_qualification' && 'true' || 'false' }}
+      APPPORT_RELUTION_DIAGNOSTICS: "false"
+      APPPORT_RELUTION_PASSWORD_AUTH_ENABLED: "false"
+      APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT: none
       APPPORT_QUALIFICATION_TENANT_APPROVED: ${{ vars.APPPORT_QUALIFICATION_TENANT_APPROVED }}
       APPPORT_RELUTION_TENANT_CLASS: ${{ vars.APPPORT_RELUTION_TENANT_CLASS }}
       APPPORT_DISPOSABLE_RESOURCES_APPROVED: ${{ vars.APPPORT_DISPOSABLE_RESOURCES_APPROVED }}
@@ -106,6 +112,8 @@ jobs:
           if (!['read_only', 'write_qualification'].includes(env.APPPORT_QUALIFICATION_PROFILE)) fail("invalid profile");
           const expectedWrites = env.APPPORT_QUALIFICATION_PROFILE === 'write_qualification' ? 'true' : 'false';
           if (env.APPPORT_RELUTION_WRITES_ENABLED !== expectedWrites) fail("write flag does not match profile");
+          if (env.APPPORT_RELUTION_DIAGNOSTICS !== 'false') fail("candidate diagnostics must be exactly false");
+          if (env.APPPORT_RELUTION_PASSWORD_AUTH_ENABLED !== 'false' || env.APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT !== 'none') fail("password authentication scaffold must remain disabled");
           if (env.APPPORT_QUALIFICATION_TENANT_APPROVED !== 'true' || env.APPPORT_RELUTION_TENANT_CLASS !== 'qualification') fail("tenant is not explicitly approved as qualification-only");
           if (env.APPPORT_QUALIFICATION_PROFILE === 'write_qualification' && env.APPPORT_DISPOSABLE_RESOURCES_APPROVED !== 'true') fail("disposable resources are not approved");
           '@ | node --input-type=module
@@ -115,16 +123,19 @@ jobs:
           APPPORT_SOURCE_VERIFICATION: "true"
           APPPORT_QUALIFICATION_PROFILE: read_only
           APPPORT_RELUTION_WRITES_ENABLED: "false"
+          APPPORT_RELUTION_DIAGNOSTICS: "false"
       - run: cargo test --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
         env:
           APPPORT_SOURCE_VERIFICATION: "true"
           APPPORT_QUALIFICATION_PROFILE: read_only
           APPPORT_RELUTION_WRITES_ENABLED: "false"
+          APPPORT_RELUTION_DIAGNOSTICS: "false"
       - run: cargo check --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
         env:
           APPPORT_SOURCE_VERIFICATION: "true"
           APPPORT_QUALIFICATION_PROFILE: read_only
           APPPORT_RELUTION_WRITES_ENABLED: "false"
+          APPPORT_RELUTION_DIAGNOSTICS: "false"
       - name: Build unsigned qualification MSI candidate
         run: pnpm client:tauri -- --target x86_64-pc-windows-msvc
       - name: Build candidate-bound operator utility
@@ -176,6 +187,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Installed MSI self-check failed." }
             $selfCheck = Get-Content $report -Raw | ConvertFrom-Json
             if (-not $selfCheck.qualified -or -not $selfCheck.cleanupComplete) { throw "Installed MSI self-check did not qualify or clean up." }
+            if ($selfCheck.diagnosticsEnabled -ne $false) { throw "Installed MSI self-check diagnostics must be disabled." }
+            if ($selfCheck.passwordAuthEnabled -ne $false -or $selfCheck.passwordAuthContract -ne 'none') { throw "Installed MSI password authentication scaffold must remain disabled." }
             $installedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $app.FullName).Hash.ToLowerInvariant()
           } finally {
             $uninstall = Start-Process msiexec.exe -ArgumentList @('/x', $env:APPPORT_MSI, '/qn', '/norestart') -Wait -PassThru
@@ -199,6 +212,8 @@ jobs:
           $evidence = Get-Content release-artifacts/0.1.0-alpha.4/evidence.json -Raw | ConvertFrom-Json
           if (-not $evidence.candidateReady) { throw "candidateReady must be true." }
           if ($evidence.signed -or $evidence.distributable) { throw "Alpha.4 must remain unsigned and non-distributable." }
+          if ($evidence.diagnosticsEnabled -ne $false) { throw "Candidate evidence diagnostics must be disabled." }
+          if ($evidence.passwordAuthEnabled -ne $false -or $evidence.passwordAuthContract -ne 'none') { throw "Candidate evidence password authentication scaffold must remain disabled." }
           if ($evidence.profile -ne $env:APPPORT_QUALIFICATION_PROFILE) { throw "Evidence profile mismatch." }
       # actions/upload-artifact v7.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

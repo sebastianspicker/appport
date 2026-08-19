@@ -9,6 +9,12 @@ Appport is a standalone Windows client workspace. It contains a Tauri shell, a R
 
 The WebView has `connect-src 'none'` and cannot call a remote service directly. Rust validates the fixed HTTPS endpoint, validates the entered Relution username and personal access token, stores the versioned credential through Windows Credential Manager, and performs authenticated requests.
 
+The typed frontend and Tauri boundaries reserve a password authentication
+variant, but candidate builds expose only personal-token login. Rust rejects the
+password variant before any network or persistence operation. Appport will not
+enable it until Relution supplies a versioned password-to-token contract; a
+password itself must never be stored.
+
 Relution is authoritative for identity, device assignment, application authorization, inventory, action history, and deployment writes. Sign-out deletes only local state and directs the user to revoke the personal token in Relution. A per-user SQLite journal records action reservations, recovery state, and correlation data without storing the token. The journal exposes no listener or service.
 
 Native metadata and icon caches are scoped to the current credential generation. A new sign-in or sign-out prevents reuse across credentials. Native icon loading permits at most four concurrent requests.
@@ -23,7 +29,11 @@ profile. Release builds require explicit tenant approval and the qualification
 tenant class; write qualification additionally requires disposable-resource
 approval and an external non-secret plan.
 
-Tokens are received only from masked console input and must not cross command
+The configuration fingerprint also binds the guarded password capability and
+contract identifier. For this scaffold they must be exactly `false` and `none`.
+
+Client tokens are received only from the masked sign-in field, while the
+qualification utility receives tokens through masked console input. Tokens must not cross command
 arguments, environment variables, files, logs, or reports. The write profile is
 limited to qualification resources and does not authorize uninstall,
 administrative, production, signing, or publication operations.

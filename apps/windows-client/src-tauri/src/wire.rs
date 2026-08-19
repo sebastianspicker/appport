@@ -1,4 +1,38 @@
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
+
+#[derive(Deserialize)]
+#[serde(tag = "authMethod", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ConnectRequest {
+    PersonalToken {
+        #[serde(rename = "relutionUsername")]
+        relution_username: String,
+        #[serde(rename = "accessToken")]
+        access_token: String,
+    },
+    Password {
+        #[serde(rename = "relutionUsername")]
+        relution_username: String,
+        password: PasswordSecret,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(transparent)]
+pub struct PasswordSecret(String);
+
+impl Drop for PasswordSecret {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCapabilities {
+    pub personal_token: bool,
+    pub password: bool,
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -197,5 +231,43 @@ mod tests {
         let bootstrap = serde_json::to_value(bootstrap).unwrap();
         assert!(bootstrap.get("sessionExpiresAt").is_none());
         assert_eq!(bootstrap["writesEnabled"], false);
+    }
+
+    #[test]
+    fn connect_request_accepts_only_known_tagged_authentication_methods() {
+        let personal_token = serde_json::from_str::<ConnectRequest>(
+            r#"{"authMethod":"personal_token","relutionUsername":"user","accessToken":"token"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            personal_token,
+            ConnectRequest::PersonalToken { .. }
+        ));
+
+        let password = serde_json::from_str::<ConnectRequest>(
+            r#"{"authMethod":"password","relutionUsername":"user","password":""}"#,
+        )
+        .unwrap();
+        assert!(matches!(password, ConnectRequest::Password { .. }));
+        assert!(serde_json::from_str::<ConnectRequest>(
+            r#"{"authMethod":"unknown","relutionUsername":"user"}"#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn connect_request_rejects_mixed_duplicate_and_unknown_fields() {
+        for json in [
+            r#"{"authMethod":"personal_token","relutionUsername":"user","accessToken":"token","password":"secret"}"#,
+            r#"{"authMethod":"password","relutionUsername":"user","password":"secret","accessToken":"token"}"#,
+            r#"{"authMethod":"personal_token","relutionUsername":"user","accessToken":"token","unexpected":"value"}"#,
+            r#"{"authMethod":"password","relutionUsername":"user","password":"first","password":"second"}"#,
+            r#"{"authMethod":"personal_token","relutionUsername":"user","accessToken":"first","accessToken":"second"}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<ConnectRequest>(json).is_err(),
+                "{json}"
+            );
+        }
     }
 }

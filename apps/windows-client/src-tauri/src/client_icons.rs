@@ -63,17 +63,26 @@ impl RelutionClient {
     }
 
     pub(super) async fn fetch_icon(&self, t: &str, app: &str) -> Result<Option<String>, String> {
+        let path = format!("/api/management/v1/content/apps/{}/icon", encode(app));
         let r = self
             .http
-            .get(self.url(&format!(
-                "/api/management/v1/content/apps/{}/icon",
-                encode(app)
-            ))?)
+            .get(self.url(&path)?)
             .header("X-User-Access-Token", t)
             .header("tenantOrganizationUuid", &self.config.organization_uuid)
             .send()
             .await
             .map_err(network)?;
+        let content_type = r
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        crate::logging::write_relution_icon_response(
+            &path,
+            r.status().as_u16(),
+            content_type,
+            r.content_length(),
+        );
         icon_data_url(r).await
     }
 

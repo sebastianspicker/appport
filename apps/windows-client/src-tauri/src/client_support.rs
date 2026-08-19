@@ -174,7 +174,7 @@ pub fn network(e: reqwest::Error) -> String {
 pub fn status(s: reqwest::StatusCode) -> String {
     match s.as_u16() {
         401 => "session-expired: authorization required".into(),
-        403 => "device_match_failed: device not assigned".into(),
+        403 => "authorization: account or token lacks required Relution access".into(),
         _ => "server: Relution request failed after submission may have occurred".into(),
     }
 }
@@ -327,6 +327,14 @@ mod tests {
         assert_eq!(
             apps[1].active_action_state,
             Some(crate::wire::ActionState::Unknown)
+        );
+    }
+
+    #[test]
+    fn forbidden_status_is_an_authorization_error_not_a_device_match_failure() {
+        assert_eq!(
+            status(reqwest::StatusCode::FORBIDDEN),
+            "authorization: account or token lacks required Relution access"
         );
     }
 }

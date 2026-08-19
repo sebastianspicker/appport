@@ -201,10 +201,10 @@ fn device_matching_accepts_serial_and_hostname_with_harmless_formatting() {
 }
 
 #[test]
-fn state_is_unknown_for_an_unmapped_relution_value() {
+fn forbidden_status_reports_missing_authorization() {
     assert_eq!(
         status(reqwest::StatusCode::FORBIDDEN),
-        "device_match_failed: device not assigned"
+        "authorization: account or token lacks required Relution access"
     );
 }
 
