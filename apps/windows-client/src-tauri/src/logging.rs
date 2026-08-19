@@ -1,4 +1,6 @@
 use serde_json::Value;
+#[cfg(any(debug_assertions, test))]
+use std::io::Write;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -93,6 +95,11 @@ fn write_relution_response_at(enabled: bool, path: &Path, event: ResponseLogEven
     let Some(line) = response_diagnostic_line(enabled, &event) else {
         return;
     };
+    write_relution_diagnostic_line(path, &line);
+}
+
+fn write_relution_diagnostic_line(path: &Path, line: &str) {
+    write_relution_diagnostic_to_stderr(line);
     let Ok(_lock) = RELUTION_DEBUG_LOG_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
@@ -107,7 +114,29 @@ fn write_relution_response_at(enabled: bool, path: &Path, event: ResponseLogEven
     {
         return;
     }
-    append_rotating(path, &line);
+    append_rotating(path, line);
+}
+
+#[cfg(debug_assertions)]
+fn write_relution_diagnostic_to_stderr(line: &str) {
+    if relution_diagnostics_enabled() {
+        let stderr = std::io::stderr();
+        let mut stderr = stderr.lock();
+        write_relution_diagnostic(&mut stderr, line);
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn write_relution_diagnostic_to_stderr(_: &str) {}
+
+#[cfg(any(debug_assertions, test))]
+fn write_relution_diagnostic(mut writer: impl Write, line: &str) {
+    let _ = writeln!(writer, "APPPORT_RELUTION_DIAGNOSTIC {line}");
+}
+
+#[cfg(test)]
+fn terminal_diagnostics_enabled_for(diagnostics_enabled: bool, debug_assertions: bool) -> bool {
+    diagnostics_enabled && debug_assertions
 }
 
 fn response_diagnostic_line(enabled: bool, event: &ResponseLogEvent<'_>) -> Option<String> {
@@ -197,21 +226,7 @@ pub fn write_relution_icon_response(
         return;
     };
     let line = icon_response_diagnostic_line(path, status, content_type, content_length);
-    let Ok(_lock) = RELUTION_DEBUG_LOG_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-    else {
-        return;
-    };
-    let Some(directory) = debug_path.parent() else {
-        return;
-    };
-    if !*RELUTION_DEBUG_LOG_SECURITY_READY
-        .get_or_init(|| prepare_diagnostic_directory(directory, &debug_path))
-    {
-        return;
-    }
-    append_rotating(&debug_path, &line);
+    write_relution_diagnostic_line(&debug_path, &line);
 }
 
 fn icon_content_type(content_type: &str) -> &'static str {
@@ -532,6 +547,65 @@ mod tests {
             response_event("GET", "/api/management/v1/users", 403, 1, "complete", b"{}"),
         );
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn terminal_diagnostics_require_the_compiled_opt_in_and_debug_assertions() {
+        assert!(terminal_diagnostics_enabled_for(true, true));
+        assert!(!terminal_diagnostics_enabled_for(false, true));
+        assert!(!terminal_diagnostics_enabled_for(true, false));
+        assert!(!terminal_diagnostics_enabled_for(false, false));
+    }
+
+    #[test]
+    fn terminal_diagnostic_is_one_sanitized_json_line() {
+        let line = response_diagnostic_line(
+            true,
+            &response_event(
+                "POST",
+                "/api/management/v1/users/private-user?access_token=query-secret",
+                403,
+                1,
+                "complete",
+                br#"{"message":"private-message","token":"token-secret","email":"person@example.invalid"}"#,
+            ),
+        )
+        .unwrap();
+        let mut output = Vec::new();
+        write_relution_diagnostic(&mut output, &line);
+        let output = String::from_utf8(output).unwrap();
+        assert_eq!(output.lines().count(), 1);
+        let record = output
+            .strip_prefix("APPPORT_RELUTION_DIAGNOSTIC ")
+            .unwrap()
+            .trim_end();
+        serde_json::from_str::<Value>(record).unwrap();
+        for secret in [
+            "private-user",
+            "query-secret",
+            "private-message",
+            "token-secret",
+            "person@example.invalid",
+        ] {
+            assert!(!output.contains(secret));
+        }
+    }
+
+    #[test]
+    fn terminal_diagnostic_ignores_sink_failures() {
+        struct FailingWriter;
+
+        impl Write for FailingWriter {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("closed diagnostic sink"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::Error::other("closed diagnostic sink"))
+            }
+        }
+
+        write_relution_diagnostic(FailingWriter, "{}");
     }
 
     #[test]

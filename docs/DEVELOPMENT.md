@@ -16,18 +16,44 @@ APPPORT_SOURCE_VERIFICATION=true APPPORT_QUALIFICATION_PROFILE=read_only APPPORT
 
 This mode embeds an invalid test origin that cannot contact a tenant. Release builds reject it.
 
-To build a controlled diagnostic candidate on Windows, set the usual approved
-qualification inputs plus `APPPORT_RELUTION_DIAGNOSTICS=true`; for example,
-use `APPPORT_QUALIFICATION_PROFILE=read_only`,
-`APPPORT_RELUTION_WRITES_ENABLED=false`, and
-`APPPORT_RELUTION_DIAGNOSTICS=true` with the required approved tenant values.
-The flag is compile-time only and changes the configuration fingerprint, so a
-diagnostic binary is never normal-candidate-equivalent. It writes sanitized,
-bounded response diagnostics to
-`%LOCALAPPDATA%\\Relution\\Appport\\relution-debug.log` and rotates one
-`.log.1` file. Both files expire at the next diagnostic write after seven days. Treat them as sensitive
-troubleshooting data and remove them after the investigation unless a documented
-retention requirement applies.
+For a controlled diagnostic Tauri development run on Windows PowerShell, set
+every required compile-time input before starting the development command. Use
+only the approved non-secret qualification endpoint and UUIDs; do not set a
+token in the environment.
+
+```powershell
+$env:APPPORT_RELUTION_API_BASE_URL = Read-Host "Approved qualification Relution HTTPS origin"
+$env:APPPORT_RELUTION_ORGANIZATION_UUID = Read-Host "Approved organization UUID"
+$env:APPPORT_NATIVE_APP_UUID = Read-Host "Approved native application UUID"
+$env:APPPORT_QUALIFICATION_PROFILE = "read_only"
+$env:APPPORT_RELUTION_WRITES_ENABLED = "false"
+$env:APPPORT_QUALIFICATION_TENANT_APPROVED = "true"
+$env:APPPORT_RELUTION_TENANT_CLASS = "qualification"
+$env:APPPORT_SOURCE_REVISION = (git rev-parse HEAD)
+$env:APPPORT_RELUTION_DIAGNOSTICS = "true"
+$env:APPPORT_RELUTION_PASSWORD_AUTH_ENABLED = "false"
+$env:APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT = "none"
+pnpm --dir apps/windows-client tauri dev
+```
+
+For `write_qualification`, set `APPPORT_QUALIFICATION_PROFILE` to
+`write_qualification`, `APPPORT_RELUTION_WRITES_ENABLED` to `true`, and also
+set `APPPORT_DISPOSABLE_RESOURCES_APPROVED=true` with the separately supplied
+non-secret qualification plan. The diagnostic flag is compile-time only and
+changes the configuration fingerprint, so a diagnostic binary is never
+normal-candidate-equivalent.
+
+In any diagnostic-enabled debug-profile native run, including the Tauri
+development command above, Appport writes each already sanitized JSON response record to stderr with the
+`APPPORT_RELUTION_DIAGNOSTIC` prefix, including icon response metadata. It
+prints neither request/response headers, query values, tokens, identifiers, nor
+raw response bodies. The stderr sink is compiled out of normal release builds,
+which remain file-only and use the Windows GUI subsystem. The same bounded records
+are written to `%LOCALAPPDATA%\\Relution\\Appport\\relution-debug.log` and
+rotate one `.log.1` file; both files expire at the next diagnostic write after
+seven days. Treat the terminal, IDE, and CI capture as sensitive troubleshooting
+data just like the files, and remove them after the investigation unless a
+documented retention requirement applies.
 
 The password-authentication UI and native command contracts are scaffolding
 only. Source verification defaults the capability to disabled, and qualification
