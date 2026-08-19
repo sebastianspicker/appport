@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -30,6 +30,16 @@ const baseConfiguration = {
   tenantClass: "qualification",
   disposableApproved: "",
 };
+const LIVE_EVIDENCE_DIRECTORY = "target/test-artifacts/live";
+const LIVE_REPORT_PATH = "target/test-artifacts/live/live.json";
+const LIVE_CLEANUP_PATH = "target/test-artifacts/live/cleanup.json";
+const WINDOWS_EVIDENCE_DIRECTORY = "target/test-artifacts/windows";
+const WINDOWS_REPORT_PATH = "target/test-artifacts/windows/self-check.json";
+const WINDOWS_UTILITY_PATH = "target/test-artifacts/windows/qualification.exe";
+const QUALIFICATION_CHECK_NAMES =
+  "profile_matches_write_flag user_b_identity user_b_device_match bootstrap apps_catalog updates_catalog installed_inventory background_bootstrap icon user_a_unassigned_isolation qualification_plan write_device_binding install_fixture update_fixture unauthorized_application substituted_version cross_user_action approved_install approved_update";
+const WINDOWS_CHECK_NAMES =
+  "qualification_build credential_manager journal_acl protocol_and_scheduled_task notification_registry graceful_native_startup";
 
 test("configuration profiles match exact write and approval flags", () => {
   assert.deepEqual(configurationFailures(baseConfiguration), []);
@@ -54,8 +64,37 @@ test("configuration profiles match exact write and approval flags", () => {
   );
 });
 
-test("diagnostic and password-auth configuration cannot be candidate-ready", () => {
-  const environment = {
+test(
+  "diagnostic and password-auth configuration cannot be candidate-ready",
+  diagnosticsAndPasswordAuthCannotBeCandidateReady,
+);
+
+function diagnosticsAndPasswordAuthCannotBeCandidateReady() {
+  const environment = qualificationEnvironment();
+  const normal = inspectConfiguration(environment);
+  const diagnostic = inspectConfiguration({
+    ...environment,
+    APPPORT_RELUTION_DIAGNOSTICS: "true",
+  });
+  assert.equal(normal.valid, true);
+  assert.equal(normal.diagnosticsEnabled, false);
+  assert.equal(normal.fingerprintSha256, expectedConfigurationFingerprint());
+  assert.equal(diagnostic.valid, true);
+  assert.equal(diagnostic.diagnosticsEnabled, true);
+  assert.notEqual(normal.fingerprintSha256, diagnostic.fingerprintSha256);
+  assert.equal(isCandidateReady(candidateContext(normal)), true);
+  assert.equal(isCandidateReady(candidateContext(diagnostic)), false);
+  assertPasswordAuthPreventsCandidateReadiness(environment);
+  assert(
+    configurationFailures({
+      ...baseConfiguration,
+      diagnostics: "True",
+    }).includes("diagnostics must be exactly true or false"),
+  );
+}
+
+function qualificationEnvironment() {
+  return {
     APPPORT_RELUTION_API_BASE_URL: baseConfiguration.origin,
     APPPORT_RELUTION_ORGANIZATION_UUID: baseConfiguration.organization,
     APPPORT_NATIVE_APP_UUID: baseConfiguration.nativeApp,
@@ -70,24 +109,15 @@ test("diagnostic and password-auth configuration cannot be candidate-ready", () 
     APPPORT_RELUTION_TENANT_CLASS: baseConfiguration.tenantClass,
     APPPORT_DISPOSABLE_RESOURCES_APPROVED: baseConfiguration.disposableApproved,
   };
-  const normal = inspectConfiguration(environment);
-  const diagnostic = inspectConfiguration({
-    ...environment,
-    APPPORT_RELUTION_DIAGNOSTICS: "true",
-  });
-  assert.equal(normal.valid, true);
-  assert.equal(normal.diagnosticsEnabled, false);
-  assert.equal(
-    normal.fingerprintSha256,
-    sha256(
-      `origin=${baseConfiguration.origin}\norganization=${baseConfiguration.organization}\nnativeApplication=${baseConfiguration.nativeApp}\nprofile=${baseConfiguration.profile}\nwrites=${baseConfiguration.writes}\ndiagnostics=false\npasswordAuthEnabled=false\npasswordAuthContract=none\ntenantApproved=${baseConfiguration.tenantApproved}\ntenantClass=${baseConfiguration.tenantClass}\ndisposableApproved=${baseConfiguration.disposableApproved}\n`,
-    ),
+}
+
+function expectedConfigurationFingerprint() {
+  return sha256(
+    `origin=${baseConfiguration.origin}\norganization=${baseConfiguration.organization}\nnativeApplication=${baseConfiguration.nativeApp}\nprofile=${baseConfiguration.profile}\nwrites=${baseConfiguration.writes}\ndiagnostics=false\npasswordAuthEnabled=false\npasswordAuthContract=none\ntenantApproved=${baseConfiguration.tenantApproved}\ntenantClass=${baseConfiguration.tenantClass}\ndisposableApproved=${baseConfiguration.disposableApproved}\n`,
   );
-  assert.equal(diagnostic.valid, true);
-  assert.equal(diagnostic.diagnosticsEnabled, true);
-  assert.notEqual(normal.fingerprintSha256, diagnostic.fingerprintSha256);
-  assert.equal(isCandidateReady(candidateContext(normal)), true);
-  assert.equal(isCandidateReady(candidateContext(diagnostic)), false);
+}
+
+function assertPasswordAuthPreventsCandidateReadiness(environment) {
   const passwordAuthEnabled = inspectConfiguration({
     ...environment,
     APPPORT_RELUTION_PASSWORD_AUTH_ENABLED: "true",
@@ -100,13 +130,7 @@ test("diagnostic and password-auth configuration cannot be candidate-ready", () 
   });
   assert.equal(passwordAuthContract.valid, false);
   assert.equal(isCandidateReady(candidateContext(passwordAuthContract)), false);
-  assert(
-    configurationFailures({
-      ...baseConfiguration,
-      diagnostics: "True",
-    }).includes("diagnostics must be exactly true or false"),
-  );
-});
+}
 
 test("qualification origins reject credentials, routes, and placeholder hosts", () => {
   for (const origin of [
@@ -174,324 +198,291 @@ test("artifact inspection validates MSI and EXE headers without crashing", () =>
   }
 });
 
-test("live and cleanup reports must match profile, redaction, and plan fingerprint", () => {
-  const directory = mkdtempSync(join(tmpdir(), "appport-evidence-"));
+test(
+  "live and cleanup reports must match profile, redaction, and plan fingerprint",
+  liveAndCleanupReportsMustMatch,
+);
+
+function liveAndCleanupReportsMustMatch() {
+  rmSync(LIVE_EVIDENCE_DIRECTORY, { recursive: true, force: true });
+  mkdirSync(LIVE_EVIDENCE_DIRECTORY, { recursive: true });
   try {
-    const livePath = join(directory, "live.json");
-    const binding = {
-      candidateMsiSha256: "b".repeat(64),
-      qualificationUtilitySha256: "d".repeat(64),
-      configurationFingerprintSha256: "c".repeat(64),
-      sourceRevision: "701aa9a",
-    };
-    const checks = [
-      "profile_matches_write_flag",
-      "user_b_identity",
-      "user_b_device_match",
-      "bootstrap",
-      "apps_catalog",
-      "updates_catalog",
-      "installed_inventory",
-      "background_bootstrap",
-      "icon",
-      "user_a_unassigned_isolation",
-      "qualification_plan",
-      "write_device_binding",
-      "install_fixture",
-      "update_fixture",
-      "unauthorized_application",
-      "substituted_version",
-      "cross_user_action",
-      "approved_install",
-      "approved_update",
-    ].map((name) => ({ name, status: "passed", detail: "redacted" }));
-    writeFileSync(
-      livePath,
-      JSON.stringify({
-        schemaVersion: 1,
-        profile: "write_qualification",
-        qualified: true,
-        writesEnabled: true,
-        diagnosticsEnabled: false,
-        passwordAuthEnabled: false,
-        passwordAuthContract: "none",
-        tokenRedacted: true,
-        startedAtUnix: 10,
-        completedAtUnix: 20,
-        planFingerprintSha256: "a".repeat(64),
-        ...binding,
-        checks,
-      }),
-    );
+    const binding = qualificationBinding();
+    writeQualificationLiveReport(binding);
     const live = inspectReport(
-      livePath,
+      LIVE_REPORT_PATH,
       "live_qualification",
       "write_qualification",
       true,
       binding,
     );
     assert.equal(live.status, "passed");
-    writeFileSync(
-      livePath,
-      JSON.stringify({
-        ...JSON.parse(read(livePath)),
-        diagnosticsEnabled: true,
-      }),
-    );
-    assert.equal(
-      inspectReport(
-        livePath,
-        "live_qualification",
-        "write_qualification",
-        true,
-        binding,
-      ).status,
-      "failed",
-    );
-    writeFileSync(
-      livePath,
-      JSON.stringify({
-        ...JSON.parse(read(livePath)),
-        diagnosticsEnabled: false,
-      }),
-    );
-    writeFileSync(
-      livePath,
-      JSON.stringify({
-        ...JSON.parse(read(livePath)),
-        passwordAuthEnabled: true,
-      }),
-    );
-    assert.equal(
-      inspectReport(
-        livePath,
-        "live_qualification",
-        "write_qualification",
-        true,
-        binding,
-      ).status,
-      "failed",
-    );
-    writeFileSync(
-      livePath,
-      JSON.stringify({
-        ...JSON.parse(read(livePath)),
-        passwordAuthEnabled: false,
-        passwordAuthContract: "exchange-v1",
-      }),
-    );
-    assert.equal(
-      inspectReport(
-        livePath,
-        "live_qualification",
-        "write_qualification",
-        true,
-        binding,
-      ).status,
-      "failed",
-    );
-    writeFileSync(
-      livePath,
-      JSON.stringify({
-        ...JSON.parse(read(livePath)),
-        passwordAuthContract: "none",
-      }),
-    );
-    const cleanupPath = join(directory, "cleanup.json");
-    writeFileSync(
-      cleanupPath,
-      JSON.stringify({
-        schemaVersion: 1,
-        profile: "write_qualification",
-        qualified: true,
-        cleanupComplete: true,
-        completedAtUnix: 30,
-        planFingerprintSha256: "a".repeat(64),
-        ...binding,
-      }),
-    );
-    assert.equal(
-      inspectCleanupReport(cleanupPath, "write_qualification", live, binding)
-        .status,
-      "passed",
-    );
-    writeFileSync(
-      livePath,
-      JSON.stringify({ ...JSON.parse(read(livePath)), tokenRedacted: false }),
-    );
-    assert.equal(
-      inspectReport(
-        livePath,
-        "live_qualification",
-        "write_qualification",
-        true,
-        binding,
-      ).status,
-      "failed",
-    );
-    writeFileSync(
-      cleanupPath,
-      JSON.stringify({
-        schemaVersion: 1,
-        profile: "write_qualification",
-        qualified: true,
-        cleanupComplete: true,
-        completedAtUnix: 19,
-        planFingerprintSha256: "a".repeat(64),
-        ...binding,
-      }),
-    );
-    assert.equal(
-      inspectCleanupReport(cleanupPath, "write_qualification", live, binding)
-        .status,
-      "failed",
-    );
+    assertRejectedDiagnosticAndPasswordAuth(binding);
+    assertCleanupReportBindings(live, binding);
   } finally {
-    rmSync(directory, { recursive: true, force: true });
+    rmSync(LIVE_EVIDENCE_DIRECTORY, { recursive: true, force: true });
   }
-});
+}
 
-test("Windows self-check producer and workflow enrichment bind the candidate", () => {
-  const directory = mkdtempSync(join(tmpdir(), "appport-windows-evidence-"));
-  try {
-    const path = join(directory, "self-check.json");
-    const sourceRevision = "a".repeat(40);
-    const msi = Buffer.from("candidate MSI");
-    const qualificationUtilityPath = join(directory, "qualification.exe");
-    const qualificationUtility = Buffer.from([
-      0x4d,
-      0x5a,
-      ...Buffer.from("candidate utility"),
-    ]);
-    writeFileSync(qualificationUtilityPath, qualificationUtility);
-    const binding = {
-      candidateMsiSha256: sha256(msi),
-      qualificationUtilitySha256: sha256(qualificationUtility),
-      configurationFingerprintSha256: "c".repeat(64),
-      sourceRevision,
-    };
-    const rustReport = {
+function qualificationBinding() {
+  return {
+    candidateMsiSha256: "b".repeat(64),
+    qualificationUtilitySha256: "d".repeat(64),
+    configurationFingerprintSha256: "c".repeat(64),
+    sourceRevision: "701aa9a",
+  };
+}
+
+function writeQualificationLiveReport(binding) {
+  const checks = QUALIFICATION_CHECK_NAMES.split(" ").map((name) => ({
+    name,
+    status: "passed",
+    detail: "redacted",
+  }));
+  writeFileSync(
+    LIVE_REPORT_PATH,
+    JSON.stringify({
       schemaVersion: 1,
-      profile: "read_only",
+      profile: "write_qualification",
       qualified: true,
-      writesEnabled: false,
+      writesEnabled: true,
       diagnosticsEnabled: false,
       passwordAuthEnabled: false,
       passwordAuthContract: "none",
-      cleanupComplete: true,
+      tokenRedacted: true,
       startedAtUnix: 10,
       completedAtUnix: 20,
-      configurationFingerprintSha256: binding.configurationFingerprintSha256,
-      sourceRevision,
-      checks: [
-        "qualification_build",
-        "credential_manager",
-        "journal_acl",
-        "protocol_and_scheduled_task",
-        "notification_registry",
-        "graceful_native_startup",
-      ].map((name) => ({ name, status: "passed" })),
-    };
-    const report = enrichWindowsSelfCheck(
-      rustReport,
+      planFingerprintSha256: "a".repeat(64),
+      ...binding,
+      checks,
+    }),
+  );
+}
+
+function assertRejectedDiagnosticAndPasswordAuth(binding) {
+  assertLiveReportRejected(binding, { diagnosticsEnabled: true });
+  assertLiveReportRejected(binding, { passwordAuthEnabled: true });
+  assertLiveReportRejected(binding, {
+    passwordAuthEnabled: false,
+    passwordAuthContract: "exchange-v1",
+  });
+  writeQualificationLiveReport(binding);
+}
+
+function assertLiveReportRejected(binding, changes) {
+  writeFileSync(
+    LIVE_REPORT_PATH,
+    JSON.stringify({ ...JSON.parse(read(LIVE_REPORT_PATH)), ...changes }),
+  );
+  assert.equal(
+    inspectReport(
+      LIVE_REPORT_PATH,
+      "live_qualification",
+      "write_qualification",
+      true,
+      binding,
+    ).status,
+    "failed",
+  );
+}
+
+function assertCleanupReportBindings(live, binding) {
+  writeCleanupReport(binding, 30);
+  assert.equal(
+    inspectCleanupReport(
+      LIVE_CLEANUP_PATH,
+      "write_qualification",
+      live,
+      binding,
+    ).status,
+    "passed",
+  );
+  assertLiveReportRejected(binding, { tokenRedacted: false });
+  writeCleanupReport(binding, 19);
+  assert.equal(
+    inspectCleanupReport(
+      LIVE_CLEANUP_PATH,
+      "write_qualification",
+      live,
+      binding,
+    ).status,
+    "failed",
+  );
+}
+
+function writeCleanupReport(binding, completedAtUnix) {
+  writeFileSync(
+    LIVE_CLEANUP_PATH,
+    JSON.stringify({
+      schemaVersion: 1,
+      profile: "write_qualification",
+      qualified: true,
+      cleanupComplete: true,
+      completedAtUnix,
+      planFingerprintSha256: "a".repeat(64),
+      ...binding,
+    }),
+  );
+}
+
+test(
+  "Windows self-check producer and workflow enrichment bind the candidate",
+  windowsSelfCheckBindsCandidate,
+);
+
+function windowsSelfCheckBindsCandidate() {
+  rmSync(WINDOWS_EVIDENCE_DIRECTORY, { recursive: true, force: true });
+  mkdirSync(WINDOWS_EVIDENCE_DIRECTORY, { recursive: true });
+  try {
+    const { binding, qualificationUtility, report } = createWindowsSelfCheck();
+    writeFileSync(WINDOWS_UTILITY_PATH, qualificationUtility);
+    assertWindowsSelfCheck(binding, report);
+    assertWindowsWorkflowBindings();
+    assertRejectedWindowsReportBindings(binding, report);
+  } finally {
+    rmSync(WINDOWS_EVIDENCE_DIRECTORY, { recursive: true, force: true });
+  }
+}
+
+function createWindowsSelfCheck() {
+  const sourceRevision = "a".repeat(40);
+  const msi = Buffer.from("candidate MSI");
+  const qualificationUtility = Buffer.from([
+    0x4d,
+    0x5a,
+    ...Buffer.from("candidate utility"),
+  ]);
+  const binding = {
+    candidateMsiSha256: sha256(msi),
+    qualificationUtilitySha256: sha256(qualificationUtility),
+    configurationFingerprintSha256: "c".repeat(64),
+    sourceRevision,
+  };
+  return {
+    binding,
+    qualificationUtility,
+    report: enrichWindowsSelfCheck(
+      rustSelfCheckReport(binding),
       msi,
       qualificationUtility,
       sourceRevision,
-    );
-    writeFileSync(path, JSON.stringify(report));
-    assert.equal(
-      inspectReport(path, "windows_runtime", "read_only", false, binding)
-        .status,
-      "passed",
-    );
-    assert.equal(
-      inspectQualificationUtility(qualificationUtilityPath, []).sha256,
-      binding.qualificationUtilitySha256,
-    );
-    writeFileSync(
-      qualificationUtilityPath,
-      Buffer.from([0x4d, 0x5a, ...Buffer.from("replacement utility")]),
-    );
-    const replacementBinding = {
-      ...binding,
-      qualificationUtilitySha256: inspectQualificationUtility(
-        qualificationUtilityPath,
-        [],
-      ).sha256,
-    };
-    assert.equal(
-      inspectReport(
-        path,
-        "windows_runtime",
-        "read_only",
-        false,
-        replacementBinding,
-      ).status,
-      "failed",
-    );
-    const workflow = read(".github/workflows/verify.yml");
-    assert.match(
-      workflow,
-      /Get-FileHash -Algorithm SHA256 -LiteralPath \$env:APPPORT_MSI\)\.Hash\.ToLowerInvariant\(\)/,
-    );
-    assert.match(
-      workflow,
-      /Get-FileHash -Algorithm SHA256 -LiteralPath \$env:APPPORT_QUALIFICATION_UTILITY\)\.Hash\.ToLowerInvariant\(\)/,
-    );
-    assert.match(
-      workflow,
-      /\$selfCheck\.sourceRevision -ne \$env:APPPORT_SOURCE_REVISION/,
-    );
-    assert.match(
-      workflow,
-      /Add-Member -NotePropertyName candidateMsiSha256 -NotePropertyValue \$candidateMsiSha256/,
-    );
-    assert.match(
-      workflow,
-      /Add-Member -NotePropertyName qualificationUtilitySha256 -NotePropertyValue \$qualificationUtilitySha256/,
-    );
-    assert.match(workflow, /APPPORT_RELUTION_DIAGNOSTICS: "false"/);
-    assert.match(workflow, /\$selfCheck\.diagnosticsEnabled -ne \$false/);
-    assert.match(workflow, /APPPORT_RELUTION_PASSWORD_AUTH_ENABLED: "false"/);
-    assert.match(workflow, /APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT: none/);
-    assert.match(workflow, /\$selfCheck\.passwordAuthEnabled -ne \$false/);
-    assert.match(workflow, /\$selfCheck\.passwordAuthContract -ne 'none'/);
-    for (const field of [
-      "candidateMsiSha256",
-      "qualificationUtilitySha256",
-      "sourceRevision",
-    ]) {
-      const missingBinding = { ...report };
-      delete missingBinding[field];
-      writeFileSync(path, JSON.stringify(missingBinding));
-      assert.equal(
-        inspectReport(path, "windows_runtime", "read_only", false, binding)
-          .status,
-        "failed",
-      );
-    }
-    for (const [field, value] of [
-      ["candidateMsiSha256", "e".repeat(64)],
-      ["qualificationUtilitySha256", "e".repeat(64)],
-      ["sourceRevision", "different-revision"],
-    ]) {
-      writeFileSync(path, JSON.stringify({ ...report, [field]: value }));
-      assert.equal(
-        inspectReport(path, "windows_runtime", "read_only", false, binding)
-          .status,
-        "failed",
-      );
-    }
-    writeFileSync(path, JSON.stringify({ ...report, msiUninstalled: false }));
-    assert.equal(
-      inspectReport(path, "windows_runtime", "read_only", false, binding)
-        .status,
-      "failed",
-    );
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
+    ),
+  };
+}
+
+function rustSelfCheckReport(binding) {
+  return {
+    schemaVersion: 1,
+    profile: "read_only",
+    qualified: true,
+    writesEnabled: false,
+    diagnosticsEnabled: false,
+    passwordAuthEnabled: false,
+    passwordAuthContract: "none",
+    cleanupComplete: true,
+    startedAtUnix: 10,
+    completedAtUnix: 20,
+    configurationFingerprintSha256: binding.configurationFingerprintSha256,
+    sourceRevision: binding.sourceRevision,
+    checks: WINDOWS_CHECK_NAMES.split(" ").map((name) => ({
+      name,
+      status: "passed",
+    })),
+  };
+}
+
+function assertWindowsSelfCheck(binding, report) {
+  writeFileSync(WINDOWS_REPORT_PATH, JSON.stringify(report));
+  assert.equal(
+    inspectReport(
+      WINDOWS_REPORT_PATH,
+      "windows_runtime",
+      "read_only",
+      false,
+      binding,
+    ).status,
+    "passed",
+  );
+  assert.equal(
+    inspectQualificationUtility(WINDOWS_UTILITY_PATH, []).sha256,
+    binding.qualificationUtilitySha256,
+  );
+  writeFileSync(
+    WINDOWS_UTILITY_PATH,
+    Buffer.from([0x4d, 0x5a, ...Buffer.from("replacement utility")]),
+  );
+  const replacementBinding = {
+    ...binding,
+    qualificationUtilitySha256: inspectQualificationUtility(
+      WINDOWS_UTILITY_PATH,
+      [],
+    ).sha256,
+  };
+  assert.equal(
+    inspectReport(
+      WINDOWS_REPORT_PATH,
+      "windows_runtime",
+      "read_only",
+      false,
+      replacementBinding,
+    ).status,
+    "failed",
+  );
+}
+
+function assertWindowsWorkflowBindings() {
+  const workflow = read(".github/workflows/verify.yml");
+  for (const pattern of [
+    /Get-FileHash -Algorithm SHA256 -LiteralPath \$env:APPPORT_MSI\)\.Hash\.ToLowerInvariant\(\)/,
+    /Get-FileHash -Algorithm SHA256 -LiteralPath \$env:APPPORT_QUALIFICATION_UTILITY\)\.Hash\.ToLowerInvariant\(\)/,
+    /\$selfCheck\.sourceRevision -ne \$env:APPPORT_SOURCE_REVISION/,
+    /Add-Member -NotePropertyName candidateMsiSha256 -NotePropertyValue \$candidateMsiSha256/,
+    /Add-Member -NotePropertyName qualificationUtilitySha256 -NotePropertyValue \$qualificationUtilitySha256/,
+    /APPPORT_RELUTION_DIAGNOSTICS: "false"/,
+    /\$selfCheck\.diagnosticsEnabled -ne \$false/,
+    /APPPORT_RELUTION_PASSWORD_AUTH_ENABLED: "false"/,
+    /APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT: none/,
+    /\$selfCheck\.passwordAuthEnabled -ne \$false/,
+    /\$selfCheck\.passwordAuthContract -ne 'none'/,
+  ])
+    assert.match(workflow, pattern);
+}
+
+function assertRejectedWindowsReportBindings(binding, report) {
+  for (const field of [
+    "candidateMsiSha256",
+    "qualificationUtilitySha256",
+    "sourceRevision",
+  ]) {
+    const missingBinding = { ...report };
+    delete missingBinding[field];
+    assertWindowsReportRejected(binding, missingBinding);
   }
-});
+  for (const [field, value] of [
+    ["candidateMsiSha256", "e".repeat(64)],
+    ["qualificationUtilitySha256", "e".repeat(64)],
+    ["sourceRevision", "different-revision"],
+  ])
+    assertWindowsReportRejected(binding, { ...report, [field]: value });
+  assertWindowsReportRejected(binding, {
+    ...report,
+    msiUninstalled: false,
+  });
+}
+
+function assertWindowsReportRejected(binding, report) {
+  writeFileSync(WINDOWS_REPORT_PATH, JSON.stringify(report));
+  assert.equal(
+    inspectReport(
+      WINDOWS_REPORT_PATH,
+      "windows_runtime",
+      "read_only",
+      false,
+      binding,
+    ).status,
+    "failed",
+  );
+}
 
 function enrichWindowsSelfCheck(
   report,

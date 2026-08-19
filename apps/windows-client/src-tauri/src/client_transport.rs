@@ -245,84 +245,109 @@ async fn diagnostic_response_attempt<T: DeserializeOwned>(
 ) -> RequestAttempt<T> {
     let status_code = response.status();
     if status_code.is_success() && response.content_length().unwrap_or(0) > MAX_JSON_BYTES as u64 {
-        crate::logging::write_relution_response(
-            &diagnostic.method,
-            diagnostic.path,
-            status_code.as_u16(),
-            attempt + 1,
-            "complete",
-            b"[response omitted: exceeds configured JSON limit]",
-        );
-        return RequestAttempt::Complete(Err("server: response is too large".into()));
+        return diagnostic_success_too_large(status_code, attempt, diagnostic);
     }
-    let maximum = if status_code.is_success() {
+    match read_response_for_diagnostics(response, diagnostic_body_limit(status_code)).await {
+        DiagnosticBody::Complete(bytes) => {
+            diagnostic_complete_response(status_code, read, attempt, diagnostic, &bytes)
+        }
+        DiagnosticBody::TooLarge if status_code.is_success() => {
+            diagnostic_success_too_large(status_code, attempt, diagnostic)
+        }
+        DiagnosticBody::TooLarge => diagnostic_error_response(
+            status_code,
+            read,
+            attempt,
+            diagnostic,
+            b"[response body omitted: diagnostic limit]",
+        ),
+        DiagnosticBody::Unavailable => diagnostic_error_response(
+            status_code,
+            read,
+            attempt,
+            diagnostic,
+            b"[response body unavailable]",
+        ),
+    }
+}
+
+fn diagnostic_body_limit(status_code: reqwest::StatusCode) -> usize {
+    if status_code.is_success() {
         MAX_JSON_BYTES
     } else {
         crate::logging::MAX_RELUTION_DIAGNOSTIC_BODY_BYTES
-    };
-    match read_response_for_diagnostics(response, maximum).await {
-        DiagnosticBody::Complete(bytes) => {
-            if status_code.is_success() {
-                crate::logging::write_relution_response(
-                    &diagnostic.method,
-                    diagnostic.path,
-                    status_code.as_u16(),
-                    attempt + 1,
-                    "complete",
-                    &bytes,
-                );
-                RequestAttempt::Complete(decode_response_bytes(&bytes))
-            } else {
-                let retry = can_retry_status(status_code, read, attempt);
-                crate::logging::write_relution_response(
-                    &diagnostic.method,
-                    diagnostic.path,
-                    status_code.as_u16(),
-                    attempt + 1,
-                    if retry { "retry" } else { "complete" },
-                    &bytes,
-                );
-                if retry {
-                    RequestAttempt::Retry
-                } else {
-                    RequestAttempt::Complete(Err(status(status_code)))
-                }
-            }
-        }
-        DiagnosticBody::TooLarge if status_code.is_success() => {
-            crate::logging::write_relution_response(
-                &diagnostic.method,
-                diagnostic.path,
-                status_code.as_u16(),
-                attempt + 1,
-                "complete",
-                b"[response omitted: exceeds configured JSON limit]",
-            );
-            RequestAttempt::Complete(Err("server: response is too large".into()))
-        }
-        body @ (DiagnosticBody::TooLarge | DiagnosticBody::Unavailable) => {
-            crate::logging::write_relution_response(
-                &diagnostic.method,
-                diagnostic.path,
-                status_code.as_u16(),
-                attempt + 1,
-                if can_retry_status(status_code, read, attempt) {
-                    "retry"
-                } else {
-                    "complete"
-                },
-                if matches!(body, DiagnosticBody::TooLarge) {
-                    b"[response body omitted: diagnostic limit]"
-                } else {
-                    b"[response body unavailable]"
-                },
-            );
-            if can_retry_status(status_code, read, attempt) {
-                RequestAttempt::Retry
-            } else {
-                RequestAttempt::Complete(Err(status(status_code)))
-            }
-        }
+    }
+}
+
+fn diagnostic_complete_response<T: DeserializeOwned>(
+    status_code: reqwest::StatusCode,
+    read: bool,
+    attempt: u32,
+    diagnostic: &ResponseDiagnostic<'_>,
+    bytes: &[u8],
+) -> RequestAttempt<T> {
+    if status_code.is_success() {
+        write_diagnostic_response(diagnostic, status_code, attempt, "complete", bytes);
+        return RequestAttempt::Complete(decode_response_bytes(bytes));
+    }
+    diagnostic_error_response(status_code, read, attempt, diagnostic, bytes)
+}
+
+fn diagnostic_success_too_large<T>(
+    status_code: reqwest::StatusCode,
+    attempt: u32,
+    diagnostic: &ResponseDiagnostic<'_>,
+) -> RequestAttempt<T> {
+    write_diagnostic_response(
+        diagnostic,
+        status_code,
+        attempt,
+        "complete",
+        b"[response omitted: exceeds configured JSON limit]",
+    );
+    RequestAttempt::Complete(Err("server: response is too large".into()))
+}
+
+fn diagnostic_error_response<T>(
+    status_code: reqwest::StatusCode,
+    read: bool,
+    attempt: u32,
+    diagnostic: &ResponseDiagnostic<'_>,
+    body: &[u8],
+) -> RequestAttempt<T> {
+    let retry = can_retry_status(status_code, read, attempt);
+    write_diagnostic_response(
+        diagnostic,
+        status_code,
+        attempt,
+        if retry { "retry" } else { "complete" },
+        body,
+    );
+    status_response_attempt(status_code, retry)
+}
+
+fn write_diagnostic_response(
+    diagnostic: &ResponseDiagnostic<'_>,
+    status_code: reqwest::StatusCode,
+    attempt: u32,
+    disposition: &str,
+    body: &[u8],
+) {
+    crate::logging::write_relution_response(
+        &diagnostic.method,
+        diagnostic.path,
+        status_code.as_u16(),
+        attempt + 1,
+        disposition,
+        body,
+    );
+}
+
+fn status_response_attempt<T>(status_code: reqwest::StatusCode, retry: bool) -> RequestAttempt<T> {
+    if retry {
+        RequestAttempt::Retry
+    } else {
+        RequestAttempt::Complete(Err(status(status_code)))
     }
 }
 
