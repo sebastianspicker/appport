@@ -176,6 +176,31 @@ fn device_matching_fails_closed_for_ambiguous_or_invalid_evidence() {
 }
 
 #[test]
+fn device_matching_accepts_serial_and_hostname_with_harmless_formatting() {
+    let evidence = evidence::NativeDeviceEvidenceV1 {
+        version: 1,
+        ent_dmid: None,
+        smbios_uuid: Some("123e4567-e89b-12d3-a456-426614174000".into()),
+        bios_serial: Some(" synthetic-42 ".into()),
+        hostname: " test-win-042 ".into(),
+    };
+    let device = dto::Device {
+        uuid: "30000000-0000-4000-8000-000000000003".into(),
+        device_id: Some("ABCDEF0123456789ABCDEF0123456789".into()),
+        name: "TEST-WIN-042".into(),
+        status: "COMPLIANT".into(),
+        platform: "WINDOWS".into(),
+        user_uuid: "40000000-0000-4000-8000-000000000004".into(),
+        organization_uuid: "10000000-0000-4000-8000-000000000001".into(),
+        serial_number: Some("SYNTHETIC-42".into()),
+    };
+    assert_eq!(
+        match_device(&evidence, &[device]).unwrap().uuid,
+        "30000000-0000-4000-8000-000000000003"
+    );
+}
+
+#[test]
 fn state_is_unknown_for_an_unmapped_relution_value() {
     assert_eq!(
         status(reqwest::StatusCode::FORBIDDEN),
@@ -284,21 +309,25 @@ fn concurrent_cold_catalog_reads_share_one_refresh() {
 }
 
 #[test]
-fn mocked_transport_rejects_unknown_fields_at_the_http_boundary() {
+fn mocked_transport_accepts_server_extensions_but_rejects_missing_required_fields() {
     let (base, requests, server) = mock_server(vec![MockResponse {
         status: 200,
         content_type: "application/json",
-        body: r#"{"results":[{"uuid":"u","name":"n","organizationUuid":"o","activated":true,"unexpected":1}]}"#.into(),
+        body: r#"{"results":[{"uuid":"u","name":"n","organizationUuid":"o","activated":true,"email":"n@example.test"}],"errors":[],"status":"OK","message":"users"}"#.into(),
+    }, MockResponse {
+        status: 200,
+        content_type: "application/json",
+        body: r#"{"results":[{"uuid":"u","name":"n","organizationUuid":"o"}]}"#.into(),
     }]);
     let client = test_client(base);
     let result: Result<dto::Page<dto::User>, String> =
         run(client.get("/api/users", "token", vec![]));
-    assert!(matches!(
-        result,
-        Err(error) if error == "server: invalid Relution response"
-    ));
+    assert_eq!(result.unwrap().results[0].uuid, "u");
+    let invalid: Result<dto::Page<dto::User>, String> =
+        run(client.get("/api/users", "token", vec![]));
+    assert!(matches!(invalid, Err(error) if error == "server: invalid Relution response"));
     server.join().unwrap();
-    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    assert_eq!(requests.load(Ordering::SeqCst), 2);
 }
 
 #[test]
@@ -316,7 +345,9 @@ fn mocked_reads_paginate_and_retry_transient_statuses() {
         MockResponse {
             status: 200,
             content_type: "application/json",
-            body: format!(r#"{{"results":[{full_page}]}}"#),
+            body: format!(
+                r#"{{"items":[{full_page}],"nonpagedCount":101,"version":4,"errors":[],"status":"OK","message":"groups"}}"#
+            ),
         },
         MockResponse {
             status: 200,
@@ -456,6 +487,10 @@ fn repeated_recursive_group_permissions_fetch_members_once_per_refresh() {
 fn catalog_authorization_keeps_sorted_output_stable() {
     let (base, requests, server) = mock_catalog_server(6, move |request| {
         let path = request_path(request);
+        if path.ends_with("/content/apps/baseInfo") {
+            assert!(request.contains("locale="));
+            assert!(!request.contains("extend=versions"));
+        }
         catalog_setup_response(path, &["Zulu", "alpha", "Mike"])
             .unwrap_or_else(direct_user_permission)
     });
@@ -471,8 +506,8 @@ fn catalog_authorization_keeps_sorted_output_stable() {
 }
 
 #[test]
-fn failed_permission_decoding_rejects_the_entire_catalog_refresh() {
-    let (base, requests, server) = mock_catalog_server(7, move |request| {
+fn catalog_refresh_accepts_permission_extensions() {
+    let (base, requests, server) = mock_catalog_server(8, move |request| {
         let path = request_path(request);
         if let Some(response) =
             catalog_setup_response(path, &["bad", "two", "three", "four", "five"])
@@ -484,7 +519,7 @@ fn failed_permission_decoding_rejects_the_entire_catalog_refresh() {
             return CatalogMockResponse {
                 status: 200,
                 content_type: "application/json",
-                body: r#"{"results":[{"read":true,"userGroupInfo":{"uuid":"user","type":"USER"},"unexpected":true}]}"#
+                body: r#"{"results":[{"read":true,"userGroupInfo":{"uuid":"user","type":"USER"},"unexpected":true}],"errors":[],"status":"OK"}"#
                     .into(),
             };
         }
@@ -494,12 +529,9 @@ fn failed_permission_decoding_rejects_the_entire_catalog_refresh() {
     let result = run(client.cached_apps("token", "user", &test_device(), 42));
     server.join().unwrap();
 
-    assert!(matches!(
-        result,
-        Err(error) if error == "server: invalid Relution response"
-    ));
-    assert!(client.cache_for(42).unwrap().apps.is_none());
-    assert_eq!(requests.load(Ordering::SeqCst), 7);
+    assert_eq!(result.unwrap().len(), 5);
+    assert!(client.cache_for(42).unwrap().apps.is_some());
+    assert_eq!(requests.load(Ordering::SeqCst), 8);
 }
 
 #[test]
