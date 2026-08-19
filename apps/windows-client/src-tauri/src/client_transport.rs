@@ -7,10 +7,12 @@ impl RelutionClient {
         let valid: Vec<_> = ds
             .into_iter()
             .filter(|x| {
-                x.user_uuid == u
-                    && x.organization_uuid == self.config.organization_uuid
-                    && x.platform == "WINDOWS"
-                    && matches!(x.status.as_str(), "COMPLIANT" | "NONCOMPLIANT" | "INACTIVE")
+                same_uuid(&x.user_uuid, u)
+                    && same_uuid(&x.organization_uuid, &self.config.organization_uuid)
+                    && x.platform.eq_ignore_ascii_case("WINDOWS")
+                    && ["COMPLIANT", "NONCOMPLIANT", "INACTIVE"]
+                        .iter()
+                        .any(|status| x.status.eq_ignore_ascii_case(status))
             })
             .collect();
         let d = match_device(&ev, &valid)?;

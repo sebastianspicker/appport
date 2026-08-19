@@ -3,6 +3,7 @@ name = "relution-appport"
 version = "0.1.0-alpha.4"
 description = "Self-service software for managed Windows devices."
 edition = "2021"
+default-run = "relution-appport"
 
 [lib]
 name = "relution_appport_lib"

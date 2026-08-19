@@ -10,7 +10,12 @@ use url::Url;
 const MAX_ICON_BYTES: usize = 1024 * 1024;
 
 pub fn app_from(c: dto::Catalog, native: &str) -> Option<crate::wire::AvailableApp> {
-    if c.uuid == native || !c.platforms.iter().any(|p| p == "WINDOWS") {
+    if same_uuid(&c.uuid, native)
+        || !c
+            .platforms
+            .iter()
+            .any(|platform| platform.eq_ignore_ascii_case("WINDOWS"))
+    {
         return None;
     }
     let source = match c.subtype.as_str() {
@@ -55,13 +60,19 @@ pub fn match_device(
     let matches: Vec<_> = items
         .iter()
         .filter(|d| {
-            sig.map(|s| d.device_id.as_deref() == Some(s))
-                .unwrap_or(false)
+            sig.map(|signature| {
+                d.device_id
+                    .as_deref()
+                    .is_some_and(|device_id| same_evidence_value(device_id, signature))
+            })
+            .unwrap_or(false)
                 || e.bios_serial
                     .as_deref()
-                    .map(|s| {
-                        d.serial_number.as_deref() == Some(s)
-                            && d.name.eq_ignore_ascii_case(&e.hostname)
+                    .map(|serial| {
+                        d.serial_number
+                            .as_deref()
+                            .is_some_and(|device_serial| same_evidence_value(device_serial, serial))
+                            && same_evidence_value(&d.name, &e.hostname)
                     })
                     .unwrap_or(false)
         })
@@ -142,6 +153,14 @@ pub fn valid_id(v: &str) -> bool {
             .all(|(i, x)| matches!(i, 8 | 13 | 18 | 23) || x.is_ascii_hexdigit())
         && v.chars().any(|x| x != '0' && x != '-')
 }
+pub fn same_uuid(left: &str, right: &str) -> bool {
+    left.eq_ignore_ascii_case(right)
+}
+pub fn same_evidence_value(left: &str, right: &str) -> bool {
+    let left = left.trim();
+    let right = right.trim();
+    !left.is_empty() && !right.is_empty() && left.eq_ignore_ascii_case(right)
+}
 pub fn encode(v: &str) -> String {
     url::form_urlencoded::byte_serialize(v.as_bytes()).collect()
 }
@@ -180,8 +199,10 @@ pub fn remote_state(v: &str) -> crate::journal::State {
     }
 }
 pub fn inventory_matches(i: &dto::Inventory, a: &str, v: &str, p: Option<&str>) -> bool {
-    i.app_uuid.as_deref() == Some(a)
-        && i.version_uuid.as_deref() == Some(v)
+    i.app_uuid.as_deref().is_some_and(|app| same_uuid(app, a))
+        && i.version_uuid
+            .as_deref()
+            .is_some_and(|version| same_uuid(version, v))
         && (p.is_none() || i.identifier.as_deref() == p)
 }
 
@@ -194,19 +215,24 @@ pub fn action_details_match(
     let Some(details) = details else {
         return false;
     };
-    let identifiers = [
+    let uuid_identifiers = [
         (details.app_uuid.as_deref(), Some(app_id)),
         (details.version_uuid.as_deref(), Some(version_id)),
-        (details.package.as_deref(), package_id),
     ];
     let mut matched = false;
-    for (candidate, expected) in identifiers {
+    for (candidate, expected) in uuid_identifiers {
         if let (Some(candidate), Some(expected)) = (candidate, expected) {
-            if candidate != expected {
+            if !same_uuid(candidate, expected) {
                 return false;
             }
             matched = true;
         }
+    }
+    if let (Some(candidate), Some(expected)) = (details.package.as_deref(), package_id) {
+        if candidate != expected {
+            return false;
+        }
+        matched = true;
     }
     matched
 }

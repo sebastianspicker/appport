@@ -126,7 +126,7 @@ impl RelutionClient {
             .into_iter()
             .filter(|u| {
                 u.name.eq_ignore_ascii_case(username.trim())
-                    && u.organization_uuid == self.config.organization_uuid
+                    && same_uuid(&u.organization_uuid, &self.config.organization_uuid)
                     && u.activated
             })
             .collect();
@@ -225,7 +225,7 @@ impl RelutionClient {
             .get_pages(
                 "/api/management/v1/content/apps/baseInfo",
                 t,
-                vec![("extend", "versions"), ("locale", locale.as_str())],
+                vec![("locale", locale.as_str())],
             )
             .await?;
         let groups: dto::Groups = self
@@ -324,10 +324,11 @@ impl RelutionClient {
             return Ok(None);
         }
         let app_id = app.id.clone();
-        let installed = context
-            .inventory
-            .iter()
-            .find(|item| item.app_uuid.as_deref() == Some(&app_id));
+        let installed = context.inventory.iter().find(|item| {
+            item.app_uuid
+                .as_deref()
+                .is_some_and(|id| same_uuid(id, &app_id))
+        });
         apply_inventory(&mut app, installed);
         Ok(Some(app))
     }
@@ -357,11 +358,14 @@ impl RelutionClient {
         if !permission.read {
             return Ok(false);
         }
-        if permission.subject.kind == "USER" {
-            return Ok(permission.subject.uuid == context.user);
+        if permission.subject.kind.eq_ignore_ascii_case("USER") {
+            return Ok(same_uuid(&permission.subject.uuid, context.user));
         }
-        Ok(permission.subject.kind == "GROUP"
-            && (context.groups.contains(&permission.subject.uuid)
+        Ok(permission.subject.kind.eq_ignore_ascii_case("GROUP")
+            && (context
+                .groups
+                .iter()
+                .any(|group| same_uuid(group, &permission.subject.uuid))
                 || self
                     .group_contains(context, &permission.subject.uuid)
                     .await?))
@@ -423,7 +427,7 @@ impl RelutionClient {
             .await?;
         Ok(members
             .into_iter()
-            .any(|member| member.uuid == context.user))
+            .any(|member| same_uuid(&member.uuid, context.user)))
     }
 }
 
