@@ -97,6 +97,7 @@ pub struct ConnectStarted {
 pub struct NativeBootstrap {
     pub user: NativeUser,
     pub device: NativeDevice,
+    pub available_count: u32,
     pub updates: NativeUpdates,
     pub writes_enabled: bool,
 }
@@ -222,6 +223,7 @@ mod tests {
                 status: "COMPLIANT".into(),
                 last_seen_at: None,
             },
+            available_count: 2,
             updates: NativeUpdates {
                 count: 0,
                 keys: vec![],
@@ -230,6 +232,7 @@ mod tests {
         };
         let bootstrap = serde_json::to_value(bootstrap).unwrap();
         assert!(bootstrap.get("sessionExpiresAt").is_none());
+        assert_eq!(bootstrap["availableCount"], 2);
         assert_eq!(bootstrap["writesEnabled"], false);
     }
 

@@ -50,6 +50,7 @@ export interface SignOutOutcome {
 export interface NativeBootstrap {
   user: { displayName: string };
   device: { name: string; status: string; lastSeenAt: string | null };
+  availableCount: number;
   updates: { count: number; keys: string[] };
   writesEnabled: boolean;
 }

@@ -150,16 +150,13 @@ impl RelutionClient {
     ) -> Result<NativeBootstrap, String> {
         let d = self.current_device(t, id).await?;
         let a = self.cached_apps(t, id, &d, generation).await?;
-        let keys = a
-            .iter()
-            .filter(|x| x.install_state == crate::wire::AppInstallState::UpdateAvailable)
-            .map(|x| format!("{}:{}", x.id, x.released_version_id))
-            .collect::<Vec<_>>();
+        let (available_count, keys) = bootstrap_catalog_summary(&a);
         Ok(NativeBootstrap {
             user: NativeUser {
                 display_name: u.into(),
             },
             device: d.wire,
+            available_count,
             updates: NativeUpdates {
                 count: keys.len() as u32,
                 keys,
