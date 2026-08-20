@@ -40,7 +40,7 @@ pub struct Catalog {
     #[serde(rename = "developerInformation")]
     pub developer: Option<Developer>,
     #[serde(rename = "subType")]
-    pub subtype: String,
+    pub subtype: Option<String>,
     pub platforms: Vec<String>,
     pub versions: Versions,
     pub icon: Option<String>,
