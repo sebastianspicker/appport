@@ -79,7 +79,7 @@ fn firmware() -> (Option<String>, Option<String>) {
         GetSystemFirmwareTable, FIRMWARE_TABLE_PROVIDER,
     };
     unsafe {
-        let provider = FIRMWARE_TABLE_PROVIDER(u32::from_le_bytes(*b"RSMB"));
+        let provider = FIRMWARE_TABLE_PROVIDER(raw_smbios_provider_signature());
         let size = GetSystemFirmwareTable(provider, 0, None);
         if size == 0 {
             return (None, None);
@@ -90,6 +90,13 @@ fn firmware() -> (Option<String>, Option<String>) {
         }
         parse_raw_smbios(&buffer)
     }
+}
+
+const fn raw_smbios_provider_signature() -> u32 {
+    // GetSystemFirmwareTable expects the Win32 provider constant 'RSMB'.
+    // The API's little-endian reversal rule applies to firmware table IDs,
+    // not to this provider signature.
+    u32::from_be_bytes(*b"RSMB")
 }
 
 #[cfg(not(windows))]
@@ -155,6 +162,11 @@ fn smbios_string(raw: &[u8], start: usize, index: u8, end: usize) -> Option<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn raw_smbios_provider_matches_the_win32_rsmb_constant() {
+        assert_eq!(raw_smbios_provider_signature(), 0x5253_4D42);
+    }
 
     #[test]
     fn parses_type_one_uuid_and_serial() {

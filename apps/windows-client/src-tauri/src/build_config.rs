@@ -8,6 +8,27 @@ pub const PROFILE: &str = "APPPORT_QUALIFICATION_PROFILE";
 pub const TENANT_APPROVED: &str = "APPPORT_QUALIFICATION_TENANT_APPROVED";
 pub const TENANT_CLASS: &str = "APPPORT_RELUTION_TENANT_CLASS";
 pub const DISPOSABLE_APPROVED: &str = "APPPORT_DISPOSABLE_RESOURCES_APPROVED";
+pub const DIAGNOSTICS: &str = "APPPORT_RELUTION_DIAGNOSTICS";
+pub const PASSWORD_AUTH_ENABLED: &str = "APPPORT_RELUTION_PASSWORD_AUTH_ENABLED";
+pub const PASSWORD_AUTH_CONTRACT: &str = "APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT";
+
+pub fn parse_exact_bool(value: &str) -> Result<bool, &'static str> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err("must be exactly true or false"),
+    }
+}
+
+pub fn validate_password_auth_scaffold(enabled: &str, contract: &str) -> Result<(), &'static str> {
+    if enabled != "false" {
+        return Err("password authentication scaffold requires enabled=false");
+    }
+    if contract != "none" {
+        return Err("password authentication scaffold requires contract=none");
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QualificationProfile {
@@ -172,6 +193,23 @@ mod tests {
             Some("true")
         )
         .is_err());
+    }
+
+    #[test]
+    fn diagnostic_flag_is_an_exact_boolean() {
+        assert_eq!(parse_exact_bool("true"), Ok(true));
+        assert_eq!(parse_exact_bool("false"), Ok(false));
+        assert!(parse_exact_bool("True").is_err());
+        assert!(parse_exact_bool("0").is_err());
+        assert!(parse_exact_bool("").is_err());
+    }
+
+    #[test]
+    fn password_authentication_scaffold_is_explicitly_disabled() {
+        assert!(validate_password_auth_scaffold("false", "none").is_ok());
+        assert!(validate_password_auth_scaffold("true", "none").is_err());
+        assert!(validate_password_auth_scaffold("false", "exchange-v1").is_err());
+        assert!(validate_password_auth_scaffold("False", "none").is_err());
     }
 
     #[test]

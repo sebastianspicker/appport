@@ -3,6 +3,7 @@ name = "relution-appport"
 version = "0.1.0-alpha.4"
 description = "Self-service software for managed Windows devices."
 edition = "2021"
+default-run = "relution-appport"
 
 [lib]
 name = "relution_appport_lib"
@@ -23,6 +24,7 @@ sha2 = "=0.10.9"
 tauri = { version = "=2.11.5", features = [] }
 tokio = { version = "=1.53.1", features = ["rt", "sync", "time"] }
 url = "=2.5.8"
+zeroize = "=1.9.0"
 
 [[bin]]
 name = "relution-appport-qualification"

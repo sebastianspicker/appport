@@ -41,9 +41,14 @@ function StatusRetry({
   label: string;
 }) {
   if (
-    ["loading", "empty", "device-match-failed", "session-expired"].includes(
-      problem,
-    )
+    [
+      "loading",
+      "empty",
+      "authorization-denied",
+      "auth-method-unsupported",
+      "device-match-failed",
+      "session-expired",
+    ].includes(problem)
   )
     return null;
   return (

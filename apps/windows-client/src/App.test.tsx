@@ -5,6 +5,7 @@ import type { AppAction } from "./models";
 import { native } from "./native";
 import {
   appAction,
+  authCapabilities,
   availableApp,
   deferred,
   nativeBootstrap,
@@ -39,6 +40,13 @@ function findSignOut() {
   return screen.findByRole("button", { name: "Sign out" }, { timeout: 5_000 });
 }
 
+async function signOutToConnect() {
+  fireEvent.click(await findSignOut());
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
 function enableWrites() {
   vi.mocked(native.bootstrap).mockResolvedValue(
     nativeBootstrap({ writesEnabled: true }),
@@ -46,12 +54,63 @@ function enableWrites() {
 }
 
 describe("App", () => {
+  it("loads the catalog after sign-in even while the initial view is pending", async () => {
+    const initialView = deferred<"apps" | "updates">();
+    vi.mocked(native.initialView).mockReturnValue(initialView.promise);
+    vi.mocked(native.connect).mockResolvedValue({
+      backgroundCheckRegistered: true,
+    });
+    render(<App />);
+
+    submitConnection();
+    expect(native.connect).toHaveBeenCalledTimes(1);
+    expect(native.bootstrap).not.toHaveBeenCalled();
+
+    await act(async () => {
+      initialView.resolve("apps");
+      await initialView.promise;
+    });
+
+    expect(native.bootstrap).toHaveBeenCalledTimes(1);
+    expect(native.apps).toHaveBeenCalledTimes(1);
+    expect(native.apps).toHaveBeenCalledWith("apps");
+  });
+
   it("states that an empty catalog is not an error", async () => {
     render(<App />);
     expect(await screen.findByText("Nothing to show")).toBeTruthy();
     expect(screen.getByText("For this device")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Available" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Available (0)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Updates (0)" })).toBeTruthy();
+  });
+
+  it("shows available and update counts after bootstrap", async () => {
+    vi.mocked(native.bootstrap).mockResolvedValue(
+      nativeBootstrap({ availableCount: 4, updates: { count: 2, keys: [] } }),
+    );
+    render(<App />);
+
+    expect(
+      await screen.findByRole("button", { name: "Available (4)" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Updates (2)" })).toBeTruthy();
+  });
+
+  it("keeps navigation labels plain until bootstrap completes", async () => {
+    const bootstrap = deferred<ReturnType<typeof nativeBootstrap>>();
+    vi.mocked(native.bootstrap).mockReturnValue(bootstrap.promise);
+    render(<App />);
+
+    expect(
+      await screen.findByRole("button", { name: "Available" }),
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Updates" })).toBeTruthy();
+
+    bootstrap.resolve(nativeBootstrap());
+    expect(
+      await screen.findByRole("button", { name: "Available (0)" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Updates (0)" })).toBeTruthy();
   });
 
   it("opens only the native fixed Relution portal command", async () => {
@@ -118,6 +177,29 @@ describe("App catalog", () => {
         "Installed version: 128.0.3. Available version: 128.0.4.",
       ),
     ).toBeTruthy();
+  });
+
+  it("keeps complete long version labels available to assistive technology", async () => {
+    const installed =
+      "128.0.3-enterprise-managed-release-with-a-very-long-build-metadata-suffix";
+    const available =
+      "128.0.4-enterprise-managed-release-with-a-very-long-build-metadata-suffix";
+    vi.mocked(native.initialView).mockResolvedValue("updates");
+    vi.mocked(native.apps).mockResolvedValue([
+      availableApp("firefox", "Mozilla Firefox", {
+        releasedVersionLabel: available,
+        installedVersionId: "installed",
+        installedVersionLabel: installed,
+        installState: "update_available",
+      }),
+    ]);
+    render(<App />);
+
+    const rail = await screen.findByLabelText(
+      `Installed version: ${installed}. Available version: ${available}.`,
+    );
+    expect(rail.textContent).toContain(installed);
+    expect(rail.textContent).toContain(available);
   });
 });
 
@@ -213,13 +295,14 @@ describe("App connection", () => {
     const pending = deferred<{ backgroundCheckRegistered: boolean }>();
     vi.mocked(native.connect).mockReturnValue(pending.promise);
     render(<App />);
-    fireEvent.click(await findSignOut());
+    await signOutToConnect();
     submitConnection("ada@example.test", "one-use-secret");
 
-    expect(native.connect).toHaveBeenCalledWith(
-      "ada@example.test",
-      "one-use-secret",
-    );
+    expect(native.connect).toHaveBeenCalledWith({
+      authMethod: "personal_token",
+      relutionUsername: "ada@example.test",
+      accessToken: "one-use-secret",
+    });
     expect(
       screen.getByLabelText<HTMLInputElement>("Relution username").value,
     ).toBe("");
@@ -230,6 +313,89 @@ describe("App connection", () => {
     act(() => {
       pending.resolve({ backgroundCheckRegistered: true });
     });
+  });
+
+  it("keeps the token form simple when password sign-in is unavailable", async () => {
+    vi.mocked(native.authCapabilities).mockResolvedValue(authCapabilities());
+    render(<App />);
+
+    await screen.findByLabelText("Personal access token");
+    expect(screen.queryByRole("radio")).toBeNull();
+  });
+
+  it("offers password sign-in only when supported and clears secrets on switch", async () => {
+    vi.mocked(native.authCapabilities).mockResolvedValue(
+      authCapabilities({ password: true }),
+    );
+    render(<App />);
+
+    await findSignOut();
+    fireEvent.click(screen.getByText("Renew or replace token"));
+    const passwordMethod = await screen.findByRole("radio", {
+      name: "Password",
+    });
+    const username =
+      screen.getByLabelText<HTMLInputElement>("Relution username");
+    const token = screen.getByLabelText<HTMLInputElement>(
+      "Personal access token",
+    );
+    expect(
+      screen.getByRole<HTMLInputElement>("radio", {
+        name: "Personal token",
+      }).checked,
+    ).toBe(true);
+    expect(token.autocomplete).toBe("off");
+
+    fireEvent.change(username, { target: { value: "ada@example.test" } });
+    fireEvent.change(token, { target: { value: "personal-token" } });
+    fireEvent.click(passwordMethod);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const password = screen.getByLabelText<HTMLInputElement>("Password", {
+      selector: 'input[type="password"]',
+    });
+    expect(
+      screen.getByRole<HTMLInputElement>("radio", { name: "Password" }).checked,
+    ).toBe(true);
+    expect(username.value).toBe("");
+    expect(password.value).toBe("");
+    expect(password.autocomplete).toBe("current-password");
+  });
+
+  it("prevents a duplicate pending sign-in attempt", async () => {
+    const pending = deferred<{ backgroundCheckRegistered: boolean }>();
+    vi.mocked(native.connect).mockReturnValue(pending.promise);
+    render(<App />);
+    await signOutToConnect();
+
+    submitConnection();
+    const connect = screen.getByRole("button", { name: "Connect" });
+    expect(connect.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(connect);
+    expect(native.connect).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      pending.resolve({ backgroundCheckRegistered: true });
+    });
+  });
+
+  it("maps unsupported sign-in methods without exposing native details", async () => {
+    vi.mocked(native.connect).mockRejectedValue({
+      code: "AUTH_METHOD_UNSUPPORTED",
+      message: "native details must not reach the UI",
+    });
+    render(<App />);
+    await signOutToConnect();
+    submitConnection();
+
+    expect(
+      await screen.findByText("This sign-in method is unavailable"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("native details must not reach the UI"),
+    ).toBeNull();
   });
 });
 

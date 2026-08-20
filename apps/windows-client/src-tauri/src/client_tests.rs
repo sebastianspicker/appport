@@ -176,10 +176,35 @@ fn device_matching_fails_closed_for_ambiguous_or_invalid_evidence() {
 }
 
 #[test]
-fn state_is_unknown_for_an_unmapped_relution_value() {
+fn device_matching_accepts_serial_and_hostname_with_harmless_formatting() {
+    let evidence = evidence::NativeDeviceEvidenceV1 {
+        version: 1,
+        ent_dmid: None,
+        smbios_uuid: Some("123e4567-e89b-12d3-a456-426614174000".into()),
+        bios_serial: Some(" synthetic-42 ".into()),
+        hostname: " test-win-042 ".into(),
+    };
+    let device = dto::Device {
+        uuid: "30000000-0000-4000-8000-000000000003".into(),
+        device_id: Some("ABCDEF0123456789ABCDEF0123456789".into()),
+        name: "TEST-WIN-042".into(),
+        status: "COMPLIANT".into(),
+        platform: "WINDOWS".into(),
+        user_uuid: "40000000-0000-4000-8000-000000000004".into(),
+        organization_uuid: "10000000-0000-4000-8000-000000000001".into(),
+        serial_number: Some("SYNTHETIC-42".into()),
+    };
+    assert_eq!(
+        match_device(&evidence, &[device]).unwrap().uuid,
+        "30000000-0000-4000-8000-000000000003"
+    );
+}
+
+#[test]
+fn forbidden_status_reports_missing_authorization() {
     assert_eq!(
         status(reqwest::StatusCode::FORBIDDEN),
-        "device_match_failed: device not assigned"
+        "authorization: account or token lacks required Relution access"
     );
 }
 
@@ -204,6 +229,98 @@ fn inventory_confirmation_requires_exact_identity() {
     assert!(inventory_matches(&item, "app", "v2", Some("pkg")));
     assert!(!inventory_matches(&item, "app", "v1", Some("pkg")));
     assert!(!inventory_matches(&item, "app", "v2", Some("other")));
+}
+
+#[test]
+fn numeric_inventory_versions_classify_teams_updates_without_uuid_authority() {
+    let inventory = |version_uuid: Option<&str>, label: Option<&str>, update| dto::Inventory {
+        identifier: None,
+        _name: Some("App".into()),
+        app_uuid: Some("app".into()),
+        version_uuid: version_uuid.map(str::to_owned),
+        version_to_show: label.map(str::to_owned),
+        version_name: None,
+        update,
+    };
+
+    let cases = [
+        (
+            "26198.304.4946.9672",
+            "26183.1903.4892.4448",
+            Some("same-release-uuid"),
+            Some(false),
+            crate::wire::AppInstallState::UpdateAvailable,
+        ),
+        (
+            "24215.1007.3146.1670",
+            "24215.1007.3146.2020",
+            Some("different-release-uuid"),
+            Some(true),
+            crate::wire::AppInstallState::Available,
+        ),
+        (
+            "1.2.0.0",
+            " 1.2 ",
+            Some("different-release-uuid"),
+            Some(true),
+            crate::wire::AppInstallState::Available,
+        ),
+    ];
+    for (released, installed, installed_uuid, update, expected) in cases {
+        let mut app = app("Teams", crate::wire::AppInstallState::Available);
+        app.released_version_id = "same-release-uuid".into();
+        app.released_version_label = Some(released.into());
+        apply_inventory(
+            &mut app,
+            Some(&inventory(installed_uuid, Some(installed), update)),
+        );
+        assert_eq!(app.install_state, expected, "{released} versus {installed}");
+    }
+
+    let mut uuid_fallback = app("app", crate::wire::AppInstallState::Available);
+    uuid_fallback.released_version_label = Some("current build".into());
+    apply_inventory(
+        &mut uuid_fallback,
+        Some(&inventory(
+            Some("different-release-uuid"),
+            Some("installed build"),
+            Some(false),
+        )),
+    );
+    assert_eq!(
+        uuid_fallback.install_state,
+        crate::wire::AppInstallState::UpdateAvailable
+    );
+
+    let mut update_flag_fallback = app("app", crate::wire::AppInstallState::Available);
+    update_flag_fallback.released_version_label = Some("current build".into());
+    apply_inventory(
+        &mut update_flag_fallback,
+        Some(&inventory(
+            Some("version"),
+            Some("installed build"),
+            Some(true),
+        )),
+    );
+    assert_eq!(
+        update_flag_fallback.install_state,
+        crate::wire::AppInstallState::UpdateAvailable
+    );
+}
+
+#[test]
+fn bootstrap_summary_counts_cached_authorized_catalog_views() {
+    let mut apps = vec![
+        app("available", crate::wire::AppInstallState::Available),
+        app("update", crate::wire::AppInstallState::UpdateAvailable),
+        app("active", crate::wire::AppInstallState::ActionActive),
+    ];
+    apps[1].released_version_label = Some("24215.1007.3146.2020".into());
+
+    let (available_count, update_keys) = bootstrap_catalog_summary(&apps);
+
+    assert_eq!(available_count, 1);
+    assert_eq!(update_keys, ["update:version:24215.1007.3146.2020"]);
 }
 
 #[test]
@@ -284,21 +401,68 @@ fn concurrent_cold_catalog_reads_share_one_refresh() {
 }
 
 #[test]
-fn mocked_transport_rejects_unknown_fields_at_the_http_boundary() {
+fn concurrent_cold_device_reads_share_one_lookup_per_credential_generation() {
+    let client = Arc::new(test_client(Url::parse("http://127.0.0.1/").unwrap()));
+    let lookups = Arc::new(AtomicUsize::new(0));
+    let first_client = Arc::clone(&client);
+    let first_lookups = Arc::clone(&lookups);
+    let second_client = Arc::clone(&client);
+    let second_lookups = Arc::clone(&lookups);
+    let (first, second) = run(async move {
+        let first = tokio::spawn(async move {
+            first_client
+                .cached_current_device(7, || async move {
+                    first_lookups.fetch_add(1, Ordering::SeqCst);
+                    Ok(test_device())
+                })
+                .await
+        });
+        let second = tokio::spawn(async move {
+            second_client
+                .cached_current_device(7, || async move {
+                    second_lookups.fetch_add(1, Ordering::SeqCst);
+                    Ok(test_device())
+                })
+                .await
+        });
+        (first.await.unwrap(), second.await.unwrap())
+    });
+
+    assert_eq!(first.unwrap().id, "device");
+    assert_eq!(second.unwrap().id, "device");
+    assert_eq!(lookups.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        run(client.cached_current_device(8, || async {
+            lookups.fetch_add(1, Ordering::SeqCst);
+            Ok(test_device())
+        }))
+        .unwrap()
+        .id,
+        "device"
+    );
+    assert_eq!(lookups.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn mocked_transport_accepts_server_extensions_but_rejects_missing_required_fields() {
     let (base, requests, server) = mock_server(vec![MockResponse {
         status: 200,
         content_type: "application/json",
-        body: r#"{"results":[{"uuid":"u","name":"n","organizationUuid":"o","activated":true,"unexpected":1}]}"#.into(),
+        body: r#"{"results":[{"uuid":"u","name":"n","organizationUuid":"o","activated":true,"email":"n@example.test"}],"errors":[],"status":"OK","message":"users"}"#.into(),
+    }, MockResponse {
+        status: 200,
+        content_type: "application/json",
+        body: r#"{"results":[{"uuid":"u","name":"n","organizationUuid":"o"}]}"#.into(),
     }]);
     let client = test_client(base);
     let result: Result<dto::Page<dto::User>, String> =
         run(client.get("/api/users", "token", vec![]));
-    assert!(matches!(
-        result,
-        Err(error) if error == "server: invalid Relution response"
-    ));
+    assert_eq!(result.unwrap().results[0].uuid, "u");
+    let invalid: Result<dto::Page<dto::User>, String> =
+        run(client.get("/api/users", "token", vec![]));
+    assert!(matches!(invalid, Err(error) if error == "server: invalid Relution response"));
     server.join().unwrap();
-    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    assert_eq!(requests.load(Ordering::SeqCst), 2);
 }
 
 #[test]
@@ -316,7 +480,9 @@ fn mocked_reads_paginate_and_retry_transient_statuses() {
         MockResponse {
             status: 200,
             content_type: "application/json",
-            body: format!(r#"{{"results":[{full_page}]}}"#),
+            body: format!(
+                r#"{{"items":[{full_page}],"nonpagedCount":101,"version":4,"errors":[],"status":"OK","message":"groups"}}"#
+            ),
         },
         MockResponse {
             status: 200,
@@ -372,6 +538,51 @@ fn mocked_recursive_group_permission_is_honored() {
     assert!(run(client.allowed("app", &context)).unwrap());
     server.join().unwrap();
     assert_eq!(requests.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn direct_user_permission_skips_recursive_group_membership_reads() {
+    let (base, requests, server) = mock_server(vec![MockResponse {
+        status: 200,
+        content_type: "application/json",
+        body: r#"{"results":[{"read":true,"userGroupInfo":{"uuid":"nested","type":"GROUP"}},{"read":true,"userGroupInfo":{"uuid":"user","type":"USER"}}]}"#
+            .into(),
+    }]);
+    let client = test_client(base);
+    let context = CatalogContext {
+        token: "token",
+        user: "user",
+        groups: &[],
+        inventory: &[],
+        group_memberships: AsyncMutex::new(HashMap::new()),
+    };
+
+    assert!(run(client.allowed("app", &context)).unwrap());
+    server.join().unwrap();
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn direct_group_permission_skips_recursive_group_membership_reads() {
+    let (base, requests, server) = mock_server(vec![MockResponse {
+        status: 200,
+        content_type: "application/json",
+        body: r#"{"results":[{"read":true,"userGroupInfo":{"uuid":"nested","type":"GROUP"}},{"read":true,"userGroupInfo":{"uuid":"direct-group","type":"GROUP"}}]}"#
+            .into(),
+    }]);
+    let client = test_client(base);
+    let groups = ["direct-group".into()];
+    let context = CatalogContext {
+        token: "token",
+        user: "user",
+        groups: &groups,
+        inventory: &[],
+        group_memberships: AsyncMutex::new(HashMap::new()),
+    };
+
+    assert!(run(client.allowed("app", &context)).unwrap());
+    server.join().unwrap();
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -456,6 +667,10 @@ fn repeated_recursive_group_permissions_fetch_members_once_per_refresh() {
 fn catalog_authorization_keeps_sorted_output_stable() {
     let (base, requests, server) = mock_catalog_server(6, move |request| {
         let path = request_path(request);
+        if path.ends_with("/content/apps/baseInfo") {
+            assert!(request.contains("locale="));
+            assert!(!request.contains("extend=versions"));
+        }
         catalog_setup_response(path, &["Zulu", "alpha", "Mike"])
             .unwrap_or_else(direct_user_permission)
     });
@@ -471,8 +686,8 @@ fn catalog_authorization_keeps_sorted_output_stable() {
 }
 
 #[test]
-fn failed_permission_decoding_rejects_the_entire_catalog_refresh() {
-    let (base, requests, server) = mock_catalog_server(7, move |request| {
+fn catalog_refresh_accepts_permission_extensions() {
+    let (base, requests, server) = mock_catalog_server(8, move |request| {
         let path = request_path(request);
         if let Some(response) =
             catalog_setup_response(path, &["bad", "two", "three", "four", "five"])
@@ -484,7 +699,7 @@ fn failed_permission_decoding_rejects_the_entire_catalog_refresh() {
             return CatalogMockResponse {
                 status: 200,
                 content_type: "application/json",
-                body: r#"{"results":[{"read":true,"userGroupInfo":{"uuid":"user","type":"USER"},"unexpected":true}]}"#
+                body: r#"{"results":[{"read":true,"userGroupInfo":{"uuid":"user","type":"USER"},"unexpected":true}],"errors":[],"status":"OK"}"#
                     .into(),
             };
         }
@@ -494,12 +709,9 @@ fn failed_permission_decoding_rejects_the_entire_catalog_refresh() {
     let result = run(client.cached_apps("token", "user", &test_device(), 42));
     server.join().unwrap();
 
-    assert!(matches!(
-        result,
-        Err(error) if error == "server: invalid Relution response"
-    ));
-    assert!(client.cache_for(42).unwrap().apps.is_none());
-    assert_eq!(requests.load(Ordering::SeqCst), 7);
+    assert_eq!(result.unwrap().len(), 5);
+    assert!(client.cache_for(42).unwrap().apps.is_some());
+    assert_eq!(requests.load(Ordering::SeqCst), 8);
 }
 
 #[test]
@@ -531,6 +743,76 @@ fn mocked_icons_are_strictly_typed_and_generation_cache_is_isolated() {
     assert!(!next_generation.icons.contains_key("app"));
     assert!(next_generation.apps.is_none());
     assert_eq!(client.icon_requests.available_permits(), 4);
+}
+
+#[test]
+fn icons_reuse_hydrated_catalog_without_repeating_authorization_reads() {
+    let catalog_reads = Arc::new(AtomicUsize::new(0));
+    let permission_reads = Arc::new(AtomicUsize::new(0));
+    let (base, requests, server) = mock_catalog_server(9, {
+        let catalog_reads = Arc::clone(&catalog_reads);
+        let permission_reads = Arc::clone(&permission_reads);
+        move |request| {
+            let path = request_path(request);
+            if path.ends_with("/content/apps/baseInfo") {
+                catalog_reads.fetch_add(1, Ordering::SeqCst);
+            }
+            if let Some(response) = catalog_setup_response(path, &["one", "two", "three"]) {
+                return response;
+            }
+            if path.ends_with("/icon") {
+                return CatalogMockResponse {
+                    status: 200,
+                    content_type: "image/png",
+                    body: "icon".into(),
+                };
+            }
+            assert!(path.contains("/permissions/RELEASE"));
+            permission_reads.fetch_add(1, Ordering::SeqCst);
+            direct_user_permission()
+        }
+    });
+    let client = test_client(base);
+
+    assert_eq!(
+        run(client.cached_apps("token", "user", &test_device(), 7))
+            .unwrap()
+            .len(),
+        3
+    );
+    for app_id in ["one", "two", "three"] {
+        assert!(run(client.icon("token", "user", app_id, 7))
+            .unwrap()
+            .is_some());
+    }
+
+    server.join().unwrap();
+    assert_eq!(catalog_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(permission_reads.load(Ordering::SeqCst), 3);
+    assert_eq!(requests.load(Ordering::SeqCst), 9);
+}
+
+#[test]
+fn icons_reject_app_ids_absent_from_the_hydrated_catalog() {
+    let (base, requests, server) = mock_catalog_server(4, move |request| {
+        catalog_setup_response(request_path(request), &["allowed"])
+            .unwrap_or_else(direct_user_permission)
+    });
+    let client = test_client(base);
+
+    assert_eq!(
+        run(client.cached_apps("token", "user", &test_device(), 7))
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        run(client.icon("token", "user", "forbidden", 7)).unwrap_err(),
+        "server: application is not permitted"
+    );
+
+    server.join().unwrap();
+    assert_eq!(requests.load(Ordering::SeqCst), 4);
 }
 
 #[test]

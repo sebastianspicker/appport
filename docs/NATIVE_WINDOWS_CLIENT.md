@@ -6,6 +6,10 @@ Rust validates the compile-time HTTPS Relution API endpoint, stores the client s
 
 The client does not embed Relution administrative credentials or service secrets and does not expose a writable local service. Authorization, device association, application catalog data, deployment writes, and action history remain authoritative in Relution. Local sign-out deletes the Credential Manager record; personal token revocation remains a user action in Relution.
 
+Candidate builds keep the password-authentication scaffold disabled. The
+password option is hidden, and native code refuses it before network access or
+Credential Manager persistence. Personal-token behavior is unchanged.
+
 Release MSI builds use the Windows x64 MSVC target. Alpha.4 compiles either the
 `read_only` or `write_qualification` profile, and the embedded writes flag must
 match that profile exactly. Release builds require explicit approval of the fixed

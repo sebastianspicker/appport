@@ -2631,6 +2631,7 @@ dependencies = [
  "url",
  "windows",
  "winreg 0.56.0",
+ "zeroize",
 ]
 
 [[package]]

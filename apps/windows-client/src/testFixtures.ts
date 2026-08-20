@@ -3,6 +3,7 @@ import type { Mocked } from "vitest";
 import type {
   AppAction,
   AvailableApp,
+  AuthCapabilities,
   NativeBootstrap,
   SignOutOutcome,
 } from "./models";
@@ -64,6 +65,7 @@ export function nativeBootstrap(
   return {
     user: { displayName: "Ada" },
     device: { name: "PC", status: "COMPLIANT", lastSeenAt: null },
+    availableCount: 0,
     updates: { count: 0, keys: [] },
     writesEnabled: false,
     ...overrides,
@@ -82,6 +84,12 @@ export function signOutOutcome(
   };
 }
 
+export function authCapabilities(
+  overrides: Partial<AuthCapabilities> = {},
+): AuthCapabilities {
+  return { personalToken: true, password: false, ...overrides };
+}
+
 export type NativeMock = Mocked<typeof nativeApi>;
 
 export function createNativeMock(): NativeMock {
@@ -90,6 +98,9 @@ export function createNativeMock(): NativeMock {
       .fn<typeof nativeApi.initialView>()
       .mockResolvedValue("apps"),
     connect: vi.fn<typeof nativeApi.connect>(),
+    authCapabilities: vi
+      .fn<typeof nativeApi.authCapabilities>()
+      .mockResolvedValue(authCapabilities()),
     bootstrap: vi
       .fn<typeof nativeApi.bootstrap>()
       .mockResolvedValue(nativeBootstrap()),
@@ -109,6 +120,7 @@ export function createNativeMock(): NativeMock {
 export function resetNativeMockDefaults(mock: NativeMock) {
   mock.initialView.mockReset().mockResolvedValue("apps");
   mock.connect.mockReset();
+  mock.authCapabilities.mockReset().mockResolvedValue(authCapabilities());
   mock.bootstrap.mockReset().mockResolvedValue(nativeBootstrap());
   mock.apps.mockReset().mockResolvedValue([]);
   mock.act.mockReset();

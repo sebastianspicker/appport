@@ -49,21 +49,34 @@ export function usePhaseState() {
 
 export function useCatalogLoading(
   view: View | undefined,
+  resolveView: () => Promise<View>,
   mounted: MutableRefObject<boolean>,
   generation: MutableRefObject<number>,
   setters: CatalogSetters,
 ) {
   const requestId = useRef(0);
+  const requestedView = useRef<View | undefined>(undefined);
   const load = useCallback(
-    async (activeView = view, showLoading = true) => {
-      if (!activeView) return;
+    async (activeView?: View, showLoading = true) => {
       const currentRequest = ++requestId.current;
       const currentGeneration = generation.current;
       if (showLoading) setters.setPhase("loading");
+      const selectedView = activeView ?? (await resolveView());
+      if (
+        !isCurrentRequest(
+          mounted,
+          generation,
+          requestId,
+          currentGeneration,
+          currentRequest,
+        )
+      )
+        return;
+      requestedView.current = selectedView;
       try {
         const [bootstrap, apps] = await Promise.all([
           native.bootstrap(),
-          native.apps(activeView),
+          native.apps(selectedView),
         ]);
         if (
           !isCurrentRequest(
@@ -89,10 +102,10 @@ export function useCatalogLoading(
           setters.setPhase(problemFor(error));
       }
     },
-    [generation, mounted, setters, view],
+    [generation, mounted, resolveView, setters],
   );
   useEffect(() => {
-    if (view) void load(view, false);
+    if (view && requestedView.current !== view) void load(view, false);
   }, [view, load]);
   return load;
 }

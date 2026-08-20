@@ -73,7 +73,11 @@ describe("useClientOperations credential replacement", () => {
       expect(vi.getTimerCount()).toBeGreaterThan(0);
 
       await act(async () => {
-        await result.current.client.connect.connect("new-user", "new-token");
+        await result.current.client.connect.connect({
+          authMethod: "personal_token",
+          relutionUsername: "new-user",
+          accessToken: "new-token",
+        });
       });
 
       expect(result.current.client.actions.actions).toEqual(new Map());

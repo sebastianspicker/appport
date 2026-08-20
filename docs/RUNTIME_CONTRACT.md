@@ -4,6 +4,8 @@ The supported runtime is a managed Windows device running the Appport MSI.
 
 - The client has a fixed, trusted HTTPS Relution API endpoint.
 - The user can provide valid Relution sign-in credentials.
+- Personal-token login is the only enabled authentication method. The dormant
+  password contract is not a supported runtime capability.
 - Windows Credential Manager is available for client session storage.
 - Relution remains authoritative for remote writes. Alpha.4 embeds either the
   `read_only` or `write_qualification` profile; writes are available only in the
@@ -12,6 +14,8 @@ The supported runtime is a managed Windows device running the Appport MSI.
 
 Unsupported assumptions include runtime endpoint or profile selection in a
 release build, browser-to-Relution networking, a client-held Relution
-administrative token, token inputs outside masked console entry, local server
+administrative token, token inputs outside the client's masked sign-in field or
+the qualification utility's masked console entry, local server
 deployment from this repository, and uninstall or administrative operation by an
-alpha.4 candidate.
+alpha.4 candidate. Password-to-portal, Basic-authentication, and cookie-session
+fallbacks are also unsupported.

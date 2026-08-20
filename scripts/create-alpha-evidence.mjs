@@ -25,7 +25,12 @@ import {
 } from "./alpha-evidence/reports.mjs";
 import { inspectSourceTree } from "./alpha-evidence/source-tree.mjs";
 
-export { configurationFailures, inspectCleanupReport, inspectReport };
+export {
+  configurationFailures,
+  inspectCleanupReport,
+  inspectConfiguration,
+  inspectReport,
+};
 
 const root = resolve(import.meta.dirname, "..");
 const fs = process.getBuiltinModule("node:fs");
@@ -260,7 +265,7 @@ function inspectQualifications(inputs, configuration, candidateBinding) {
   };
 }
 
-function isCandidateReady(context) {
+export function isCandidateReady(context) {
   return candidateRequirements(context).every(Boolean);
 }
 
@@ -271,6 +276,9 @@ function candidateRequirements(context) {
     context.artifact?.formatValid,
     context.qualificationUtility?.formatValid,
     context.configuration.valid,
+    context.configuration.diagnosticsEnabled === false,
+    context.configuration.passwordAuthEnabled === false,
+    context.configuration.passwordAuthContract === "none",
     context.artifact?.embeddedSecretScanPassed,
     context.qualificationUtility?.embeddedSecretScanPassed,
     context.artifact?.signatureStatus === "not_signed",
@@ -306,6 +314,9 @@ function configurationFingerprint(configuration) {
     fingerprintSha256: configuration.fingerprintSha256,
     failures: configuration.failures,
     writesEnabled: configuration.writesEnabled,
+    diagnosticsEnabled: configuration.diagnosticsEnabled,
+    passwordAuthEnabled: configuration.passwordAuthEnabled,
+    passwordAuthContract: configuration.passwordAuthContract,
   };
 }
 
@@ -336,6 +347,9 @@ function createEvidence(context) {
     signed: context.artifact?.signed ?? false,
     distributable: false,
     writesEnabled: context.configuration.writesEnabled,
+    diagnosticsEnabled: context.configuration.diagnosticsEnabled,
+    passwordAuthEnabled: context.configuration.passwordAuthEnabled,
+    passwordAuthContract: context.configuration.passwordAuthContract,
     sourceGatesPassed: context.sourceGatesPassed,
     repository: context.repository,
     tools: installedTools(),

@@ -2,6 +2,7 @@ use crate::{dto, evidence, wire::AppAction};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rand::Rng;
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -10,13 +11,18 @@ use url::Url;
 const MAX_ICON_BYTES: usize = 1024 * 1024;
 
 pub fn app_from(c: dto::Catalog, native: &str) -> Option<crate::wire::AvailableApp> {
-    if c.uuid == native || !c.platforms.iter().any(|p| p == "WINDOWS") {
+    if same_uuid(&c.uuid, native)
+        || !c
+            .platforms
+            .iter()
+            .any(|platform| platform.eq_ignore_ascii_case("WINDOWS"))
+    {
         return None;
     }
-    let source = match c.subtype.as_str() {
-        "WINGET" => crate::wire::AppSource::Winget,
-        "WINDOWS_MSI" => crate::wire::AppSource::WindowsMsi,
-        "WINDOWS_EXE" => crate::wire::AppSource::WindowsExe,
+    let source = match c.subtype.as_deref() {
+        Some("WINGET") => crate::wire::AppSource::Winget,
+        Some("WINDOWS_MSI") => crate::wire::AppSource::WindowsMsi,
+        Some("WINDOWS_EXE") => crate::wire::AppSource::WindowsExe,
         _ => return None,
     };
     let r = c.versions.release?;
@@ -43,10 +49,101 @@ pub fn apply_inventory(app: &mut crate::wire::AvailableApp, item: Option<&dto::I
     };
     app.installed_version_id = item.version_uuid.clone();
     app.installed_version_label = item.version_to_show.clone().or(item.version_name.clone());
-    if item.update == Some(true) {
+    if let (Some(released), Some(installed)) = (
+        app.released_version_label.as_deref(),
+        app.installed_version_label.as_deref(),
+    ) {
+        if let Some(ordering) = compare_dotted_numeric_versions(released, installed) {
+            app.install_state = if ordering == Ordering::Greater {
+                crate::wire::AppInstallState::UpdateAvailable
+            } else {
+                crate::wire::AppInstallState::Available
+            };
+            return;
+        }
+    }
+    let version_identity_differs =
+        item.version_uuid
+            .as_deref()
+            .is_some_and(|installed_version_id| {
+                !same_uuid(installed_version_id, &app.released_version_id)
+            });
+    if version_identity_differs || item.update == Some(true) {
         app.install_state = crate::wire::AppInstallState::UpdateAvailable;
     }
 }
+
+fn compare_dotted_numeric_versions(released: &str, installed: &str) -> Option<Ordering> {
+    let mut released = dotted_numeric_components(released)?;
+    let mut installed = dotted_numeric_components(installed)?;
+    while released
+        .last()
+        .is_some_and(|component| component.bytes().all(|byte| byte == b'0'))
+    {
+        released.pop();
+    }
+    while installed
+        .last()
+        .is_some_and(|component| component.bytes().all(|byte| byte == b'0'))
+    {
+        installed.pop();
+    }
+    let component_count = released.len().max(installed.len());
+    for index in 0..component_count {
+        let ordering = compare_numeric_component(
+            released.get(index).copied().unwrap_or("0"),
+            installed.get(index).copied().unwrap_or("0"),
+        );
+        if ordering != Ordering::Equal {
+            return Some(ordering);
+        }
+    }
+    Some(Ordering::Equal)
+}
+
+fn dotted_numeric_components(value: &str) -> Option<Vec<&str>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let components: Vec<_> = value.split('.').collect();
+    components
+        .iter()
+        .all(|component| {
+            !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        .then_some(components)
+}
+
+fn compare_numeric_component(left: &str, right: &str) -> Ordering {
+    let left = left.trim_start_matches('0');
+    let right = right.trim_start_matches('0');
+    match left.len().cmp(&right.len()) {
+        Ordering::Equal => left.cmp(right),
+        ordering => ordering,
+    }
+}
+
+pub fn bootstrap_catalog_summary(apps: &[crate::wire::AvailableApp]) -> (u32, Vec<String>) {
+    let available_count = apps
+        .iter()
+        .filter(|app| app.install_state == crate::wire::AppInstallState::Available)
+        .count() as u32;
+    let update_keys = apps
+        .iter()
+        .filter(|app| app.install_state == crate::wire::AppInstallState::UpdateAvailable)
+        .map(|app| {
+            format!(
+                "{}:{}:{}",
+                app.id,
+                app.released_version_id,
+                app.released_version_label.as_deref().unwrap_or_default()
+            )
+        })
+        .collect();
+    (available_count, update_keys)
+}
+
 pub fn match_device(
     e: &evidence::NativeDeviceEvidenceV1,
     items: &[dto::Device],
@@ -55,13 +152,19 @@ pub fn match_device(
     let matches: Vec<_> = items
         .iter()
         .filter(|d| {
-            sig.map(|s| d.device_id.as_deref() == Some(s))
-                .unwrap_or(false)
+            sig.map(|signature| {
+                d.device_id
+                    .as_deref()
+                    .is_some_and(|device_id| same_evidence_value(device_id, signature))
+            })
+            .unwrap_or(false)
                 || e.bios_serial
                     .as_deref()
-                    .map(|s| {
-                        d.serial_number.as_deref() == Some(s)
-                            && d.name.eq_ignore_ascii_case(&e.hostname)
+                    .map(|serial| {
+                        d.serial_number
+                            .as_deref()
+                            .is_some_and(|device_serial| same_evidence_value(device_serial, serial))
+                            && same_evidence_value(&d.name, &e.hostname)
                     })
                     .unwrap_or(false)
         })
@@ -142,6 +245,14 @@ pub fn valid_id(v: &str) -> bool {
             .all(|(i, x)| matches!(i, 8 | 13 | 18 | 23) || x.is_ascii_hexdigit())
         && v.chars().any(|x| x != '0' && x != '-')
 }
+pub fn same_uuid(left: &str, right: &str) -> bool {
+    left.eq_ignore_ascii_case(right)
+}
+pub fn same_evidence_value(left: &str, right: &str) -> bool {
+    let left = left.trim();
+    let right = right.trim();
+    !left.is_empty() && !right.is_empty() && left.eq_ignore_ascii_case(right)
+}
 pub fn encode(v: &str) -> String {
     url::form_urlencoded::byte_serialize(v.as_bytes()).collect()
 }
@@ -155,7 +266,7 @@ pub fn network(e: reqwest::Error) -> String {
 pub fn status(s: reqwest::StatusCode) -> String {
     match s.as_u16() {
         401 => "session-expired: authorization required".into(),
-        403 => "device_match_failed: device not assigned".into(),
+        403 => "authorization: account or token lacks required Relution access".into(),
         _ => "server: Relution request failed after submission may have occurred".into(),
     }
 }
@@ -180,8 +291,10 @@ pub fn remote_state(v: &str) -> crate::journal::State {
     }
 }
 pub fn inventory_matches(i: &dto::Inventory, a: &str, v: &str, p: Option<&str>) -> bool {
-    i.app_uuid.as_deref() == Some(a)
-        && i.version_uuid.as_deref() == Some(v)
+    i.app_uuid.as_deref().is_some_and(|app| same_uuid(app, a))
+        && i.version_uuid
+            .as_deref()
+            .is_some_and(|version| same_uuid(version, v))
         && (p.is_none() || i.identifier.as_deref() == p)
 }
 
@@ -194,19 +307,24 @@ pub fn action_details_match(
     let Some(details) = details else {
         return false;
     };
-    let identifiers = [
+    let uuid_identifiers = [
         (details.app_uuid.as_deref(), Some(app_id)),
         (details.version_uuid.as_deref(), Some(version_id)),
-        (details.package.as_deref(), package_id),
     ];
     let mut matched = false;
-    for (candidate, expected) in identifiers {
+    for (candidate, expected) in uuid_identifiers {
         if let (Some(candidate), Some(expected)) = (candidate, expected) {
-            if candidate != expected {
+            if !same_uuid(candidate, expected) {
                 return false;
             }
             matched = true;
         }
+    }
+    if let (Some(candidate), Some(expected)) = (details.package.as_deref(), package_id) {
+        if candidate != expected {
+            return false;
+        }
+        matched = true;
     }
     matched
 }
@@ -266,6 +384,24 @@ pub async fn icon_data_url(response: reqwest::Response) -> Result<Option<String>
 mod tests {
     use super::*;
 
+    #[test]
+    fn nullable_catalog_subtypes_do_not_block_supported_windows_apps() {
+        let page: dto::Page<dto::Catalog> = serde_json::from_str(
+            r#"{"results":[{"uuid":"ios","name":"iOS","subType":null,"platforms":["IOS"],"versions":{"RELEASE":{"uuid":"ios-version"}}},{"uuid":"unknown-windows","name":"Unknown Windows","subType":null,"platforms":["WINDOWS"],"versions":{"RELEASE":{"uuid":"unknown-version"}}},{"uuid":"windows","name":"Windows","subType":"WINGET","platforms":["WINDOWS"],"versions":{"RELEASE":{"uuid":"windows-version"}}}]}"#,
+        )
+        .unwrap();
+
+        let apps = page
+            .results
+            .into_iter()
+            .filter_map(|catalog| app_from(catalog, "native"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].id, "windows");
+        assert_eq!(apps[0].source, crate::wire::AppSource::Winget);
+    }
+
     fn app(id: &str) -> crate::wire::AvailableApp {
         crate::wire::AvailableApp {
             id: id.into(),
@@ -301,6 +437,14 @@ mod tests {
         assert_eq!(
             apps[1].active_action_state,
             Some(crate::wire::ActionState::Unknown)
+        );
+    }
+
+    #[test]
+    fn forbidden_status_is_an_authorization_error_not_a_device_match_failure() {
+        assert_eq!(
+            status(reqwest::StatusCode::FORBIDDEN),
+            "authorization: account or token lacks required Relution access"
         );
     }
 }

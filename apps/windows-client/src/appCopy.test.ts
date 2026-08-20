@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { copyFor, localeFor, problemCopy, text } from "./appCopy";
+import { problemFor } from "./catalogTypes";
 import type { ClientProblem } from "./models";
 
 type ProblemCopyKey =
@@ -7,6 +8,8 @@ type ProblemCopyKey =
   | "empty"
   | "offline"
   | "sessionExpired"
+  | "authorizationDenied"
+  | "authMethodUnsupported"
   | "deviceFailed"
   | "server"
   | "action"
@@ -17,6 +20,8 @@ const problemCases: readonly [ClientProblem, ProblemCopyKey][] = [
   ["empty", "empty"],
   ["offline", "offline"],
   ["session-expired", "sessionExpired"],
+  ["authorization-denied", "authorizationDenied"],
+  ["auth-method-unsupported", "authMethodUnsupported"],
   ["device-match-failed", "deviceFailed"],
   ["server", "server"],
   ["action", "action"],
@@ -54,6 +59,29 @@ describe("app copy", () => {
   it("uses unknown copy for an unexpected runtime problem", () => {
     expect(problemCopy("de", "unexpected" as ClientProblem)).toBe(
       text.de.unknown,
+    );
+  });
+
+  it("keeps authorization-denied guidance distinct from device matching", () => {
+    for (const locale of ["en", "de"] as const) {
+      expect(problemCopy(locale, "authorization-denied").join(" ")).toMatch(
+        /Relution/i,
+      );
+      expect(problemCopy(locale, "authorization-denied").join(" ")).not.toBe(
+        problemCopy(locale, "device-match-failed").join(" "),
+      );
+    }
+  });
+
+  it("maps unsupported sign-in methods to localized guidance", () => {
+    expect(problemFor({ code: "AUTH_METHOD_UNSUPPORTED" })).toBe(
+      "auth-method-unsupported",
+    );
+    expect(problemCopy("en", "auth-method-unsupported").join(" ")).toMatch(
+      /personal token/i,
+    );
+    expect(problemCopy("de", "auth-method-unsupported").join(" ")).toMatch(
+      /persönlichen Token/i,
     );
   });
 });
