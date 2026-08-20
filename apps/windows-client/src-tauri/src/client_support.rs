@@ -18,10 +18,10 @@ pub fn app_from(c: dto::Catalog, native: &str) -> Option<crate::wire::AvailableA
     {
         return None;
     }
-    let source = match c.subtype.as_str() {
-        "WINGET" => crate::wire::AppSource::Winget,
-        "WINDOWS_MSI" => crate::wire::AppSource::WindowsMsi,
-        "WINDOWS_EXE" => crate::wire::AppSource::WindowsExe,
+    let source = match c.subtype.as_deref() {
+        Some("WINGET") => crate::wire::AppSource::Winget,
+        Some("WINDOWS_MSI") => crate::wire::AppSource::WindowsMsi,
+        Some("WINDOWS_EXE") => crate::wire::AppSource::WindowsExe,
         _ => return None,
     };
     let r = c.versions.release?;
@@ -291,6 +291,24 @@ pub async fn icon_data_url(response: reqwest::Response) -> Result<Option<String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nullable_catalog_subtypes_do_not_block_supported_windows_apps() {
+        let page: dto::Page<dto::Catalog> = serde_json::from_str(
+            r#"{"results":[{"uuid":"ios","name":"iOS","subType":null,"platforms":["IOS"],"versions":{"RELEASE":{"uuid":"ios-version"}}},{"uuid":"unknown-windows","name":"Unknown Windows","subType":null,"platforms":["WINDOWS"],"versions":{"RELEASE":{"uuid":"unknown-version"}}},{"uuid":"windows","name":"Windows","subType":"WINGET","platforms":["WINDOWS"],"versions":{"RELEASE":{"uuid":"windows-version"}}}]}"#,
+        )
+        .unwrap();
+
+        let apps = page
+            .results
+            .into_iter()
+            .filter_map(|catalog| app_from(catalog, "native"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].id, "windows");
+        assert_eq!(apps[0].source, crate::wire::AppSource::Winget);
+    }
 
     fn app(id: &str) -> crate::wire::AvailableApp {
         crate::wire::AvailableApp {
