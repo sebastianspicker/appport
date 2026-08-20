@@ -43,6 +43,7 @@ pub struct RelutionClient {
     config: RelutionConfig,
     http: reqwest::Client,
     cache: StdMutex<CredentialCache>,
+    device_refresh: AsyncMutex<()>,
     catalog_refresh: AsyncMutex<()>,
     icon_requests: Semaphore,
 }
@@ -54,9 +55,22 @@ struct CurrentDevice {
     id: String,
     wire: NativeDevice,
 }
+impl Clone for CurrentDevice {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            wire: NativeDevice {
+                name: self.wire.name.clone(),
+                status: self.wire.status.clone(),
+                last_seen_at: self.wire.last_seen_at.clone(),
+            },
+        }
+    }
+}
 #[derive(Default)]
 struct CredentialCache {
     generation: Option<u64>,
+    device: Option<CurrentDevice>,
     apps: Option<Vec<AvailableApp>>,
     icons: HashMap<String, Option<String>>,
 }
@@ -102,6 +116,7 @@ impl RelutionClient {
                 .build()
                 .map_err(|_| "configuration: HTTP client unavailable")?,
             cache: StdMutex::new(CredentialCache::default()),
+            device_refresh: AsyncMutex::new(()),
             catalog_refresh: AsyncMutex::new(()),
             icon_requests: Semaphore::new(4),
         })
@@ -148,7 +163,9 @@ impl RelutionClient {
         id: &str,
         generation: u64,
     ) -> Result<NativeBootstrap, String> {
-        let d = self.current_device(t, id).await?;
+        let d = self
+            .cached_current_device(generation, || self.current_device(t, id))
+            .await?;
         let a = self.cached_apps(t, id, &d, generation).await?;
         let (available_count, keys) = bootstrap_catalog_summary(&a);
         Ok(NativeBootstrap {
@@ -171,7 +188,9 @@ impl RelutionClient {
         generation: u64,
         view: CatalogView,
     ) -> Result<Vec<AvailableApp>, String> {
-        let d = self.current_device(t, u).await?;
+        let d = self
+            .cached_current_device(generation, || self.current_device(t, u))
+            .await?;
         let mut apps = self.cached_apps(t, u, &d, generation).await?;
         attach_active_actions(&mut apps, crate::journal::active_actions(&d.id)?);
         Ok(filter_catalog_view(apps, view))
@@ -180,6 +199,28 @@ impl RelutionClient {
     pub async fn current_device_id(&self, token: &str, user_uuid: &str) -> Result<String, String> {
         Ok(self.current_device(token, user_uuid).await?.id)
     }
+
+    async fn cached_current_device<F, T>(
+        &self,
+        generation: u64,
+        fetch: F,
+    ) -> Result<CurrentDevice, String>
+    where
+        F: FnOnce() -> T,
+        T: Future<Output = Result<CurrentDevice, String>>,
+    {
+        if let Some(device) = self.cache_for(generation)?.device.clone() {
+            return Ok(device);
+        }
+        let _refresh = self.device_refresh.lock().await;
+        if let Some(device) = self.cache_for(generation)?.device.clone() {
+            return Ok(device);
+        }
+        let device = fetch().await?;
+        self.cache_for(generation)?.device = Some(device.clone());
+        Ok(device)
+    }
+
     async fn cached_apps(
         &self,
         t: &str,
@@ -340,32 +381,32 @@ impl RelutionClient {
                 vec![],
             )
             .await?;
+        if p.results
+            .iter()
+            .any(|permission| direct_permission_allows(context, permission))
+        {
+            return Ok(true);
+        }
         for permission in p.results {
-            if self.permission_allows(context, &permission).await? {
+            if self
+                .recursive_group_permission_allows(context, &permission)
+                .await?
+            {
                 return Ok(true);
             }
         }
         Ok(false)
     }
-    async fn permission_allows(
+    async fn recursive_group_permission_allows(
         &self,
         context: &CatalogContext<'_>,
         permission: &dto::Permission,
     ) -> Result<bool, String> {
-        if !permission.read {
-            return Ok(false);
-        }
-        if permission.subject.kind.eq_ignore_ascii_case("USER") {
-            return Ok(same_uuid(&permission.subject.uuid, context.user));
-        }
-        Ok(permission.subject.kind.eq_ignore_ascii_case("GROUP")
-            && (context
-                .groups
-                .iter()
-                .any(|group| same_uuid(group, &permission.subject.uuid))
-                || self
-                    .group_contains(context, &permission.subject.uuid)
-                    .await?))
+        Ok(permission.read
+            && permission.subject.kind.eq_ignore_ascii_case("GROUP")
+            && self
+                .group_contains(context, &permission.subject.uuid)
+                .await?)
     }
     async fn group_contains(
         &self,
@@ -444,6 +485,17 @@ enum GroupMembership {
 enum GroupLookup {
     Wait(watch::Receiver<Option<Result<bool, String>>>),
     Fetch(watch::Sender<Option<Result<bool, String>>>),
+}
+
+fn direct_permission_allows(context: &CatalogContext<'_>, permission: &dto::Permission) -> bool {
+    permission.read
+        && ((permission.subject.kind.eq_ignore_ascii_case("USER")
+            && same_uuid(&permission.subject.uuid, context.user))
+            || (permission.subject.kind.eq_ignore_ascii_case("GROUP")
+                && context
+                    .groups
+                    .iter()
+                    .any(|group| same_uuid(group, &permission.subject.uuid))))
 }
 
 fn filter_catalog_view(apps: Vec<AvailableApp>, view: CatalogView) -> Vec<AvailableApp> {
