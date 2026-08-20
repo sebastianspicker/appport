@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AvailableApp, ClientProblem, NativeBootstrap } from "./models";
 import { native } from "./native";
@@ -26,10 +26,11 @@ vi.mock("./native", async () => {
 function useCatalogHarness() {
   const mounted = useMounted();
   const generation = useRef(0);
+  const resolveView = useCallback(() => native.initialView(), []);
   const [apps, setApps] = useState<AvailableApp[]>([]);
   const [currentBootstrap, setBootstrap] = useState<NativeBootstrap>();
   const [phase, setPhase] = useState<"ready" | ClientProblem>("loading");
-  const load = useCatalogLoading(undefined, mounted, generation, {
+  const load = useCatalogLoading(undefined, resolveView, mounted, generation, {
     setApps,
     setBootstrap,
     setPhase,
@@ -60,6 +61,19 @@ afterEach(() => {
 });
 
 describe("useCatalogLoading", () => {
+  it("resolves the initial view before loading when sign-in finishes early", async () => {
+    vi.mocked(native.initialView).mockResolvedValue("updates");
+    const { result } = renderHook(useCatalogHarness);
+
+    await act(async () => {
+      await result.current.load();
+    });
+
+    expect(native.bootstrap).toHaveBeenCalledTimes(1);
+    expect(native.apps).toHaveBeenCalledTimes(1);
+    expect(native.apps).toHaveBeenCalledWith("updates");
+  });
+
   it("keeps the latest catalog request when an older view resolves last", async () => {
     const olderBootstrap = deferred<NativeBootstrap>();
     const newerBootstrap = deferred<NativeBootstrap>();
