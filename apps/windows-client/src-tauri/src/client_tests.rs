@@ -232,61 +232,95 @@ fn inventory_confirmation_requires_exact_identity() {
 }
 
 #[test]
-fn installed_release_identity_overrides_stale_inventory_update_flags() {
-    let inventory = |version_uuid: Option<&str>, update| dto::Inventory {
+fn numeric_inventory_versions_classify_teams_updates_without_uuid_authority() {
+    let inventory = |version_uuid: Option<&str>, label: Option<&str>, update| dto::Inventory {
         identifier: None,
         _name: Some("App".into()),
         app_uuid: Some("app".into()),
         version_uuid: version_uuid.map(str::to_owned),
-        version_to_show: Some("display label is not identity".into()),
+        version_to_show: label.map(str::to_owned),
         version_name: None,
         update,
     };
 
-    for update in [Some(false), None] {
-        let mut app = app("app", crate::wire::AppInstallState::Available);
-        app.released_version_id = "released-version".into();
+    let cases = [
+        (
+            "26198.304.4946.9672",
+            "26183.1903.4892.4448",
+            Some("same-release-uuid"),
+            Some(false),
+            crate::wire::AppInstallState::UpdateAvailable,
+        ),
+        (
+            "24215.1007.3146.1670",
+            "24215.1007.3146.2020",
+            Some("different-release-uuid"),
+            Some(true),
+            crate::wire::AppInstallState::Available,
+        ),
+        (
+            "1.2.0.0",
+            " 1.2 ",
+            Some("different-release-uuid"),
+            Some(true),
+            crate::wire::AppInstallState::Available,
+        ),
+    ];
+    for (released, installed, installed_uuid, update, expected) in cases {
+        let mut app = app("Teams", crate::wire::AppInstallState::Available);
+        app.released_version_id = "same-release-uuid".into();
+        app.released_version_label = Some(released.into());
         apply_inventory(
             &mut app,
-            Some(&inventory(Some("installed-version"), update)),
+            Some(&inventory(installed_uuid, Some(installed), update)),
         );
-        assert_eq!(
-            app.install_state,
-            crate::wire::AppInstallState::UpdateAvailable
-        );
+        assert_eq!(app.install_state, expected, "{released} versus {installed}");
     }
 
-    let mut matching_app = app("app", crate::wire::AppInstallState::Available);
-    matching_app.released_version_id = "RELEASED-VERSION".into();
+    let mut uuid_fallback = app("app", crate::wire::AppInstallState::Available);
+    uuid_fallback.released_version_label = Some("current build".into());
     apply_inventory(
-        &mut matching_app,
-        Some(&inventory(Some("released-version"), Some(true))),
+        &mut uuid_fallback,
+        Some(&inventory(
+            Some("different-release-uuid"),
+            Some("installed build"),
+            Some(false),
+        )),
     );
     assert_eq!(
-        matching_app.install_state,
-        crate::wire::AppInstallState::Available
+        uuid_fallback.install_state,
+        crate::wire::AppInstallState::UpdateAvailable
     );
 
-    let mut fallback_app = app("app", crate::wire::AppInstallState::Available);
-    apply_inventory(&mut fallback_app, Some(&inventory(None, Some(true))));
+    let mut update_flag_fallback = app("app", crate::wire::AppInstallState::Available);
+    update_flag_fallback.released_version_label = Some("current build".into());
+    apply_inventory(
+        &mut update_flag_fallback,
+        Some(&inventory(
+            Some("version"),
+            Some("installed build"),
+            Some(true),
+        )),
+    );
     assert_eq!(
-        fallback_app.install_state,
+        update_flag_fallback.install_state,
         crate::wire::AppInstallState::UpdateAvailable
     );
 }
 
 #[test]
 fn bootstrap_summary_counts_cached_authorized_catalog_views() {
-    let apps = vec![
+    let mut apps = vec![
         app("available", crate::wire::AppInstallState::Available),
         app("update", crate::wire::AppInstallState::UpdateAvailable),
         app("active", crate::wire::AppInstallState::ActionActive),
     ];
+    apps[1].released_version_label = Some("24215.1007.3146.2020".into());
 
     let (available_count, update_keys) = bootstrap_catalog_summary(&apps);
 
     assert_eq!(available_count, 1);
-    assert_eq!(update_keys, ["update:version"]);
+    assert_eq!(update_keys, ["update:version:24215.1007.3146.2020"]);
 }
 
 #[test]
@@ -364,6 +398,49 @@ fn concurrent_cold_catalog_reads_share_one_refresh() {
     assert_eq!(second.unwrap().len(), 1);
     server.join().unwrap();
     assert_eq!(requests.load(Ordering::SeqCst), 4);
+}
+
+#[test]
+fn concurrent_cold_device_reads_share_one_lookup_per_credential_generation() {
+    let client = Arc::new(test_client(Url::parse("http://127.0.0.1/").unwrap()));
+    let lookups = Arc::new(AtomicUsize::new(0));
+    let first_client = Arc::clone(&client);
+    let first_lookups = Arc::clone(&lookups);
+    let second_client = Arc::clone(&client);
+    let second_lookups = Arc::clone(&lookups);
+    let (first, second) = run(async move {
+        let first = tokio::spawn(async move {
+            first_client
+                .cached_current_device(7, || async move {
+                    first_lookups.fetch_add(1, Ordering::SeqCst);
+                    Ok(test_device())
+                })
+                .await
+        });
+        let second = tokio::spawn(async move {
+            second_client
+                .cached_current_device(7, || async move {
+                    second_lookups.fetch_add(1, Ordering::SeqCst);
+                    Ok(test_device())
+                })
+                .await
+        });
+        (first.await.unwrap(), second.await.unwrap())
+    });
+
+    assert_eq!(first.unwrap().id, "device");
+    assert_eq!(second.unwrap().id, "device");
+    assert_eq!(lookups.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        run(client.cached_current_device(8, || async {
+            lookups.fetch_add(1, Ordering::SeqCst);
+            Ok(test_device())
+        }))
+        .unwrap()
+        .id,
+        "device"
+    );
+    assert_eq!(lookups.load(Ordering::SeqCst), 2);
 }
 
 #[test]
@@ -461,6 +538,51 @@ fn mocked_recursive_group_permission_is_honored() {
     assert!(run(client.allowed("app", &context)).unwrap());
     server.join().unwrap();
     assert_eq!(requests.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn direct_user_permission_skips_recursive_group_membership_reads() {
+    let (base, requests, server) = mock_server(vec![MockResponse {
+        status: 200,
+        content_type: "application/json",
+        body: r#"{"results":[{"read":true,"userGroupInfo":{"uuid":"nested","type":"GROUP"}},{"read":true,"userGroupInfo":{"uuid":"user","type":"USER"}}]}"#
+            .into(),
+    }]);
+    let client = test_client(base);
+    let context = CatalogContext {
+        token: "token",
+        user: "user",
+        groups: &[],
+        inventory: &[],
+        group_memberships: AsyncMutex::new(HashMap::new()),
+    };
+
+    assert!(run(client.allowed("app", &context)).unwrap());
+    server.join().unwrap();
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn direct_group_permission_skips_recursive_group_membership_reads() {
+    let (base, requests, server) = mock_server(vec![MockResponse {
+        status: 200,
+        content_type: "application/json",
+        body: r#"{"results":[{"read":true,"userGroupInfo":{"uuid":"nested","type":"GROUP"}},{"read":true,"userGroupInfo":{"uuid":"direct-group","type":"GROUP"}}]}"#
+            .into(),
+    }]);
+    let client = test_client(base);
+    let groups = ["direct-group".into()];
+    let context = CatalogContext {
+        token: "token",
+        user: "user",
+        groups: &groups,
+        inventory: &[],
+        group_memberships: AsyncMutex::new(HashMap::new()),
+    };
+
+    assert!(run(client.allowed("app", &context)).unwrap());
+    server.join().unwrap();
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
 }
 
 #[test]

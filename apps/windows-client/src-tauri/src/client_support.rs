@@ -2,6 +2,7 @@ use crate::{dto, evidence, wire::AppAction};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rand::Rng;
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -48,12 +49,78 @@ pub fn apply_inventory(app: &mut crate::wire::AvailableApp, item: Option<&dto::I
     };
     app.installed_version_id = item.version_uuid.clone();
     app.installed_version_label = item.version_to_show.clone().or(item.version_name.clone());
-    if let Some(installed_version_id) = item.version_uuid.as_deref() {
-        if !same_uuid(installed_version_id, &app.released_version_id) {
-            app.install_state = crate::wire::AppInstallState::UpdateAvailable;
+    if let (Some(released), Some(installed)) = (
+        app.released_version_label.as_deref(),
+        app.installed_version_label.as_deref(),
+    ) {
+        if let Some(ordering) = compare_dotted_numeric_versions(released, installed) {
+            app.install_state = if ordering == Ordering::Greater {
+                crate::wire::AppInstallState::UpdateAvailable
+            } else {
+                crate::wire::AppInstallState::Available
+            };
+            return;
         }
-    } else if item.update == Some(true) {
+    }
+    let version_identity_differs =
+        item.version_uuid
+            .as_deref()
+            .is_some_and(|installed_version_id| {
+                !same_uuid(installed_version_id, &app.released_version_id)
+            });
+    if version_identity_differs || item.update == Some(true) {
         app.install_state = crate::wire::AppInstallState::UpdateAvailable;
+    }
+}
+
+fn compare_dotted_numeric_versions(released: &str, installed: &str) -> Option<Ordering> {
+    let mut released = dotted_numeric_components(released)?;
+    let mut installed = dotted_numeric_components(installed)?;
+    while released
+        .last()
+        .is_some_and(|component| component.bytes().all(|byte| byte == b'0'))
+    {
+        released.pop();
+    }
+    while installed
+        .last()
+        .is_some_and(|component| component.bytes().all(|byte| byte == b'0'))
+    {
+        installed.pop();
+    }
+    let component_count = released.len().max(installed.len());
+    for index in 0..component_count {
+        let ordering = compare_numeric_component(
+            released.get(index).copied().unwrap_or("0"),
+            installed.get(index).copied().unwrap_or("0"),
+        );
+        if ordering != Ordering::Equal {
+            return Some(ordering);
+        }
+    }
+    Some(Ordering::Equal)
+}
+
+fn dotted_numeric_components(value: &str) -> Option<Vec<&str>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let components: Vec<_> = value.split('.').collect();
+    components
+        .iter()
+        .all(|component| {
+            !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        .then_some(components)
+}
+
+fn compare_numeric_component(left: &str, right: &str) -> Ordering {
+    let left = left.trim_start_matches('0');
+    let right = right.trim_start_matches('0');
+    match left.len().cmp(&right.len()) {
+        Ordering::Equal => left.cmp(right),
+        ordering => ordering,
     }
 }
 
@@ -65,10 +132,18 @@ pub fn bootstrap_catalog_summary(apps: &[crate::wire::AvailableApp]) -> (u32, Ve
     let update_keys = apps
         .iter()
         .filter(|app| app.install_state == crate::wire::AppInstallState::UpdateAvailable)
-        .map(|app| format!("{}:{}", app.id, app.released_version_id))
+        .map(|app| {
+            format!(
+                "{}:{}:{}",
+                app.id,
+                app.released_version_id,
+                app.released_version_label.as_deref().unwrap_or_default()
+            )
+        })
         .collect();
     (available_count, update_keys)
 }
+
 pub fn match_device(
     e: &evidence::NativeDeviceEvidenceV1,
     items: &[dto::Device],
