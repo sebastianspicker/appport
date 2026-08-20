@@ -46,10 +46,13 @@ function ViewButton({
   onSelect: Dispatch<View>;
 }) {
   const copy = copyFor(locale);
-  const label =
-    item === "apps"
+  const label = bootstrap
+    ? item === "apps"
+      ? `${copy.apps} (${bootstrap.availableCount})`
+      : `${copy.updates} (${bootstrap.updates.count})`
+    : item === "apps"
       ? copy.apps
-      : `${copy.updates}${bootstrap?.updates.count ? ` (${bootstrap.updates.count})` : ""}`;
+      : copy.updates;
   return (
     <button
       className={active ? "active" : ""}

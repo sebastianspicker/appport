@@ -65,6 +65,7 @@ export function nativeBootstrap(
   return {
     user: { displayName: "Ada" },
     device: { name: "PC", status: "COMPLIANT", lastSeenAt: null },
+    availableCount: 0,
     updates: { count: 0, keys: [] },
     writesEnabled: false,
     ...overrides,

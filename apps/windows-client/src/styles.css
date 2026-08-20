@@ -202,7 +202,7 @@ nav button.active {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 16px;
 }
 
@@ -258,14 +258,22 @@ nav button.active {
 .version-rail {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 9px;
   width: fit-content;
+  max-width: 100%;
   margin-bottom: 16px;
   padding: 6px 10px;
   border-left: 3px solid #1559b0;
   background: #edf4ff;
   color: #35445a;
   font-variant-numeric: tabular-nums;
+}
+
+.version-rail span,
+.version-rail strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .version-rail strong {

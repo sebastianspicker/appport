@@ -25,7 +25,7 @@ impl RelutionClient {
         if let Some(icon) = self.cached_icon(generation, app)? {
             return Ok(icon);
         }
-        self.require_permitted_app(t, u, app).await?;
+        self.require_permitted_app(t, u, app, generation).await?;
         let icon = self.fetch_icon(t, app).await?;
         self.cache_for(generation)?
             .icons
@@ -48,14 +48,17 @@ impl RelutionClient {
         token: &str,
         user: &str,
         app: &str,
+        generation: u64,
     ) -> Result<(), String> {
-        let device = self.current_device(token, user).await?;
-        if self
-            .list_apps_for(token, user, &device)
-            .await?
-            .iter()
-            .any(|candidate| candidate.id == app)
-        {
+        let cached_apps = { self.cache_for(generation)?.apps.clone() };
+        let apps = match cached_apps {
+            Some(apps) => apps,
+            None => {
+                let device = self.current_device(token, user).await?;
+                self.cached_apps(token, user, &device, generation).await?
+            }
+        };
+        if apps.iter().any(|candidate| candidate.id == app) {
             Ok(())
         } else {
             Err("server: application is not permitted".into())

@@ -80,8 +80,37 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByText("Nothing to show")).toBeTruthy();
     expect(screen.getByText("For this device")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Available" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Available (0)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Updates (0)" })).toBeTruthy();
+  });
+
+  it("shows available and update counts after bootstrap", async () => {
+    vi.mocked(native.bootstrap).mockResolvedValue(
+      nativeBootstrap({ availableCount: 4, updates: { count: 2, keys: [] } }),
+    );
+    render(<App />);
+
+    expect(
+      await screen.findByRole("button", { name: "Available (4)" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Updates (2)" })).toBeTruthy();
+  });
+
+  it("keeps navigation labels plain until bootstrap completes", async () => {
+    const bootstrap = deferred<ReturnType<typeof nativeBootstrap>>();
+    vi.mocked(native.bootstrap).mockReturnValue(bootstrap.promise);
+    render(<App />);
+
+    expect(
+      await screen.findByRole("button", { name: "Available" }),
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Updates" })).toBeTruthy();
+
+    bootstrap.resolve(nativeBootstrap());
+    expect(
+      await screen.findByRole("button", { name: "Available (0)" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Updates (0)" })).toBeTruthy();
   });
 
   it("opens only the native fixed Relution portal command", async () => {
@@ -148,6 +177,29 @@ describe("App catalog", () => {
         "Installed version: 128.0.3. Available version: 128.0.4.",
       ),
     ).toBeTruthy();
+  });
+
+  it("keeps complete long version labels available to assistive technology", async () => {
+    const installed =
+      "128.0.3-enterprise-managed-release-with-a-very-long-build-metadata-suffix";
+    const available =
+      "128.0.4-enterprise-managed-release-with-a-very-long-build-metadata-suffix";
+    vi.mocked(native.initialView).mockResolvedValue("updates");
+    vi.mocked(native.apps).mockResolvedValue([
+      availableApp("firefox", "Mozilla Firefox", {
+        releasedVersionLabel: available,
+        installedVersionId: "installed",
+        installedVersionLabel: installed,
+        installState: "update_available",
+      }),
+    ]);
+    render(<App />);
+
+    const rail = await screen.findByLabelText(
+      `Installed version: ${installed}. Available version: ${available}.`,
+    );
+    expect(rail.textContent).toContain(installed);
+    expect(rail.textContent).toContain(available);
   });
 });
 

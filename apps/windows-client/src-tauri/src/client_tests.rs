@@ -232,6 +232,64 @@ fn inventory_confirmation_requires_exact_identity() {
 }
 
 #[test]
+fn installed_release_identity_overrides_stale_inventory_update_flags() {
+    let inventory = |version_uuid: Option<&str>, update| dto::Inventory {
+        identifier: None,
+        _name: Some("App".into()),
+        app_uuid: Some("app".into()),
+        version_uuid: version_uuid.map(str::to_owned),
+        version_to_show: Some("display label is not identity".into()),
+        version_name: None,
+        update,
+    };
+
+    for update in [Some(false), None] {
+        let mut app = app("app", crate::wire::AppInstallState::Available);
+        app.released_version_id = "released-version".into();
+        apply_inventory(
+            &mut app,
+            Some(&inventory(Some("installed-version"), update)),
+        );
+        assert_eq!(
+            app.install_state,
+            crate::wire::AppInstallState::UpdateAvailable
+        );
+    }
+
+    let mut matching_app = app("app", crate::wire::AppInstallState::Available);
+    matching_app.released_version_id = "RELEASED-VERSION".into();
+    apply_inventory(
+        &mut matching_app,
+        Some(&inventory(Some("released-version"), Some(true))),
+    );
+    assert_eq!(
+        matching_app.install_state,
+        crate::wire::AppInstallState::Available
+    );
+
+    let mut fallback_app = app("app", crate::wire::AppInstallState::Available);
+    apply_inventory(&mut fallback_app, Some(&inventory(None, Some(true))));
+    assert_eq!(
+        fallback_app.install_state,
+        crate::wire::AppInstallState::UpdateAvailable
+    );
+}
+
+#[test]
+fn bootstrap_summary_counts_cached_authorized_catalog_views() {
+    let apps = vec![
+        app("available", crate::wire::AppInstallState::Available),
+        app("update", crate::wire::AppInstallState::UpdateAvailable),
+        app("active", crate::wire::AppInstallState::ActionActive),
+    ];
+
+    let (available_count, update_keys) = bootstrap_catalog_summary(&apps);
+
+    assert_eq!(available_count, 1);
+    assert_eq!(update_keys, ["update:version"]);
+}
+
+#[test]
 fn catalog_views_return_distinct_install_state_datasets() {
     let catalog = vec![
         app("available", crate::wire::AppInstallState::Available),
@@ -563,6 +621,76 @@ fn mocked_icons_are_strictly_typed_and_generation_cache_is_isolated() {
     assert!(!next_generation.icons.contains_key("app"));
     assert!(next_generation.apps.is_none());
     assert_eq!(client.icon_requests.available_permits(), 4);
+}
+
+#[test]
+fn icons_reuse_hydrated_catalog_without_repeating_authorization_reads() {
+    let catalog_reads = Arc::new(AtomicUsize::new(0));
+    let permission_reads = Arc::new(AtomicUsize::new(0));
+    let (base, requests, server) = mock_catalog_server(9, {
+        let catalog_reads = Arc::clone(&catalog_reads);
+        let permission_reads = Arc::clone(&permission_reads);
+        move |request| {
+            let path = request_path(request);
+            if path.ends_with("/content/apps/baseInfo") {
+                catalog_reads.fetch_add(1, Ordering::SeqCst);
+            }
+            if let Some(response) = catalog_setup_response(path, &["one", "two", "three"]) {
+                return response;
+            }
+            if path.ends_with("/icon") {
+                return CatalogMockResponse {
+                    status: 200,
+                    content_type: "image/png",
+                    body: "icon".into(),
+                };
+            }
+            assert!(path.contains("/permissions/RELEASE"));
+            permission_reads.fetch_add(1, Ordering::SeqCst);
+            direct_user_permission()
+        }
+    });
+    let client = test_client(base);
+
+    assert_eq!(
+        run(client.cached_apps("token", "user", &test_device(), 7))
+            .unwrap()
+            .len(),
+        3
+    );
+    for app_id in ["one", "two", "three"] {
+        assert!(run(client.icon("token", "user", app_id, 7))
+            .unwrap()
+            .is_some());
+    }
+
+    server.join().unwrap();
+    assert_eq!(catalog_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(permission_reads.load(Ordering::SeqCst), 3);
+    assert_eq!(requests.load(Ordering::SeqCst), 9);
+}
+
+#[test]
+fn icons_reject_app_ids_absent_from_the_hydrated_catalog() {
+    let (base, requests, server) = mock_catalog_server(4, move |request| {
+        catalog_setup_response(request_path(request), &["allowed"])
+            .unwrap_or_else(direct_user_permission)
+    });
+    let client = test_client(base);
+
+    assert_eq!(
+        run(client.cached_apps("token", "user", &test_device(), 7))
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        run(client.icon("token", "user", "forbidden", 7)).unwrap_err(),
+        "server: application is not permitted"
+    );
+
+    server.join().unwrap();
+    assert_eq!(requests.load(Ordering::SeqCst), 4);
 }
 
 #[test]

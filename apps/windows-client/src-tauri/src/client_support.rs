@@ -48,9 +48,26 @@ pub fn apply_inventory(app: &mut crate::wire::AvailableApp, item: Option<&dto::I
     };
     app.installed_version_id = item.version_uuid.clone();
     app.installed_version_label = item.version_to_show.clone().or(item.version_name.clone());
-    if item.update == Some(true) {
+    if let Some(installed_version_id) = item.version_uuid.as_deref() {
+        if !same_uuid(installed_version_id, &app.released_version_id) {
+            app.install_state = crate::wire::AppInstallState::UpdateAvailable;
+        }
+    } else if item.update == Some(true) {
         app.install_state = crate::wire::AppInstallState::UpdateAvailable;
     }
+}
+
+pub fn bootstrap_catalog_summary(apps: &[crate::wire::AvailableApp]) -> (u32, Vec<String>) {
+    let available_count = apps
+        .iter()
+        .filter(|app| app.install_state == crate::wire::AppInstallState::Available)
+        .count() as u32;
+    let update_keys = apps
+        .iter()
+        .filter(|app| app.install_state == crate::wire::AppInstallState::UpdateAvailable)
+        .map(|app| format!("{}:{}", app.id, app.released_version_id))
+        .collect();
+    (available_count, update_keys)
 }
 pub fn match_device(
     e: &evidence::NativeDeviceEvidenceV1,
