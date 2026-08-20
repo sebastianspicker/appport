@@ -54,6 +54,28 @@ function enableWrites() {
 }
 
 describe("App", () => {
+  it("loads the catalog after sign-in even while the initial view is pending", async () => {
+    const initialView = deferred<"apps" | "updates">();
+    vi.mocked(native.initialView).mockReturnValue(initialView.promise);
+    vi.mocked(native.connect).mockResolvedValue({
+      backgroundCheckRegistered: true,
+    });
+    render(<App />);
+
+    submitConnection();
+    expect(native.connect).toHaveBeenCalledTimes(1);
+    expect(native.bootstrap).not.toHaveBeenCalled();
+
+    await act(async () => {
+      initialView.resolve("apps");
+      await initialView.promise;
+    });
+
+    expect(native.bootstrap).toHaveBeenCalledTimes(1);
+    expect(native.apps).toHaveBeenCalledTimes(1);
+    expect(native.apps).toHaveBeenCalledWith("apps");
+  });
+
   it("states that an empty catalog is not an error", async () => {
     render(<App />);
     expect(await screen.findByText("Nothing to show")).toBeTruthy();

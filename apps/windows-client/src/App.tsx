@@ -17,7 +17,7 @@ import { useClientOperations } from "./useClientOperations";
 
 export function App() {
   const locale = localeFor(navigator.language);
-  const [view, setView] = useViewSelection();
+  const [view, setView, resolveView] = useViewSelection();
   const mounted = useMounted();
   const pollTimers = usePollTimerRegistry();
   const operations = useOperationGeneration(pollTimers.clear);
@@ -28,7 +28,13 @@ export function App() {
     () => ({ setApps, setBootstrap, setPhase }),
     [setApps, setBootstrap, setPhase],
   );
-  const load = useCatalogLoading(view, mounted, operations.generation, setters);
+  const load = useCatalogLoading(
+    view,
+    resolveView,
+    mounted,
+    operations.generation,
+    setters,
+  );
   const filters = useCatalogFilters(apps, locale);
   const { actions, connect, signOut } = useClientOperations(
     locale,

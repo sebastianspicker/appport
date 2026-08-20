@@ -9,15 +9,26 @@ const pollIntervalMs = 2_000;
 
 export function useViewSelection() {
   const [view, setView] = useState<View>();
-  useEffect(() => {
-    void native
-      .initialView()
-      .then(setView)
-      .catch(() => {
-        setView("apps");
-      });
+  const currentView = useRef<View | undefined>(undefined);
+  const initialView = useRef<Promise<View> | undefined>(undefined);
+  currentView.current = view;
+  const resolveView = useCallback(() => {
+    if (currentView.current) return Promise.resolve(currentView.current);
+    const requestedView =
+      initialView.current ?? native.initialView().catch(() => "apps" as const);
+    initialView.current = requestedView;
+    return requestedView;
   }, []);
-  return [view, setView] as const;
+  useEffect(() => {
+    let active = true;
+    void resolveView().then((selectedView) => {
+      if (active) setView(selectedView);
+    });
+    return () => {
+      active = false;
+    };
+  }, [resolveView]);
+  return [view, setView, resolveView] as const;
 }
 
 export function useMounted() {
