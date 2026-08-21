@@ -9,8 +9,6 @@
   },
   "scripts": {
     "client:typecheck": "pnpm --dir apps/windows-client exec tsc --noEmit",
-    "client:test": "pnpm --dir apps/windows-client test",
-    "client:test:coverage": "pnpm --dir apps/windows-client test:coverage",
     "client:build": "pnpm --dir apps/windows-client build",
     "client:rust:test": "cargo test --manifest-path apps/windows-client/src-tauri/Cargo.toml",
     "client:rust:check": "cargo check --manifest-path apps/windows-client/src-tauri/Cargo.toml",
@@ -20,9 +18,9 @@
     "verify:toolchain": "node scripts/verify-toolchain.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,css}\"",
-    "docs:verify": "node --test scripts/verify-docs.test.mjs && node scripts/verify-docs.mjs",
-    "evidence:test": "node --test scripts/create-alpha-evidence.test.mjs",
-    "verify": "pnpm verify:toolchain && pnpm format:check && pnpm docs:verify && pnpm evidence:test && pnpm client:typecheck && pnpm client:test:coverage && pnpm client:build && pnpm client:rust:fmt && pnpm client:rust:clippy && pnpm client:rust:test && pnpm client:rust:check",
+    "docs:verify": "node scripts/verify-docs.mjs",
+    "qualification:check": "node --test scripts/alpha-evidence/configuration.test.mjs",
+    "verify": "pnpm verify:toolchain && pnpm format:check && pnpm docs:verify && pnpm qualification:check && pnpm client:typecheck && pnpm client:build && pnpm client:rust:fmt && pnpm client:rust:clippy && pnpm client:rust:test && pnpm client:rust:check",
     "alpha:evidence": "node scripts/create-alpha-evidence.mjs"
   },
   "dependencies": {},

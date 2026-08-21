@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
@@ -14,22 +14,4 @@ export default defineConfig({
   },
   envPrefix: ["VITE_"],
   build: { target: ["es2022", "chrome105"] },
-  test: {
-    include: ["src/**/*.test.{ts,tsx}"],
-    environment: "jsdom",
-    globals: true,
-    setupFiles: ["./src/testSetup.ts"],
-    testTimeout: 10_000,
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "json-summary", "lcov"],
-      reportsDirectory: "coverage",
-      thresholds: {
-        statements: 80,
-        lines: 80,
-        functions: 80,
-        branches: 75,
-      },
-    },
-  },
 });

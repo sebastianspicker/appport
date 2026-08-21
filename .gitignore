@@ -105,3 +105,16 @@ xcuserdata/
 
 # Keep the CodeGraph sentinel itself local as well as its generated contents.
 .codegraph/
+
+# Generated local verification output
+/coverage/
+/htmlcov/
+/.coverage
+/.coverage.*
+/.pytest_cache/
+/test-results/
+/playwright-report/
+/blob-report/
+/coverage.xml
+/junit.xml
+/junit-*.xml
