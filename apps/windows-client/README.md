@@ -19,8 +19,6 @@ inventory, run Winget, or execute installers.
 ```sh
 pnpm --dir apps/windows-client dev
 pnpm client:typecheck
-pnpm client:test
-pnpm client:test:coverage
 pnpm client:build
 pnpm client:rust:fmt
 pnpm client:rust:clippy
