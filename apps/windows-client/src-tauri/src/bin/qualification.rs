@@ -66,7 +66,7 @@ where
     }
     let mut candidate_evidence = None;
     let mut plan = None;
-    for pair in arguments.chunks_exact(2) {
+    for pair in arguments.as_chunks::<2>().0 {
         if pair[0] == "--candidate-evidence" && candidate_evidence.is_none() {
             candidate_evidence = Some(absolute_input_path(&pair[1])?);
         } else if pair[0] == "--plan" && plan.is_none() {
