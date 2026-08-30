@@ -23,6 +23,7 @@ import {
   inspectReport,
   notRun,
 } from "./alpha-evidence/reports.mjs";
+import { sourceGateCommands, sourceGateNames } from "./source-gates.mjs";
 import { inspectSourceTree } from "./alpha-evidence/source-tree.mjs";
 
 export {
@@ -79,18 +80,6 @@ const forbiddenBinaryMarkers = [
   "BEGIN RSA PRIVATE KEY",
   "technical-account-token",
 ];
-const gateCommands = [
-  ["toolchain", "pnpm", ["verify:toolchain"]],
-  ["format", "pnpm", ["format:check"]],
-  ["documentation", "pnpm", ["docs:verify"]],
-  ["qualification", "pnpm", ["qualification:check"]],
-  ["client-types", "pnpm", ["client:typecheck"]],
-  ["client-build", "pnpm", ["client:build"]],
-  ["rust-format", "pnpm", ["client:rust:fmt"]],
-  ["rust-clippy", "pnpm", ["client:rust:clippy"]],
-  ["rust-tests", "pnpm", ["client:rust:test"]],
-  ["rust-check", "pnpm", ["client:rust:check"]],
-];
 const inputOptions = new Map([
   ["--msi", "msi"],
   ["--windows-self-check", "windowsSelfCheck"],
@@ -109,7 +98,7 @@ if (
 function main() {
   const inputs = parseArguments(process.argv.slice(2));
   const configuration = inspectConfiguration();
-  const gates = runGateCommands(root, gateCommands);
+  const gates = runGateCommands(root, sourceGateCommands);
   const sourceTree = inspectSourceTree({
     root,
     sourceEntries,
@@ -277,8 +266,6 @@ function candidateRequirements(context) {
     context.qualificationUtility?.formatValid,
     context.configuration.valid,
     context.configuration.diagnosticsEnabled === false,
-    context.configuration.passwordAuthEnabled === false,
-    context.configuration.passwordAuthContract === "none",
     context.artifact?.embeddedSecretScanPassed,
     context.qualificationUtility?.embeddedSecretScanPassed,
     context.artifact?.signatureStatus === "not_signed",
@@ -315,8 +302,6 @@ function configurationFingerprint(configuration) {
     failures: configuration.failures,
     writesEnabled: configuration.writesEnabled,
     diagnosticsEnabled: configuration.diagnosticsEnabled,
-    passwordAuthEnabled: configuration.passwordAuthEnabled,
-    passwordAuthContract: configuration.passwordAuthContract,
   };
 }
 
@@ -339,7 +324,7 @@ function writeMsiSha256(artifact) {
 
 function createEvidence(context) {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     version,
     profile: context.configuration.profile,
     candidateReady: context.candidateReady,
@@ -348,9 +333,8 @@ function createEvidence(context) {
     distributable: false,
     writesEnabled: context.configuration.writesEnabled,
     diagnosticsEnabled: context.configuration.diagnosticsEnabled,
-    passwordAuthEnabled: context.configuration.passwordAuthEnabled,
-    passwordAuthContract: context.configuration.passwordAuthContract,
     sourceGatesPassed: context.sourceGatesPassed,
+    sourceGateNames,
     repository: context.repository,
     tools: installedTools(),
     gates: context.gates,

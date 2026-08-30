@@ -2,6 +2,7 @@
 
 | Document | Purpose |
 | --- | --- |
+| [Product principles](PRODUCT.md) | Product scope and interface principles |
 | [Architecture](ARCHITECTURE.md) | Standalone client boundaries and data flow |
 | [Configuration](CONFIGURATION.md) | Build-time endpoint and safety configuration |
 | [Development](DEVELOPMENT.md) | Local development and verification |

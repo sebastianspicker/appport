@@ -6,9 +6,30 @@ Rust validates the compile-time HTTPS Relution API endpoint, stores the client s
 
 The client does not embed Relution administrative credentials or service secrets and does not expose a writable local service. Authorization, device association, application catalog data, deployment writes, and action history remain authoritative in Relution. Local sign-out deletes the Credential Manager record; personal token revocation remains a user action in Relution.
 
-Candidate builds keep the password-authentication scaffold disabled. The
-password option is hidden, and native code refuses it before network access or
-Credential Manager persistence. Personal-token behavior is unchanged.
+The catalog exposes only Available and Updates. Rust authorizes supported
+released Windows applications through direct user, direct group, and recursive
+group `RELEASE` permissions before consulting the matched device inventory.
+Applications that are already current are retained only as an internal
+classification. Any catalog, permission, membership, assignment, or inventory
+uncertainty fails the read instead of returning an unfiltered catalog.
+
+Signed-in users can expand a read-only support panel. It shows Windows build,
+manufacturer, model, SMBIOS serial, MDM state, application version, catalog
+counts, and confirmed Relution connection fields when the tenant reports them.
+Copying is user initiated and grants the WebView clipboard write permission
+only. The client cannot read clipboard content.
+
+Bundle generation requires confirmation of the displayed username, device
+name, serial, and last MDM IP. Native code writes one bounded ZIP at a time to
+the fixed current-user support directory and exposes no arbitrary output path.
+The confirmation is bound to the active session generation and consumed once.
+The bundle is never uploaded. Optional collector failures become warning codes;
+consent, containment, manifest, and archive failures abort generation. The Open
+support folder action resolves the same fixed native path and launches the
+absolute System32 Explorer executable without a script shell, frontend path, or
+URL.
+
+The client supports personal-token sign-in only.
 
 Release MSI builds use the Windows x64 MSVC target. Alpha.4 compiles either the
 `read_only` or `write_qualification` profile, and the embedded writes flag must

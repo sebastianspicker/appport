@@ -1,13 +1,26 @@
 # Contributing
 
-Keep changes within the standalone Windows-client boundary. This repository does not contain browser routes, server routes, or Relution administrative credentials.
+Keep changes within the standalone Windows-client boundary. This repository
+does not contain browser routes, server routes, or Relution administrative
+credentials.
 
 1. Use Node 26.5.x and pnpm 11.6.0.
-2. Run pnpm install --frozen-lockfile.
-3. Keep version values aligned across both package manifests, Cargo manifest and lockfile, Tauri configuration, and WiX configuration.
-4. For alpha.4 candidate builds, use approved non-secret qualification-tenant origin and UUIDs, keep the HTTPS origin fixed, select `APPPORT_QUALIFICATION_PROFILE=read_only` or `write_qualification`, and set `APPPORT_RELUTION_WRITES_ENABLED` to the exact matching value.
-5. Run `APPPORT_SOURCE_VERIFICATION=true APPPORT_QUALIFICATION_PROFILE=read_only APPPORT_RELUTION_WRITES_ENABLED=false pnpm verify` before requesting review when qualification values are unavailable.
+2. Install dependencies with `pnpm install --frozen-lockfile`.
+3. Keep versions aligned across the package manifests, Cargo manifest and
+   lockfile, Tauri configuration, and WiX configuration.
+4. Run `pnpm verify:source` before requesting review.
 
-Place React tests beside the client source and Rust tests in the Windows-client crate. Local transport mocks may verify decoding, pagination, retry, permission, inventory, icon, and correlation behavior. Do not add a production mock mode or represent mocked responses as tenant evidence.
+Alpha.4 candidate builds require an approved non-secret qualification origin
+and UUIDs. Select `APPPORT_QUALIFICATION_PROFILE=read_only` or
+`write_qualification`, and set `APPPORT_RELUTION_WRITES_ENABLED` to the matching
+value. Never commit tenant credentials or personal tokens.
 
-Windows MSI creation, Windows Credential Manager behavior, code signing, service connectivity, destructive authorization, and managed-device testing require their respective environments. Alpha.3 evidence must retain those external gates as unqualified until separately authorized and performed.
+Place focused React tests beside the feature they exercise and Rust tests in
+the Windows-client crate. Local transport mocks may cover decoding, pagination,
+retry, permission, inventory, icon, and correlation behavior. Do not add a
+production mock mode or present mocked responses as tenant evidence.
+
+Source verification does not prove MSI packaging, Windows Credential Manager or
+ACL behavior, code signing, service connectivity, destructive authorization,
+or managed-device behavior. Those checks require their respective Windows and
+Relution environments.

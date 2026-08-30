@@ -21,8 +21,6 @@ const ready = {
   APPPORT_QUALIFICATION_PROFILE: "read_only",
   APPPORT_RELUTION_WRITES_ENABLED: "false",
   APPPORT_RELUTION_DIAGNOSTICS: "false",
-  APPPORT_RELUTION_PASSWORD_AUTH_ENABLED: "false",
-  APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT: "none",
   APPPORT_QUALIFICATION_TENANT_APPROVED: "true",
   APPPORT_RELUTION_TENANT_CLASS: "qualification",
   APPPORT_DISPOSABLE_RESOURCES_APPROVED: "false",
@@ -33,7 +31,6 @@ test("qualification evidence accepts only a ready read-only configuration", () =
   assert.equal(inspection.valid, true);
   assert.equal(inspection.profile, "read_only");
   assert.equal(inspection.writesEnabled, false);
-  assert.equal(inspection.passwordAuthEnabled, false);
   assert.match(inspection.fingerprintSha256, /^[a-f0-9]{64}$/);
 });
 
@@ -45,8 +42,6 @@ test("qualification evidence fails closed on readiness and binding-relevant mism
     profile: "read_only",
     writes: "true",
     diagnostics: "maybe",
-    passwordAuthEnabled: "true",
-    passwordAuthContract: "exchange-v1",
     tenantApproved: "false",
     tenantClass: "production",
     disposableApproved: "false",
@@ -54,8 +49,6 @@ test("qualification evidence fails closed on readiness and binding-relevant mism
   assert.deepEqual(failures, [
     "writes do not exactly match profile",
     "diagnostics must be exactly true or false",
-    "password authentication scaffold must be explicitly disabled",
-    "password authentication scaffold contract must be none",
     "qualification tenant is not approved",
     "tenant class is not qualification",
   ]);
@@ -123,8 +116,6 @@ test("qualification and cleanup reports remain bound to the exact candidate and 
     qualified: true,
     writesEnabled: true,
     diagnosticsEnabled: false,
-    passwordAuthEnabled: false,
-    passwordAuthContract: "none",
     tokenRedacted: true,
     startedAtUnix: 10,
     completedAtUnix: 20,
