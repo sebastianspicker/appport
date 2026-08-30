@@ -17,8 +17,6 @@ pub struct SelfCheckReport {
     pub profile: &'static str,
     pub writes_enabled: bool,
     pub diagnostics_enabled: bool,
-    pub password_auth_enabled: bool,
-    pub password_auth_contract: &'static str,
     pub configuration_fingerprint_sha256: &'static str,
     pub source_revision: &'static str,
     pub started_at_unix: u64,
@@ -39,19 +37,20 @@ pub fn run() -> SelfCheckReport {
         checks.extend([
             check(
                 "credential_manager",
-                crate::session::qualification_credential_self_check().map_err(|_| ()),
+                crate::infrastructure::windows::credentials::qualification_credential_self_check()
+                    .map_err(|_| ()),
             ),
             check(
                 "journal_acl",
-                crate::journal::qualification_acl_self_check().map_err(|_| ()),
+                crate::infrastructure::journal::qualification_acl_self_check().map_err(|_| ()),
             ),
             check(
                 "protocol_and_scheduled_task",
-                crate::task::qualification_platform_self_check().map_err(|_| ()),
+                crate::infrastructure::windows::task::qualification_platform_self_check().map_err(|_| ()),
             ),
             check(
                 "notification_registry",
-                crate::notifications::qualification_notification_self_check().map_err(|_| ()),
+                crate::infrastructure::windows::notifications::qualification_notification_self_check().map_err(|_| ()),
             ),
             check("graceful_native_startup", Ok(())),
         ]);
@@ -69,10 +68,6 @@ pub fn run() -> SelfCheckReport {
         profile: option_env!("APPPORT_QUALIFICATION_PROFILE").unwrap_or("invalid"),
         writes_enabled: option_env!("APPPORT_RELUTION_WRITES_ENABLED") == Some("true"),
         diagnostics_enabled: option_env!("APPPORT_RELUTION_DIAGNOSTICS") == Some("true"),
-        password_auth_enabled: option_env!("APPPORT_RELUTION_PASSWORD_AUTH_ENABLED")
-            == Some("true"),
-        password_auth_contract: option_env!("APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT")
-            .unwrap_or("invalid"),
         configuration_fingerprint_sha256: option_env!("APPPORT_CONFIGURATION_FINGERPRINT_SHA256")
             .unwrap_or("invalid"),
         source_revision: option_env!("APPPORT_SOURCE_REVISION").unwrap_or("invalid"),
@@ -103,7 +98,7 @@ fn now() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{run, CheckStatus};
 
     #[test]
     fn source_build_self_check_is_unavailable() {
@@ -118,14 +113,6 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&report).unwrap()["diagnosticsEnabled"],
             option_env!("APPPORT_RELUTION_DIAGNOSTICS") == Some("true")
-        );
-        assert_eq!(
-            serde_json::to_value(&report).unwrap()["passwordAuthEnabled"],
-            false
-        );
-        assert_eq!(
-            serde_json::to_value(&report).unwrap()["passwordAuthContract"],
-            "none"
         );
     }
 }

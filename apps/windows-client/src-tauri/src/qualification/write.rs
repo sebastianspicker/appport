@@ -4,24 +4,32 @@ use super::{
     ActionFixture, QualificationCheck, QualificationCredentials, QualificationPlan,
 };
 use crate::{
-    client::RelutionClient,
-    wire::{ActionIntent, ActionState, AppInstallState, AvailableApp, CatalogView},
+    application::{actions::ActionService, catalog::CatalogService},
+    domain::{
+        action::{ActionState, AppAction, Intent},
+        catalog::{AppInstallState, AvailableApp, CatalogView},
+    },
+    infrastructure::relution::RelutionClient,
+    infrastructure::windows::platform,
 };
 
 pub(super) async fn run_write_checks(
     client: &RelutionClient,
+    catalog: &CatalogService,
+    actions: &ActionService,
     credentials: &QualificationCredentials,
     plan: &QualificationPlan,
     prerequisites: &ReadPrerequisites,
     checks: &mut Vec<QualificationCheck>,
 ) {
+    let locale = platform::current_locale();
     if !plan_matches_operator_input(plan, credentials, prerequisites, checks) {
         return;
     }
-    if !fresh_device_matches(client, credentials, plan, prerequisites, checks).await {
+    if !fresh_device_matches(catalog, credentials, plan, prerequisites, checks).await {
         return;
     }
-    let (apps, updates) = match write_catalog(client, credentials, prerequisites).await {
+    let (apps, updates) = match write_catalog(catalog, credentials, prerequisites, &locale).await {
         Ok(catalog) => catalog,
         Err(failure) => {
             checks.push(failure.check());
@@ -31,23 +39,33 @@ pub(super) async fn run_write_checks(
     if !fixtures_are_approved(&apps, &updates, plan, checks) {
         return;
     }
-    if !cross_user_action_is_denied(client, credentials, prerequisites, checks).await {
+    if !cross_user_action_is_denied(
+        actions,
+        client.native_app_uuid(),
+        credentials,
+        prerequisites,
+        &locale,
+        checks,
+    )
+    .await
+    {
         return;
     }
     let mut actions = ActionQualification {
-        client,
+        actions,
         credentials,
         user_uuid: &prerequisites.user_b_uuid,
+        locale: &locale,
         checks,
     };
     actions
-        .qualify(&plan.install, ActionIntent::Install, "approved_install")
+        .qualify(&plan.install, Intent::Install, "approved_install")
         .await;
     if actions.last_check_failed() {
         return;
     }
     actions
-        .qualify(&plan.update, ActionIntent::Update, "approved_update")
+        .qualify(&plan.update, Intent::Update, "approved_update")
         .await;
     let checks = actions.checks;
     checks.push(not_run(
@@ -80,16 +98,17 @@ fn plan_matches_operator_input(
 }
 
 async fn fresh_device_matches(
-    client: &RelutionClient,
+    catalog: &CatalogService,
     credentials: &QualificationCredentials,
     plan: &QualificationPlan,
     prerequisites: &ReadPrerequisites,
     checks: &mut Vec<QualificationCheck>,
 ) -> bool {
-    let matches = client
-        .current_device_id(&credentials.user_b_token, &prerequisites.user_b_uuid)
+    let matches = catalog
+        .current_device_uncached(&credentials.user_b_token, &prerequisites.user_b_uuid)
         .await
         .ok()
+        .map(|device| device.id)
         .as_deref()
         == Some(plan.disposable_device_uuid.as_str());
     checks.push(if matches {
@@ -107,28 +126,31 @@ async fn fresh_device_matches(
 }
 
 async fn write_catalog(
-    client: &RelutionClient,
+    catalog: &CatalogService,
     credentials: &QualificationCredentials,
     prerequisites: &ReadPrerequisites,
+    locale: &str,
 ) -> Result<(Vec<AvailableApp>, Vec<AvailableApp>), WriteCatalogFailure> {
     let apps = catalog_result(
-        client
+        catalog
             .list_apps(
                 &credentials.user_b_token,
                 &prerequisites.user_b_uuid,
                 2,
                 CatalogView::Apps,
+                locale,
             )
             .await,
         WriteCatalogFailure::Apps,
     )?;
     let updates = catalog_result(
-        client
+        catalog
             .list_apps(
                 &credentials.user_b_token,
                 &prerequisites.user_b_uuid,
                 2,
                 CatalogView::Updates,
+                locale,
             )
             .await,
         WriteCatalogFailure::Updates,
@@ -216,16 +238,19 @@ fn fixture_check(
 }
 
 async fn cross_user_action_is_denied(
-    client: &RelutionClient,
+    actions: &ActionService,
+    native_app_uuid: &str,
     credentials: &QualificationCredentials,
     prerequisites: &ReadPrerequisites,
+    locale: &str,
     checks: &mut Vec<QualificationCheck>,
 ) -> bool {
-    let result = client
+    let result = actions
         .request_action(
             &credentials.user_a_token,
             &prerequisites.user_a_uuid,
-            client.native_app_uuid(),
+            native_app_uuid,
+            locale,
         )
         .await;
     let check = cross_user_action_check(result);
@@ -234,7 +259,7 @@ async fn cross_user_action_is_denied(
     denied
 }
 
-fn cross_user_action_check(result: Result<crate::wire::AppAction, String>) -> QualificationCheck {
+fn cross_user_action_check(result: Result<AppAction, String>) -> QualificationCheck {
     if matches!(result, Err(error) if error.starts_with("device_match_failed:")) {
         passed(
             "cross_user_action",
@@ -249,12 +274,12 @@ fn cross_user_action_check(result: Result<crate::wire::AppAction, String>) -> Qu
 }
 
 #[cfg(test)]
-fn successful_action() -> crate::wire::AppAction {
-    crate::wire::AppAction {
+fn successful_action() -> AppAction {
+    AppAction {
         id: "action".into(),
         device_id: "device".into(),
         app_id: "app".into(),
-        intent: ActionIntent::Install,
+        intent: Intent::Install,
         state: ActionState::Queued,
         error_code: None,
         error_message: None,
@@ -264,9 +289,10 @@ fn successful_action() -> crate::wire::AppAction {
 }
 
 struct ActionQualification<'a> {
-    client: &'a RelutionClient,
+    actions: &'a ActionService,
     credentials: &'a QualificationCredentials,
     user_uuid: &'a str,
+    locale: &'a str,
     checks: &'a mut Vec<QualificationCheck>,
 }
 
@@ -274,15 +300,16 @@ impl ActionQualification<'_> {
     async fn qualify(
         &mut self,
         fixture: &ActionFixture,
-        expected_intent: ActionIntent,
+        expected_intent: Intent,
         name: &'static str,
     ) {
         let action = match self
-            .client
+            .actions
             .request_action(
                 &self.credentials.user_b_token,
                 self.user_uuid,
                 &fixture.application_uuid,
+                self.locale,
             )
             .await
         {
@@ -297,7 +324,7 @@ impl ActionQualification<'_> {
         };
         for _ in 0..90 {
             match self
-                .client
+                .actions
                 .get_action(
                     &self.credentials.user_b_token,
                     self.user_uuid,
@@ -333,7 +360,7 @@ impl ActionQualification<'_> {
     }
 
     fn record_succeeded_action(&mut self, name: &'static str, action_id: &str) {
-        let attributed = crate::journal::action(action_id)
+        let attributed = crate::infrastructure::journal::action(action_id)
             .ok()
             .flatten()
             .and_then(|saved| saved.correlation)
@@ -370,7 +397,7 @@ fn fixture_visible(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{catalog_result, cross_user_action_check, successful_action, WriteCatalogFailure};
 
     #[test]
     fn apps_lookup_failure_is_redacted_and_blocks_catalog_use() {
