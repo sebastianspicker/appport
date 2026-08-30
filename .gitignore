@@ -1,107 +1,121 @@
-# Dependencies and build output
+# Dependencies
 node_modules/
-.next/
+
+# Build and generated output
 /apps/windows-client/dist/
-/apps/windows-client/src-tauri/target/
 /apps/windows-client/src-tauri/gen/
+target/
 *.tsbuildinfo
+.vite/
+/release-artifacts/
 
 # Test and analysis output
 coverage/
 test-results/
 playwright-report/
-.nyc_output/
-.vite/
+blob-report/
+*.lcov
+junit*.xml
+*.sarif
 
-# Runtime and release output
-/release-artifacts/
+# Runtime data and logs
+*.log
+*.db
+*.db-*
 *.sqlite
 *.sqlite-*
-*.log
 
-# Local tools and private workspace files
-/.local/
-/.agents/
-/.claude/
-/.codex/
-/.continue/
-/.cursor/
-/.serena/
-/.windsurf/
-/.cache/
-.DS_Store
-*.tmp
-*.swp
-
-# Local configuration and credentials
+# Local environment and credentials
 .env
 .env.*
 !.env.example
+!.env.*.example
+!.env.sample
+!.env.template
 *.key
 *.pem
 *.p12
 *.pfx
-
-# Shared local indexes and operator records
-.repowise/
-/AGENTS.md
-/CLAUDE.md
-/GEMINI.md
-/AUDIT_LEDGER.md
-/remediation-ledger.md
-/plan.md
-/progress.md
-
-# Local editor integration
-/.mcp.json
-/.kilo/
-/.vscode/mcp.json
-/.vscode/extensions.json
-
-# Public environment templates
-!.env.*.example
-!.env.sample
-!.env.template
-
-# Local-only credentials
+*.jks
+*.keystore
 secrets.local.*
 credentials.local.*
 .npmrc.local
-*.local.pem
-*.local.key
-*.jks
-*.keystore
 
-# Python caches and test reports
-__pycache__/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.pyright/
-.hypothesis/
-.tox/
-.nox/
-.coverage
-.coverage.*
-coverage.xml
-htmlcov/
-blob-report/
-junit*.xml
-*.sarif
+# Temporary, editor, and OS files
+*.bak
+*.orig
+*.swp
+*.temp
+*.tmp
+.DS_Store
+Thumbs.db
+Desktop.ini
+/.idea/
+/.vscode/
+/.cache/
 
-# Shared build output
-target/
-.build/
-DerivedData/
-xcuserdata/
+# Local indexes, worktrees, and tool state
+/.local/
+/.worktrees/
+/.codegraph/
+.repowise/
+/.mcp.json
+/.codacy/.gitignore
+/.codacy/cli-config.yaml
+/.codacy/codacy.config.json
+/.codacy/generated/
+/.codacy/logs/
+/.codacy/tools-configs/
 
-# Local database sidecars
-*.local.db
-*.local.sqlite
-*.local.sqlite3
-*.db-wal
-*.sqlite3-shm
-*.sqlite3-wal
-
-# Keep the CodeGraph sentinel itself local as well as its generated contents.
-.codegraph/
+# Development-assistant state
+/.agent/
+/.agents/
+/.ai/
+/.claude/
+/.codex/
+/.continue/
+/.cursor/
+/.impeccable/
+/.kilo/
+/.serena/
+/.windsurf/
+/.cursorrules
+/.github/copilot-instructions.md
+/prompt/
+/prompts/
+/agent-prompts/
+/ai-prompts/
+/AGENT.md
+/AGENTS.md
+/agent.md
+/agents.md
+/CLAUDE.md
+/CODEX.md
+/GEMINI.md
+/agent-context*
+/agent-memory*
+/agent-notes*
+/agent-output*
+/agent-report*
+/AI_AUDIT*
+/AI_NOTES*
+/AI_REPORT*
+/AI_SUMMARY*
+/AUDIT_LEDGER.md
+/TASK_LEDGER.md
+/IMPLEMENTATION_LEDGER.md
+/*-ledger.md
+/*_ledger.md
+/tasks.md
+/plan.md
+/progress.md
+/status.md
+/work-log.md
+/worklog.md
+/devlog.md
+/development-log.md
+/implementation-notes.md
+/handoff.md
+/handover.md
+/scratchpad*

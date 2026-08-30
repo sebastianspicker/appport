@@ -14,8 +14,6 @@ Appport has no server runtime configuration in this repository. The supported cl
 | APPPORT_DISPOSABLE_RESOURCES_APPROVED | Required for the `write_qualification` profile. Must be exactly `true`. |
 | APPPORT_SOURCE_VERIFICATION | Set to `true` only for non-release source checks without tenant inputs. |
 | APPPORT_RELUTION_DIAGNOSTICS | Compile-time opt-in response diagnostics. Set exactly `true` or `false`; source verification defaults to `false`, while qualification builds must set it explicitly. |
-| APPPORT_RELUTION_PASSWORD_AUTH_ENABLED | Guarded password-authentication capability. The scaffold accepts only `false`; source verification defaults to `false`, while qualification builds must set it explicitly. |
-| APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT | Versioned vendor authentication contract. The scaffold accepts only `none`; source verification defaults to `none`, while qualification builds must set it explicitly. |
 
 `read_only` requires `APPPORT_RELUTION_WRITES_ENABLED=false`.
 `write_qualification` requires `APPPORT_RELUTION_WRITES_ENABLED=true`. A build
@@ -37,12 +35,8 @@ qualification utility uses masked console input. Never put tokens in arguments,
 environment variables, files, logs, or reports. Do not place administrative credentials,
 client secrets, or private keys in a client environment file or build invocation.
 
-Password authentication is intentionally dormant. The current Relution REST
-contract authenticates third-party clients with a personal API token. Appport
-does not guess a password endpoint, use Basic authentication, scrape the portal,
-or store a password. A future implementation may enable the capability only
-when a fixed, vendor-supported exchange returns a scoped, expiring, revocable
-API token and the exact contract has passed live qualification.
+The client supports personal-token sign-in only. Appport does not use Basic
+authentication, portal cookies, or HTML login scraping.
 
 `APPPORT_RELUTION_DIAGNOSTICS=true` creates a diagnostic artifact: its
 configuration fingerprint differs from a normal candidate. It records each

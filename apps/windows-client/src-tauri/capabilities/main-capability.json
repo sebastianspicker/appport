@@ -3,5 +3,5 @@
   "identifier": "main-capability",
   "description": "Only the main Appport webview may invoke native commands.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "clipboard-manager:allow-write-text"]
 }

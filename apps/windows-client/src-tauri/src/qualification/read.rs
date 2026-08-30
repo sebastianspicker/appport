@@ -3,8 +3,10 @@ use super::{
     CheckStatus, QualificationCheck, QualificationCredentials,
 };
 use crate::{
-    client::{ConnectedIdentity, RelutionClient},
-    wire::{AvailableApp, CatalogView},
+    application::catalog::CatalogService,
+    domain::catalog::{AvailableApp, CatalogView},
+    infrastructure::relution::{ConnectedIdentity, RelutionClient},
+    infrastructure::windows::platform,
 };
 
 pub(super) struct ReadPrerequisites {
@@ -15,17 +17,28 @@ pub(super) struct ReadPrerequisites {
 
 pub(super) async fn run_read_checks(
     client: &RelutionClient,
+    catalog: &CatalogService,
     credentials: &QualificationCredentials,
     checks: &mut Vec<QualificationCheck>,
 ) -> Option<ReadPrerequisites> {
     let first_check = checks.len();
+    let locale = platform::current_locale();
     let user_b = connect_user_b(client, credentials, checks).await?;
-    if !matches_expected_device(client, credentials, &user_b, checks).await {
+    if !matches_expected_device(catalog, credentials, &user_b, checks).await {
         return None;
     }
-    let (apps, updates) = run_catalog_checks(client, credentials, &user_b, checks).await;
-    run_icon_check(client, credentials, &user_b, &apps, &updates, checks).await;
-    let user_a_uuid = verify_user_a_isolation(client, credentials, checks).await;
+    let (apps, updates) = run_catalog_checks(catalog, credentials, &user_b, &locale, checks).await;
+    run_icon_check(
+        catalog,
+        credentials,
+        &user_b,
+        &apps,
+        &updates,
+        &locale,
+        checks,
+    )
+    .await;
+    let user_a_uuid = verify_user_a_isolation(client, catalog, credentials, checks).await;
     let all_passed = checks[first_check..]
         .iter()
         .all(|check| check.status == CheckStatus::Passed);
@@ -61,15 +74,17 @@ async fn connect_user_b(
 }
 
 async fn matches_expected_device(
-    client: &RelutionClient,
+    catalog: &CatalogService,
     credentials: &QualificationCredentials,
     user_b: &ConnectedIdentity,
     checks: &mut Vec<QualificationCheck>,
 ) -> bool {
-    let device = client
-        .current_device_id(&credentials.user_b_token, &user_b.user_uuid)
+    let device = catalog
+        .current_device_uncached(&credentials.user_b_token, &user_b.user_uuid)
         .await;
-    if device.as_deref() == Ok(credentials.expected_device_uuid.as_str()) {
+    if device.as_ref().map(|device| device.id.as_str())
+        == Ok(credentials.expected_device_uuid.as_str())
+    {
         checks.push(passed(
             "user_b_device_match",
             "assigned disposable device matched",
@@ -85,54 +100,59 @@ async fn matches_expected_device(
 }
 
 async fn run_catalog_checks(
-    client: &RelutionClient,
+    catalog: &CatalogService,
     credentials: &QualificationCredentials,
     user_b: &ConnectedIdentity,
+    locale: &str,
     checks: &mut Vec<QualificationCheck>,
 ) -> (
     Result<Vec<AvailableApp>, String>,
     Result<Vec<AvailableApp>, String>,
 ) {
-    let initial_bootstrap = bootstrap(client, credentials, user_b, 1).await;
+    let initial_bootstrap = bootstrap(catalog, credentials, user_b, 1, locale).await;
     checks.push(if initial_bootstrap.is_ok() {
         passed("bootstrap", "native bootstrap completed")
     } else {
         failed("bootstrap", "native bootstrap failed")
     });
-    let apps = client
+    let apps = catalog
         .list_apps(
             &credentials.user_b_token,
             &user_b.user_uuid,
             1,
             CatalogView::Apps,
+            locale,
         )
         .await;
-    let updates = client
+    let updates = catalog
         .list_apps(
             &credentials.user_b_token,
             &user_b.user_uuid,
             1,
             CatalogView::Updates,
+            locale,
         )
         .await;
     record_catalog_results(&apps, &updates, checks);
-    let background_bootstrap = bootstrap(client, credentials, user_b, 2).await;
+    let background_bootstrap = bootstrap(catalog, credentials, user_b, 2, locale).await;
     checks.push(result_check("background_bootstrap", &background_bootstrap));
     (apps, updates)
 }
 
 async fn bootstrap(
-    client: &RelutionClient,
+    catalog: &CatalogService,
     credentials: &QualificationCredentials,
     user_b: &ConnectedIdentity,
     generation: u64,
+    locale: &str,
 ) -> Result<(), String> {
-    client
+    catalog
         .bootstrap(
             &credentials.user_b_token,
             &user_b.username,
             &user_b.user_uuid,
             generation,
+            locale,
         )
         .await
         .map(|_| ())
@@ -159,11 +179,12 @@ fn record_catalog_results(
 }
 
 async fn run_icon_check(
-    client: &RelutionClient,
+    catalog: &CatalogService,
     credentials: &QualificationCredentials,
     user_b: &ConnectedIdentity,
     apps: &Result<Vec<AvailableApp>, String>,
     updates: &Result<Vec<AvailableApp>, String>,
+    locale: &str,
     checks: &mut Vec<QualificationCheck>,
 ) {
     let icon_app = apps
@@ -175,8 +196,14 @@ async fn run_icon_check(
         .find(|app| app.has_icon);
     let has_icon_fixture = icon_app.is_some();
     let detail = match icon_app {
-        Some(app) => match client
-            .icon(&credentials.user_b_token, &user_b.user_uuid, &app.id, 1)
+        Some(app) => match catalog
+            .icon(
+                &credentials.user_b_token,
+                &user_b.user_uuid,
+                &app.id,
+                2,
+                locale,
+            )
             .await
         {
             Ok(Some(_)) => Some("authorized icon loaded"),
@@ -193,6 +220,7 @@ async fn run_icon_check(
 
 async fn verify_user_a_isolation(
     client: &RelutionClient,
+    catalog: &CatalogService,
     credentials: &QualificationCredentials,
     checks: &mut Vec<QualificationCheck>,
 ) -> Option<String> {
@@ -209,8 +237,8 @@ async fn verify_user_a_isolation(
             return None;
         }
     };
-    let result = client
-        .current_device_id(&credentials.user_a_token, &user_a.user_uuid)
+    let result = catalog
+        .current_device_uncached(&credentials.user_a_token, &user_a.user_uuid)
         .await;
     if matches!(result, Err(error) if error.starts_with("device_match_failed:")) {
         checks.push(passed(

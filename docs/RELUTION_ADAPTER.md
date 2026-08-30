@@ -2,12 +2,9 @@
 
 The Rust application core calls one fixed Relution SaaS origin. Every authenticated request carries the current user's personal token in `X-User-Access-Token` and remains scoped to the embedded organization UUID.
 
-Relution's documented third-party REST authentication remains the sole active
-contract. The password variant is rejected locally without a request. Appport
-does not use Basic authentication, portal cookies, or HTML login scraping. Any
-future activation must exchange a password once for an expiring, revocable API
-token through a fixed vendor-supported endpoint and must retain the existing
-organization, device, and authorization checks.
+Relution's documented third-party REST personal-token authentication is the
+sole sign-in contract. Appport does not use Basic authentication, portal
+cookies, or HTML login scraping.
 
 Connection resolves the entered username to one active Relution user and matches exactly one assigned Windows device from EntDMID, SMBIOS UUID, or serial plus hostname evidence. Catalog and mutation paths evaluate the released application, nested permissions, current inventory, and device assignment. Only Winget, Windows MSI, and Windows EXE applications are eligible, and Appport excludes its own embedded application UUID.
 

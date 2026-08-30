@@ -26,13 +26,6 @@ jobs:
   source:
     name: Ubuntu source gates
     runs-on: ubuntu-latest
-    env:
-      APPPORT_SOURCE_VERIFICATION: "true"
-      APPPORT_QUALIFICATION_PROFILE: read_only
-      APPPORT_RELUTION_WRITES_ENABLED: "false"
-      APPPORT_RELUTION_DIAGNOSTICS: "false"
-      APPPORT_RELUTION_PASSWORD_AUTH_ENABLED: "false"
-      APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT: none
     steps:
       # actions/checkout v6.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -42,9 +35,10 @@ jobs:
         with:
           node-version: 26.5.0
           cache: pnpm
-      # stable as resolved for this qualification run, pinned immutably.
+      # Matches rust-toolchain.toml and is pinned immutably.
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
+          toolchain: 1.96.0
           components: clippy,rustfmt
       - name: Install Tauri Linux prerequisites
         run: |
@@ -60,11 +54,12 @@ jobs:
             libxdo-dev \
             wget
       - run: pnpm install --frozen-lockfile
-      - run: pnpm verify
+      - run: pnpm verify:source
 
   windows:
     name: Windows MSVC candidate
     runs-on: windows-latest
+    needs: source
     environment: qualification
     env:
       # These repository/environment variables are non-secret, approved
@@ -75,8 +70,6 @@ jobs:
       APPPORT_QUALIFICATION_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.qualification_profile || 'read_only' }}
       APPPORT_RELUTION_WRITES_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.qualification_profile == 'write_qualification' && 'true' || 'false' }}
       APPPORT_RELUTION_DIAGNOSTICS: "false"
-      APPPORT_RELUTION_PASSWORD_AUTH_ENABLED: "false"
-      APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT: none
       APPPORT_QUALIFICATION_TENANT_APPROVED: ${{ vars.APPPORT_QUALIFICATION_TENANT_APPROVED }}
       APPPORT_RELUTION_TENANT_CLASS: ${{ vars.APPPORT_RELUTION_TENANT_CLASS }}
       APPPORT_DISPOSABLE_RESOURCES_APPROVED: ${{ vars.APPPORT_DISPOSABLE_RESOURCES_APPROVED }}
@@ -90,9 +83,10 @@ jobs:
         with:
           node-version: 26.5.0
           cache: pnpm
-      # stable as resolved for this qualification run, pinned immutably.
+      # Matches rust-toolchain.toml and is pinned immutably.
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
+          toolchain: 1.96.0
           components: clippy,rustfmt
           targets: x86_64-pc-windows-msvc
       - run: pnpm install --frozen-lockfile
@@ -113,11 +107,10 @@ jobs:
           const expectedWrites = env.APPPORT_QUALIFICATION_PROFILE === 'write_qualification' ? 'true' : 'false';
           if (env.APPPORT_RELUTION_WRITES_ENABLED !== expectedWrites) fail("write flag does not match profile");
           if (env.APPPORT_RELUTION_DIAGNOSTICS !== 'false') fail("candidate diagnostics must be exactly false");
-          if (env.APPPORT_RELUTION_PASSWORD_AUTH_ENABLED !== 'false' || env.APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT !== 'none') fail("password authentication scaffold must remain disabled");
           if (env.APPPORT_QUALIFICATION_TENANT_APPROVED !== 'true' || env.APPPORT_RELUTION_TENANT_CLASS !== 'qualification') fail("tenant is not explicitly approved as qualification-only");
           if (env.APPPORT_QUALIFICATION_PROFILE === 'write_qualification' && env.APPPORT_DISPOSABLE_RESOURCES_APPROVED !== 'true') fail("disposable resources are not approved");
           '@ | node --input-type=module
-      - run: pnpm client:rust:fmt
+      - run: pnpm rust:fmt
       - run: cargo clippy --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --all-targets --all-features -- -D warnings
         env:
           APPPORT_SOURCE_VERIFICATION: "true"
@@ -137,7 +130,7 @@ jobs:
           APPPORT_RELUTION_WRITES_ENABLED: "false"
           APPPORT_RELUTION_DIAGNOSTICS: "false"
       - name: Build unsigned qualification MSI candidate
-        run: pnpm client:tauri -- --target x86_64-pc-windows-msvc
+        run: pnpm windows:package -- --target x86_64-pc-windows-msvc
       - name: Build candidate-bound operator utility
         run: cargo build --manifest-path apps/windows-client/src-tauri/Cargo.toml --release --target x86_64-pc-windows-msvc --bin relution-appport-qualification
       - name: Locate candidate MSI
@@ -188,7 +181,6 @@ jobs:
             $selfCheck = Get-Content $report -Raw | ConvertFrom-Json
             if (-not $selfCheck.qualified -or -not $selfCheck.cleanupComplete) { throw "Installed MSI self-check did not qualify or clean up." }
             if ($selfCheck.diagnosticsEnabled -ne $false) { throw "Installed MSI self-check diagnostics must be disabled." }
-            if ($selfCheck.passwordAuthEnabled -ne $false -or $selfCheck.passwordAuthContract -ne 'none') { throw "Installed MSI password authentication scaffold must remain disabled." }
             $installedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $app.FullName).Hash.ToLowerInvariant()
           } finally {
             $uninstall = Start-Process msiexec.exe -ArgumentList @('/x', $env:APPPORT_MSI, '/qn', '/norestart') -Wait -PassThru
@@ -213,7 +205,6 @@ jobs:
           if (-not $evidence.candidateReady) { throw "candidateReady must be true." }
           if ($evidence.signed -or $evidence.distributable) { throw "Alpha.4 must remain unsigned and non-distributable." }
           if ($evidence.diagnosticsEnabled -ne $false) { throw "Candidate evidence diagnostics must be disabled." }
-          if ($evidence.passwordAuthEnabled -ne $false -or $evidence.passwordAuthContract -ne 'none') { throw "Candidate evidence password authentication scaffold must remain disabled." }
           if ($evidence.profile -ne $env:APPPORT_QUALIFICATION_PROFILE) { throw "Evidence profile mismatch." }
       # actions/upload-artifact v7.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

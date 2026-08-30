@@ -128,8 +128,6 @@ function hasMatchingReportBasics(report, context) {
     report.profile === context.expectedProfile &&
     report.writesEnabled === context.expectedWrites &&
     report.diagnosticsEnabled === false &&
-    report.passwordAuthEnabled === false &&
-    report.passwordAuthContract === "none" &&
     hasOrderedTimestamps(report)
   );
 }

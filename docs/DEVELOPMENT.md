@@ -8,10 +8,12 @@ qualification configuration, or contact a tenant. `pnpm --dir apps/windows-clien
 is the configured Tauri development command and must run only on a suitable
 Windows host with the required compile-time inputs.
 
-The root workspace orchestrates the Windows client only. Its source gate covers the client application, documentation, and candidate-evidence helpers. For source-only checks without qualification inputs, run:
+The root workspace orchestrates the Windows client only. Its source gate covers
+the client application, documentation, and candidate-evidence helpers. For
+source-only checks without qualification inputs, run the canonical gate:
 
 ```sh
-APPPORT_SOURCE_VERIFICATION=true APPPORT_QUALIFICATION_PROFILE=read_only APPPORT_RELUTION_WRITES_ENABLED=false APPPORT_RELUTION_DIAGNOSTICS=false APPPORT_RELUTION_PASSWORD_AUTH_ENABLED=false APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT=none pnpm verify
+pnpm verify:source
 ```
 
 This mode embeds an invalid test origin that cannot contact a tenant. Release builds reject it.
@@ -31,8 +33,6 @@ $env:APPPORT_QUALIFICATION_TENANT_APPROVED = "true"
 $env:APPPORT_RELUTION_TENANT_CLASS = "qualification"
 $env:APPPORT_SOURCE_REVISION = (git rev-parse HEAD)
 $env:APPPORT_RELUTION_DIAGNOSTICS = "true"
-$env:APPPORT_RELUTION_PASSWORD_AUTH_ENABLED = "false"
-$env:APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT = "none"
 pnpm --dir apps/windows-client tauri dev
 ```
 
@@ -55,13 +55,8 @@ seven days. Treat the terminal, IDE, and CI capture as sensitive troubleshooting
 data just like the files, and remove them after the investigation unless a
 documented retention requirement applies.
 
-The password-authentication UI and native command contracts are scaffolding
-only. Source verification defaults the capability to disabled, and qualification
-builds must set `APPPORT_RELUTION_PASSWORD_AUTH_ENABLED=false` with
-`APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT=none`. Enabling either value is a build
-error until a supported Relution password-to-token contract is implemented and
-qualified. Tests may render the gated UI with mocked capabilities; they must not
-send a password to a network endpoint or persistence layer.
+The personal-token flow is the only supported sign-in path. The client does not
+use Basic authentication, portal cookies, or HTML login scraping.
 
 For a Windows alpha.4 MSI, use a Windows x64 MSVC environment and the approved
 non-secret qualification-tenant origin, organization UUID, and native application

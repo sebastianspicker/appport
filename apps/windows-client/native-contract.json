@@ -1,0 +1,26 @@
+{
+  "commands": [
+    "connect",
+    "bootstrap",
+    "list_apps",
+    "request_action",
+    "get_action",
+    "load_app_icon",
+    "support_details",
+    "generate_support_bundle",
+    "open_support_folder",
+    "sign_out",
+    "initial_view",
+    "open_relution_portal"
+  ],
+  "installStates": ["available", "update_available"],
+  "nativeErrorCodes": [
+    "OFFLINE",
+    "SESSION_EXPIRED",
+    "AUTHORIZATION_DENIED",
+    "DEVICE_MATCH_FAILED",
+    "SERVER",
+    "SUPPORT",
+    "UNKNOWN"
+  ]
+}

@@ -14,8 +14,6 @@ pub struct QualificationReport {
     pub token_redacted: bool,
     pub writes_enabled: bool,
     pub diagnostics_enabled: bool,
-    pub password_auth_enabled: bool,
-    pub password_auth_contract: &'static str,
     pub plan_fingerprint_sha256: Option<String>,
     pub candidate_msi_sha256: Option<String>,
     pub qualification_utility_sha256: Option<String>,
@@ -47,10 +45,6 @@ pub(super) fn finish_report(
         token_redacted: true,
         writes_enabled,
         diagnostics_enabled: option_env!("APPPORT_RELUTION_DIAGNOSTICS") == Some("true"),
-        password_auth_enabled: option_env!("APPPORT_RELUTION_PASSWORD_AUTH_ENABLED")
-            == Some("true"),
-        password_auth_contract: option_env!("APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT")
-            .unwrap_or("invalid"),
         plan_fingerprint_sha256,
         candidate_msi_sha256: binding
             .as_ref()
@@ -75,8 +69,9 @@ pub(super) fn now() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::finish_report;
     use crate::build_config::QualificationProfile;
+    use crate::qualification::{CheckStatus, QualificationCheck};
 
     fn check(name: &str, status: CheckStatus) -> QualificationCheck {
         QualificationCheck {
@@ -105,14 +100,6 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&passed_report).unwrap()["diagnosticsEnabled"],
             diagnostics_enabled
-        );
-        assert_eq!(
-            serde_json::to_value(&passed_report).unwrap()["passwordAuthEnabled"],
-            false
-        );
-        assert_eq!(
-            serde_json::to_value(&passed_report).unwrap()["passwordAuthContract"],
-            "none"
         );
         let failed_report = finish_report(
             QualificationProfile::ReadOnly,

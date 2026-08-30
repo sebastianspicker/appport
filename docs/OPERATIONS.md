@@ -26,12 +26,7 @@ The bounded response logs are redacted but can still contain sensitive tenant
 response data. Delete them after diagnosis unless the applicable incident-data
 policy requires retention.
 
-Qualification candidates must also set
-`APPPORT_RELUTION_PASSWORD_AUTH_ENABLED=false` and
-`APPPORT_RELUTION_PASSWORD_AUTH_CONTRACT=none`. These values identify a dormant
-compatibility scaffold, not an available authentication method. Operators must
-not enable password authentication without a vendor-supported exchange contract,
-an expiring and revocable issued token, and separate live qualification.
+The client supports personal-token sign-in only.
 
 Install the MSI on the Windows build host, run `Appport.exe
 --qualification-self-check`, capture its JSON output, and uninstall the MSI.

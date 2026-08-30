@@ -8,12 +8,14 @@ mod report;
 mod write;
 
 use crate::{
+    application::{actions::ActionService, catalog::CatalogService},
     build_config::QualificationProfile,
-    client::{RelutionClient, RelutionConfig},
+    infrastructure::relution::{RelutionClient, RelutionConfig},
 };
 use checks::{add_not_run_write_checks, failed, passed};
 use read::run_read_checks;
 use report::{finish_report, now};
+use std::sync::Arc;
 use write::run_write_checks;
 
 pub use checks::{CheckStatus, QualificationCheck};
@@ -110,7 +112,7 @@ async fn run_configured(
         "embedded profile is consistent",
     ));
     let client = match RelutionClient::new(config) {
-        Ok(client) => client,
+        Ok(client) => Arc::new(client),
         Err(_) => {
             checks.push(failed(
                 "native_client",
@@ -126,7 +128,21 @@ async fn run_configured(
             );
         }
     };
-    let plan_fingerprint = run_profile(&client, profile, &credentials, plan, &mut checks).await;
+    let catalog = Arc::new(CatalogService::new(Arc::clone(&client)));
+    let actions = Arc::new(ActionService::new(
+        Arc::clone(&client),
+        Arc::clone(&catalog),
+    ));
+    let plan_fingerprint = run_profile(
+        client.as_ref(),
+        catalog.as_ref(),
+        actions.as_ref(),
+        profile,
+        &credentials,
+        plan,
+        &mut checks,
+    )
+    .await;
     finish_report(
         profile,
         started,
@@ -139,16 +155,27 @@ async fn run_configured(
 
 async fn run_profile(
     client: &RelutionClient,
+    catalog: &CatalogService,
+    actions: &ActionService,
     profile: QualificationProfile,
     credentials: &QualificationCredentials,
     plan: Option<QualificationPlan>,
     checks: &mut Vec<QualificationCheck>,
 ) -> Option<String> {
-    let read_prerequisites = run_read_checks(client, credentials, checks).await;
+    let read_prerequisites = run_read_checks(client, catalog, credentials, checks).await;
     match profile {
         QualificationProfile::ReadOnly => run_read_only_profile(plan, checks),
         QualificationProfile::WriteQualification => {
-            run_write_profile(client, credentials, plan, read_prerequisites, checks).await
+            run_write_profile(
+                client,
+                catalog,
+                actions,
+                credentials,
+                plan,
+                read_prerequisites,
+                checks,
+            )
+            .await
         }
     }
 }
@@ -170,6 +197,8 @@ fn run_read_only_profile(
 
 async fn run_write_profile(
     client: &RelutionClient,
+    catalog: &CatalogService,
+    actions: &ActionService,
     credentials: &QualificationCredentials,
     plan: Option<QualificationPlan>,
     read_prerequisites: Option<read::ReadPrerequisites>,
@@ -184,7 +213,16 @@ async fn run_write_profile(
     };
     let fingerprint = plan.fingerprint();
     if let Some(prerequisites) = read_prerequisites {
-        run_write_checks(client, credentials, &plan, &prerequisites, checks).await;
+        run_write_checks(
+            client,
+            catalog,
+            actions,
+            credentials,
+            &plan,
+            &prerequisites,
+            checks,
+        )
+        .await;
     } else {
         checks.push(failed(
             "write_preconditions",

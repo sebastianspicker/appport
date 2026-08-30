@@ -175,7 +175,7 @@ fn digest(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::QualificationPlan;
 
     const UUIDS: [&str; 7] = [
         "10000000-0000-4000-8000-000000000001",
