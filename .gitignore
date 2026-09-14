@@ -3,11 +3,16 @@ node_modules/
 
 # Build and generated output
 /apps/windows-client/dist/
+/apps/web-demo/dist/
 /apps/windows-client/src-tauri/gen/
 target/
 *.tsbuildinfo
 .vite/
 /release-artifacts/
+
+# Local design drafts; public screenshots belong in docs/assets/screenshots/
+/design-preview/
+/output/product-design-exploration-*/
 
 # Test and analysis output
 coverage/
@@ -20,10 +25,13 @@ junit*.xml
 
 # Runtime data and logs
 *.log
+*.log.*
 *.db
 *.db-*
 *.sqlite
 *.sqlite-*
+*.sqlite3
+*.sqlite3-*
 
 # Local environment and credentials
 .env

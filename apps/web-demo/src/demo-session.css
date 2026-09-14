@@ -1,0 +1,215 @@
+/* stylelint-disable no-descending-specificity -- the earlier replacement-token offset intentionally wins over base form layout. */
+.session-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.device-card {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-card);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.device-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-card p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.online-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 5px 6px;
+  border-radius: var(--r-control);
+}
+
+.user-row:hover {
+  background: var(--bg-subtle);
+}
+
+.avatar {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.user-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text-2);
+}
+
+.icon-button:hover {
+  background: var(--bg-inset);
+  color: var(--text);
+}
+
+.replace-token {
+  border-radius: var(--r-control);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.replace-token summary {
+  padding: 5px 7px;
+  cursor: pointer;
+}
+
+.replace-token .connect-form {
+  margin-top: 7px;
+}
+
+.portal-link {
+  width: fit-content;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+}
+
+.portal-link:hover {
+  background: var(--accent-soft);
+}
+
+.signed-out-shell {
+  display: grid;
+  min-height: 100vh;
+  background: var(--bg-layer);
+}
+
+.connect-wrap {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  padding: 48px 24px;
+  background:
+    radial-gradient(
+      900px 440px at 20% -8%,
+      rgb(0 95 184 / 7%),
+      transparent 60%
+    ),
+    var(--bg-layer);
+}
+
+.connect-panel {
+  display: grid;
+  width: min(100%, 420px);
+  gap: 18px;
+  justify-items: start;
+}
+
+.connect-panel .brand-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.connect-panel p {
+  margin: -10px 0 0;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+
+.connect-form {
+  display: grid;
+  width: 100%;
+  gap: 11px;
+}
+
+.connect-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.connect-form input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--stroke-strong);
+  border-bottom-color: var(--text-3);
+  border-radius: var(--r-control);
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+.connect-form input:focus {
+  border-color: var(--accent);
+  outline: 0;
+}
+
+.connect-form small {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.connect-form .primary {
+  justify-self: start;
+  min-height: 34px;
+  padding: 5px 16px;
+  border-radius: var(--r-control);
+  font-weight: 650;
+}

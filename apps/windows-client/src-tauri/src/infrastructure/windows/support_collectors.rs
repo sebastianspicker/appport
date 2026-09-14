@@ -6,19 +6,14 @@
 use serde::Serialize;
 use std::net::IpAddr;
 
-pub(crate) const MAX_SMBIOS_BYTES: usize = 64 * 1024;
+#[cfg(any(test, windows))]
+use super::support_smbios::parse_smbios_type1;
+#[cfg(windows)]
+use super::support_smbios::{SmbiosType1, MAX_SMBIOS_BYTES};
+
 pub(crate) const MAX_NETWORK_ADAPTERS: usize = 16;
 #[cfg(windows)]
 const MAX_IP_HELPER_BYTES: usize = 256 * 1024;
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SmbiosType1 {
-    pub manufacturer: Option<String>,
-    pub model: Option<String>,
-    pub serial: Option<String>,
-    pub uuid: Option<String>,
-}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,81 +66,6 @@ pub(crate) fn format_windows_release(
         _ if build != "unknown" && !build.is_empty() => format!("{version} (10.0.{build})"),
         _ => version.to_owned(),
     }
-}
-
-/// Parses the SMBIOS table payload, not the eight-byte RawSMBIOSData header.
-pub(crate) fn parse_smbios_type1(table: &[u8]) -> Result<SmbiosType1, &'static str> {
-    if table.len() > MAX_SMBIOS_BYTES {
-        return Err("smbios_too_large");
-    }
-    let mut offset = 0;
-    while offset < table.len() {
-        if table.len() - offset < 4 {
-            return Err("smbios_malformed");
-        }
-        let structure_type = table[offset];
-        let formatted_len = table[offset + 1] as usize;
-        if formatted_len < 4 || formatted_len > table.len() - offset {
-            return Err("smbios_malformed");
-        }
-        let formatted = &table[offset..offset + formatted_len];
-        let strings_start = offset + formatted_len;
-        let Some(strings_end) = string_set_end(table, strings_start) else {
-            return Err("smbios_malformed");
-        };
-        if structure_type == 1 {
-            if formatted_len < 8 {
-                return Err("smbios_malformed");
-            }
-            return Ok(SmbiosType1 {
-                manufacturer: smbios_string(table, strings_start, strings_end, formatted[4]),
-                model: smbios_string(table, strings_start, strings_end, formatted[5]),
-                serial: smbios_string(table, strings_start, strings_end, formatted[7]),
-                uuid: formatted.get(8..24).and_then(|value| {
-                    (!value.iter().all(|byte| *byte == 0 || *byte == 0xff))
-                        .then(|| format_uuid(value))
-                }),
-            });
-        }
-        offset = strings_end;
-        if structure_type == 127 {
-            break;
-        }
-    }
-    Err("smbios_type1_unavailable")
-}
-
-fn string_set_end(table: &[u8], start: usize) -> Option<usize> {
-    let mut cursor = start;
-    while cursor + 1 < table.len() {
-        if table[cursor] == 0 && table[cursor + 1] == 0 {
-            return Some(cursor + 2);
-        }
-        cursor += 1;
-    }
-    None
-}
-
-fn smbios_string(table: &[u8], start: usize, end: usize, index: u8) -> Option<String> {
-    if index == 0 {
-        return None;
-    }
-    table[start..end.saturating_sub(1)]
-        .split(|byte| *byte == 0)
-        .nth(index.saturating_sub(1) as usize)
-        .and_then(|value| std::str::from_utf8(value).ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| value.chars().take(256).collect())
-}
-
-fn format_uuid(bytes: &[u8]) -> String {
-    // SMBIOS stores the first UUID fields little-endian in the common modern form.
-    format!(
-        "{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
-        bytes[3], bytes[2], bytes[1], bytes[0], bytes[5], bytes[4], bytes[7], bytes[6],
-        bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
-    )
 }
 
 pub(crate) fn bounded_network_summary(
@@ -284,13 +204,7 @@ fn native_adapter_summaries() -> Result<(Vec<NetworkAdapterSummary>, bool), &'st
         if size as usize > MAX_IP_HELPER_BYTES {
             return Err("network_buffer_too_large");
         }
-        let word_bytes = std::mem::size_of::<usize>();
-        let words = (size as usize)
-            .checked_add(word_bytes - 1)
-            .ok_or("network_buffer_too_large")?
-            / word_bytes;
-        let mut buffer = vec![0_usize; words];
-        let allocation_bytes = buffer.len() * word_bytes;
+        let mut buffer = adapter_buffer(size)?;
         let status = unsafe {
             GetAdaptersAddresses(
                 0,
@@ -306,38 +220,66 @@ fn native_adapter_summaries() -> Result<(Vec<NetworkAdapterSummary>, bool), &'st
         if status != 0 {
             return Err("network_ip_helper_unavailable");
         }
-        let start = buffer.as_ptr() as usize;
-        let end = start
-            .checked_add(allocation_bytes)
-            .ok_or("network_ip_helper_unavailable")?;
-        let mut current = buffer.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
-        let mut adapters = Vec::new();
-        while !current.is_null() && adapters.len() < MAX_NETWORK_ADAPTERS {
-            let address = current as usize;
-            if address % std::mem::align_of::<IP_ADAPTER_ADDRESSES_LH>() != 0
-                || address < start
-                || address
-                    .checked_add(std::mem::size_of::<IP_ADAPTER_ADDRESSES_LH>())
-                    .filter(|value| *value <= end)
-                    .is_none()
-            {
-                return Err("network_ip_helper_malformed");
-            }
-            let adapter = unsafe { &*current };
-            adapters.push(NetworkAdapterSummary {
-                name: bounded_wide_string(adapter.FriendlyName.0, start, end, 128),
-                status: if adapter.OperStatus.0 == 1 {
-                    "up"
-                } else {
-                    "down"
-                }
-                .to_owned(),
-            });
-            current = adapter.Next;
-        }
-        return Ok((adapters, !current.is_null()));
+        return collect_native_adapters(&mut buffer);
     }
     Err("network_ip_helper_unavailable")
+}
+
+#[cfg(windows)]
+fn adapter_buffer(size: u32) -> Result<Vec<usize>, &'static str> {
+    let word_bytes = std::mem::size_of::<usize>();
+    let words = (size as usize)
+        .checked_add(word_bytes - 1)
+        .ok_or("network_buffer_too_large")?
+        / word_bytes;
+    Ok(vec![0_usize; words])
+}
+
+#[cfg(windows)]
+fn collect_native_adapters(
+    buffer: &mut [usize],
+) -> Result<(Vec<NetworkAdapterSummary>, bool), &'static str> {
+    use windows::Win32::NetworkManagement::IpHelper::IP_ADAPTER_ADDRESSES_LH;
+
+    let start = buffer.as_ptr() as usize;
+    let end = start
+        .checked_add(std::mem::size_of_val(buffer))
+        .ok_or("network_ip_helper_unavailable")?;
+    let mut current = buffer.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
+    let mut adapters = Vec::new();
+    while !current.is_null() && adapters.len() < MAX_NETWORK_ADAPTERS {
+        if !valid_adapter_pointer(current, start, end) {
+            return Err("network_ip_helper_malformed");
+        }
+        let adapter = unsafe { &*current };
+        adapters.push(NetworkAdapterSummary {
+            name: bounded_wide_string(adapter.FriendlyName.0, start, end, 128),
+            status: adapter_status(adapter.OperStatus.0),
+        });
+        current = adapter.Next;
+    }
+    Ok((adapters, !current.is_null()))
+}
+
+#[cfg(windows)]
+fn valid_adapter_pointer(
+    pointer: *mut windows::Win32::NetworkManagement::IpHelper::IP_ADAPTER_ADDRESSES_LH,
+    start: usize,
+    end: usize,
+) -> bool {
+    use windows::Win32::NetworkManagement::IpHelper::IP_ADAPTER_ADDRESSES_LH;
+
+    let address = pointer as usize;
+    address % std::mem::align_of::<IP_ADAPTER_ADDRESSES_LH>() == 0
+        && address >= start
+        && address
+            .checked_add(std::mem::size_of::<IP_ADAPTER_ADDRESSES_LH>())
+            .is_some_and(|value| value <= end)
+}
+
+#[cfg(windows)]
+fn adapter_status(status: i32) -> String {
+    if status == 1 { "up" } else { "down" }.to_owned()
 }
 
 #[cfg(windows)]

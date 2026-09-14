@@ -1,14 +1,11 @@
+/* eslint-disable react-hooks/refs -- the test harness intentionally exposes stable refs used by the workflow contract. */
 import { act, renderHook } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogPhase } from "../catalog/types";
 import type { AvailableApp, NativeBootstrap } from "../native-bridge/types";
 import { native } from "../native-bridge/native";
-import {
-  createNativeMock,
-  resetNativeMockDefaults,
-  signOutOutcome,
-} from "../test/nativeMock";
+import { resetNativeMockDefaults, signOutOutcome } from "../test/nativeMock";
 import { useActionWorkflow } from "../catalog/useCatalogActions";
 import {
   useMounted,
@@ -21,7 +18,7 @@ vi.mock("../native-bridge/native", async () => {
   return { native: createNativeMock() };
 });
 
-function harness() {
+function useSessionHarness() {
   const mounted = useMounted();
   const generation = useRef(0);
   const timers = usePollTimerRegistry();
@@ -65,7 +62,7 @@ describe("client session operations", () => {
     vi.mocked(native.connect).mockResolvedValue({
       backgroundCheckRegistered: true,
     });
-    const { result } = renderHook(harness);
+    const { result } = renderHook(useSessionHarness);
     await act(async () => {
       await result.current.client.connect.connect({
         authMethod: "personal_token",
@@ -86,7 +83,7 @@ describe("client session operations", () => {
     vi.mocked(native.signOut).mockResolvedValue(
       signOutOutcome({ notificationStateCleared: false }),
     );
-    const { result } = renderHook(harness);
+    const { result } = renderHook(useSessionHarness);
     await act(async () => {
       await result.current.client.signOut.signOut();
     });
@@ -103,7 +100,7 @@ describe("client session operations", () => {
     vi.mocked(native.signOut).mockResolvedValue(
       signOutOutcome({ credentialRemoved: false }),
     );
-    const { result } = renderHook(harness);
+    const { result } = renderHook(useSessionHarness);
     await act(async () => {
       await result.current.client.signOut.signOut();
     });

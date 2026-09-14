@@ -24,9 +24,7 @@ use crate::infrastructure::journal;
 use crate::infrastructure::logging;
 #[cfg(windows)]
 use crate::{
-    application::{
-        actions::ActionService, background, catalog::CatalogService, support::SupportService,
-    },
+    application::{background, catalog::CatalogService},
     infrastructure::{
         relution,
         windows::{platform, task},
@@ -55,25 +53,30 @@ pub fn run() {
         );
         std::process::exit(if report.qualified { 0 } else { 1 });
     }
-    if let Err(error) = journal::recover_interrupted_reservations() {
-        logging::write(&error);
-    }
+    let journal = journal::ActionJournal::new();
     let Ok(config) =
         relution::RelutionConfig::embedded().inspect_err(|error| logging::write(error))
     else {
         return;
     };
-    if run_background_mode(&arguments, config.clone()) {
+    if run_background_mode(&arguments, config.clone(), journal.clone()) {
         return;
     }
     let Some(client) = foreground_client(config) else {
         return;
     };
-    launch_tauri(client, arguments);
+    if let Err(error) = journal.recover_interrupted_reservations() {
+        logging::write(&error);
+    }
+    launch_tauri(client, arguments, journal);
 }
 
 #[cfg(windows)]
-fn run_background_mode(arguments: &[String], config: relution::RelutionConfig) -> bool {
+fn run_background_mode(
+    arguments: &[String],
+    config: relution::RelutionConfig,
+    journal: journal::ActionJournal,
+) -> bool {
     if !matches!(
         runtime::launch_mode(arguments),
         runtime::LaunchMode::BackgroundCheck
@@ -83,7 +86,7 @@ fn run_background_mode(arguments: &[String], config: relution::RelutionConfig) -
     let Ok(client) = relution::RelutionClient::new(config).map(Arc::new) else {
         return true;
     };
-    let catalog = Arc::new(CatalogService::new(client));
+    let catalog = Arc::new(CatalogService::with_journal(client, journal));
     if let Err(error) = background::run_background_check(catalog) {
         logging::write(&error);
     }
@@ -103,23 +106,20 @@ fn foreground_client(config: relution::RelutionConfig) -> Option<Arc<relution::R
 }
 
 #[cfg(windows)]
-fn launch_tauri(client: Arc<relution::RelutionClient>, arguments: Vec<String>) {
+fn launch_tauri(
+    client: Arc<relution::RelutionClient>,
+    arguments: Vec<String>,
+    journal: journal::ActionJournal,
+) {
     if let Ok(executable) = std::env::current_exe() {
         if let Err(error) = task::register_protocol(&executable) {
             logging::write(&error);
         }
     }
-    let catalog = Arc::new(CatalogService::new(Arc::clone(&client)));
-    let actions = Arc::new(ActionService::new(
-        Arc::clone(&client),
-        Arc::clone(&catalog),
-    ));
-    let support = Arc::new(SupportService::new(Arc::clone(&catalog)));
+    let catalog = Arc::new(CatalogService::with_journal(Arc::clone(&client), journal));
     let state = Arc::new(AppState::new(
         client,
         catalog,
-        actions,
-        support,
         if runtime::opens_updates(&arguments) {
             "updates".into()
         } else {
@@ -133,6 +133,7 @@ fn launch_tauri(client: Arc<relution::RelutionClient>, arguments: Vec<String>) {
             commands::connect,
             commands::bootstrap,
             commands::list_apps,
+            commands::load_catalog,
             commands::request_action,
             commands::get_action,
             commands::load_app_icon,

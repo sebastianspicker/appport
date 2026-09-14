@@ -5,6 +5,18 @@ const expectedWritesByProfile = {
   write_qualification: "true",
 };
 
+const configurationEnvironmentKeys = {
+  origin: "APPPORT_RELUTION_API_BASE_URL",
+  organization: "APPPORT_RELUTION_ORGANIZATION_UUID",
+  nativeApp: "APPPORT_NATIVE_APP_UUID",
+  profile: "APPPORT_QUALIFICATION_PROFILE",
+  writes: "APPPORT_RELUTION_WRITES_ENABLED",
+  diagnostics: "APPPORT_RELUTION_DIAGNOSTICS",
+  tenantApproved: "APPPORT_QUALIFICATION_TENANT_APPROVED",
+  tenantClass: "APPPORT_RELUTION_TENANT_CLASS",
+  disposableApproved: "APPPORT_DISPOSABLE_RESOURCES_APPROVED",
+};
+
 export function inspectConfiguration(environment = process.env) {
   const values = qualificationConfigurationValues(environment);
   const failures = configurationFailures(values);
@@ -23,17 +35,11 @@ export function inspectConfiguration(environment = process.env) {
 }
 
 function qualificationConfigurationValues(environment) {
-  return {
-    origin: environment.APPPORT_RELUTION_API_BASE_URL ?? "",
-    organization: environment.APPPORT_RELUTION_ORGANIZATION_UUID ?? "",
-    nativeApp: environment.APPPORT_NATIVE_APP_UUID ?? "",
-    profile: environment.APPPORT_QUALIFICATION_PROFILE ?? "",
-    writes: environment.APPPORT_RELUTION_WRITES_ENABLED ?? "",
-    diagnostics: environment.APPPORT_RELUTION_DIAGNOSTICS ?? "",
-    tenantApproved: environment.APPPORT_QUALIFICATION_TENANT_APPROVED ?? "",
-    tenantClass: environment.APPPORT_RELUTION_TENANT_CLASS ?? "",
-    disposableApproved: environment.APPPORT_DISPOSABLE_RESOURCES_APPROVED ?? "",
-  };
+  return Object.fromEntries(
+    Object.entries(configurationEnvironmentKeys).map(
+      ([name, environmentKey]) => [name, environment[environmentKey] ?? ""],
+    ),
+  );
 }
 
 export function configurationFailures(values) {

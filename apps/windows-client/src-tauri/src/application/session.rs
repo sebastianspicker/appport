@@ -20,6 +20,7 @@ pub struct SessionCoordinator {
     active_generation: u64,
     sign_in_generation: u64,
     token_revocation_pending: bool,
+    support_confirmation: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -73,6 +74,7 @@ impl SessionCoordinator {
             active_generation: generation,
             sign_in_generation: generation,
             token_revocation_pending: false,
+            support_confirmation: None,
         }
     }
 
@@ -84,6 +86,38 @@ impl SessionCoordinator {
         self.store.credential().map(|(token, username, user_uuid)| {
             (token, username, user_uuid, self.active_generation)
         })
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.active_generation
+    }
+
+    pub fn ensure_current(&self, user_uuid: &str, generation: u64) -> Result<(), String> {
+        if self.active_generation == generation
+            && self
+                .store
+                .credential
+                .as_ref()
+                .is_some_and(|record| record.user_uuid() == user_uuid)
+        {
+            Ok(())
+        } else {
+            Err("session-expired: session changed while the request was running".into())
+        }
+    }
+
+    pub fn confirm_support(&mut self, user_uuid: &str, generation: u64) -> Result<(), String> {
+        self.ensure_current(user_uuid, generation)?;
+        self.support_confirmation = Some(generation);
+        Ok(())
+    }
+
+    pub fn consume_support_confirmation(&mut self, generation: u64) -> bool {
+        if self.support_confirmation != Some(generation) {
+            return false;
+        }
+        self.support_confirmation = None;
+        true
     }
 
     pub fn begin_sign_in(&mut self) -> SignInOperation {
@@ -109,6 +143,7 @@ impl SessionCoordinator {
                 SignInCompletionError::Credential(error)
             })?;
         self.active_generation = self.active_generation.wrapping_add(1);
+        self.support_confirmation = None;
         Ok(())
     }
 
@@ -120,6 +155,7 @@ impl SessionCoordinator {
     fn sign_out_with_clear_result(&mut self, clear_result: Result<(), String>) -> SignOutSnapshot {
         self.sign_in_generation = self.sign_in_generation.wrapping_add(1);
         self.active_generation = self.active_generation.wrapping_add(1);
+        self.support_confirmation = None;
         if self.store.take_access_token().is_some() {
             self.token_revocation_pending = true;
         }
@@ -222,6 +258,49 @@ mod tests {
 
         let third = session.sign_out_with_clear_result(Ok(()));
         assert!(!third.token_revocation_required);
+    }
+
+    #[test]
+    fn stale_details_cannot_replace_or_consume_new_session_support_consent() {
+        let mut session = SessionCoordinator::load();
+        let operation = session.begin_sign_in();
+        session
+            .finish_sign_in(operation, "first".into(), "User".into(), "user".into())
+            .unwrap();
+        let old = session.generation();
+        session.confirm_support("user", old).unwrap();
+        session.sign_out();
+        let operation = session.begin_sign_in();
+        session
+            .finish_sign_in(operation, "second".into(), "Other".into(), "other".into())
+            .unwrap();
+        let current = session.generation();
+        session.confirm_support("other", current).unwrap();
+        assert!(session.confirm_support("user", old).is_err());
+        assert!(!session.consume_support_confirmation(old));
+        assert!(session.consume_support_confirmation(current));
+        assert!(!session.consume_support_confirmation(current));
+    }
+
+    #[test]
+    fn sign_out_and_replacement_clear_support_confirmation() {
+        let mut session = SessionCoordinator::load();
+        let first = session.begin_sign_in();
+        session
+            .finish_sign_in(first, "token".into(), "User".into(), "user".into())
+            .unwrap();
+        let generation = session.generation();
+        session.confirm_support("user", generation).unwrap();
+        let second = session.begin_sign_in();
+        session
+            .finish_sign_in(second, "token2".into(), "User".into(), "user".into())
+            .unwrap();
+        assert!(!session.consume_support_confirmation(generation));
+        let generation = session.generation();
+        session.confirm_support("user", generation).unwrap();
+        session.sign_out();
+        assert!(!session.consume_support_confirmation(generation));
+        assert!(session.ensure_current("user", generation).is_err());
     }
 
     #[test]

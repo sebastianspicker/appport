@@ -1,8 +1,9 @@
 import { copyFor, type Locale } from "../i18n/copy";
-import { ActionStatus } from "./ActionStatus";
 import type { AppAction, AvailableApp } from "../native-bridge/types";
-import { UnknownAction } from "./UnknownAction";
+import { Icon } from "../ui/Icon";
+import { ActionStatus } from "./ActionStatus";
 import type { PollingState } from "./types";
+import { UnknownAction } from "./UnknownAction";
 
 type ActionSummaryProps = {
   action?: AppAction;
@@ -12,8 +13,13 @@ type ActionSummaryProps = {
   state: string | null | undefined;
 };
 
-export function ActionSummary(props: ActionSummaryProps) {
-  const { action, application, locale, polling, state } = props;
+export function ActionSummary({
+  action,
+  application,
+  locale,
+  polling,
+  state,
+}: ActionSummaryProps) {
   const copy = copyFor(locale);
   if (state === "unknown")
     return (
@@ -24,24 +30,128 @@ export function ActionSummary(props: ActionSummaryProps) {
       />
     );
   if (polling === "paused" && action)
-    return (
-      <p className="action-paused" role="status">
-        {copy.pollingPaused} <code>{action.id}</code>
-      </p>
-    );
+    return <PausedAction action={action} label={copy.pollingPaused} />;
   if (polling === "polling" && action)
     return (
-      <p className="action-polling" role="status">
-        {copy.polling} <code>{action.id}</code>
-      </p>
+      <PollingAction
+        action={action}
+        application={application}
+        locale={locale}
+      />
     );
   if (state)
-    return <ActionStatus label={state} state={state} status={copy.status} />;
+    return (
+      <ResolvedAction
+        action={action}
+        locale={locale}
+        state={state}
+        status={copy.status}
+      />
+    );
   return <VersionRail application={application} locale={locale} />;
 }
 
-function VersionRail(props: { application: AvailableApp; locale: Locale }) {
-  const { application, locale } = props;
+function PausedAction({ action, label }: { action: AppAction; label: string }) {
+  return (
+    <p className="action-paused status-note" role="status">
+      {label} <code>{action.id}</code>
+    </p>
+  );
+}
+
+function PollingAction({
+  action,
+  application,
+  locale,
+}: {
+  action: AppAction;
+  application: AvailableApp;
+  locale: Locale;
+}) {
+  const copy = copyFor(locale);
+  return (
+    <div className="action-polling status-line" role="status">
+      <span className="status-pill working">
+        <Icon name="updates" size={14} />
+        {actionStateLabel(action.state, action.intent, locale)}
+      </span>
+      <span
+        aria-label={`${copy.polling} ${application.name}`}
+        className="indeterminate-progress"
+        role="progressbar"
+      >
+        <i />
+      </span>
+      <small>
+        {copy.status}: <code>{action.id}</code>
+      </small>
+    </div>
+  );
+}
+
+function ResolvedAction({
+  action,
+  locale,
+  state,
+  status,
+}: {
+  action?: AppAction;
+  locale: Locale;
+  state: string;
+  status: string;
+}) {
+  const label = actionStateLabel(state, action?.intent, locale);
+  if (!isFailureWithMessage(state, action))
+    return <ActionStatus label={label} state={state} status={status} />;
+  return (
+    <div className="status-line">
+      <ActionStatus label={label} state={state} status={status} />
+      <p className="inline-error" role="alert">
+        <Icon name="error" size={16} />
+        {action.errorMessage}
+      </p>
+    </div>
+  );
+}
+
+function isFailureWithMessage(
+  state: string,
+  action: AppAction | undefined,
+): action is AppAction & { errorMessage: string } {
+  return (
+    (state === "failed" || state === "cancelled") &&
+    Boolean(action?.errorMessage)
+  );
+}
+
+function actionStateLabel(
+  state: string,
+  intent: AppAction["intent"] | undefined,
+  locale: Locale,
+) {
+  const copy = copyFor(locale);
+  const labels: Record<string, string> = {
+    queued: copy.actionQueued,
+    sent: copy.actionSent,
+    deferred: copy.actionDeferred,
+    succeeded: copy.actionSucceeded,
+    failed: copy.actionFailed,
+    cancelled: copy.actionCancelled,
+  };
+  if (state === "verifying")
+    return intent === "update"
+      ? copy.actionVerifyingUpdate
+      : copy.actionVerifyingInstall;
+  return labels[state] ?? state;
+}
+
+function VersionRail({
+  application,
+  locale,
+}: {
+  application: AvailableApp;
+  locale: Locale;
+}) {
   const copy = copyFor(locale);
   const target = application.releasedVersionLabel ?? copy.available;
   const label = application.installedVersionLabel
@@ -49,6 +159,7 @@ function VersionRail(props: { application: AvailableApp; locale: Locale }) {
     : `${copy.availableVersion}: ${target}.`;
   return (
     <div className="version-rail" aria-label={label}>
+      <span className="version-label">{copy.version}</span>
       {application.installedVersionLabel && (
         <>
           <span>{application.installedVersionLabel}</span>
@@ -56,6 +167,9 @@ function VersionRail(props: { application: AvailableApp; locale: Locale }) {
         </>
       )}
       <strong>{target}</strong>
+      {application.installedVersionLabel && (
+        <span className="status-pill success">{copy.updateAvailable}</span>
+      )}
     </div>
   );
 }

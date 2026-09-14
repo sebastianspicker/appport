@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CatalogPage } from "../catalog/CatalogPage";
 import { useActionWorkflow } from "../catalog/useCatalogActions";
 import {
@@ -22,6 +22,9 @@ import { SupportPanel } from "../support/SupportPanel";
 
 export function App() {
   const locale = localeFor(navigator.language);
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
   const [view, setView, resolveView] = useViewSelection();
   const mounted = useMounted();
   const pollTimers = usePollTimerRegistry();
@@ -29,8 +32,9 @@ export function App() {
   const [bootstrap, setBootstrap] = useBootstrapState();
   const [apps, setApps] = useAppsState();
   const [phase, setPhase] = usePhaseState();
+  const [catalogRevision, setCatalogRevision] = useState("");
   const setters = useMemo(
-    () => ({ setApps, setBootstrap, setPhase }),
+    () => ({ setApps, setBootstrap, setPhase, setCatalogRevision }),
     [setApps, setBootstrap, setPhase],
   );
   const load = useCatalogLoading(
@@ -41,7 +45,7 @@ export function App() {
     setters,
   );
   const filters = useCatalogFilters(apps, locale);
-  const actions = useActionWorkflow(
+  const { hydrateActions, ...actions } = useActionWorkflow(
     locale,
     mounted,
     operations.generation,
@@ -63,8 +67,8 @@ export function App() {
     actions.resetActions,
   );
   useEffect(() => {
-    void actions.hydrateActions(apps);
-  }, [actions.hydrateActions, apps]);
+    void hydrateActions(apps);
+  }, [apps, hydrateActions]);
   return (
     <CatalogPage
       catalog={{
@@ -72,6 +76,8 @@ export function App() {
         ...filters,
         apps,
         bootstrap,
+        catalogRevision,
+        setCatalogRevision,
         connect: connect.connect,
         iconSession: operations.iconSession,
         load,
@@ -89,6 +95,9 @@ export function App() {
       locale={locale}
       sessionControls={
         <SessionControls
+          key={bootstrap ? "connected" : "signed-out"}
+          problem={phase === "ready" ? undefined : phase}
+          warning={signOut.signOutWarning ?? connect.backgroundCheckWarning}
           bootstrap={bootstrap}
           locale={locale}
           onConnect={connect.connect}
@@ -96,9 +105,14 @@ export function App() {
           onSignOut={signOut.signOut}
         />
       }
-      supportPanel={
+      supportPanel={(active) =>
         bootstrap ? (
-          <SupportPanel bootstrap={bootstrap} locale={locale} />
+          <SupportPanel
+            key={operations.iconSession}
+            bootstrap={bootstrap}
+            locale={locale}
+            active={active}
+          />
         ) : null
       }
     />

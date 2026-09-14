@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
 import { copyFor, type Locale } from "../i18n/copy";
 import type { AvailableApp } from "../native-bridge/types";
-import { handleDialogKeyDown } from "../ui/dialogFocus";
+import { useModalDialog } from "../ui/useModalDialog";
+import { Icon } from "../ui/Icon";
 
 export function ConfirmationDialog({
   application,
@@ -19,57 +19,51 @@ export function ConfirmationDialog({
   onConfirm: () => void;
 }) {
   const copy = copyFor(locale);
-  const dialogRef = useRef<HTMLElement>(null);
+  const dialogRef = useModalDialog(returnFocus);
   const intent = application.installedVersionId
     ? copy.confirmUpdate
     : copy.confirmInstall;
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      handleDialogKeyDown(event, dialogRef.current, onCancel);
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      returnFocus?.focus();
-    };
-  }, [onCancel, returnFocus]);
   return (
-    <div className="dialog-backdrop" role="presentation">
-      <section
-        ref={dialogRef}
-        className="confirmation"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="confirmation-title"
-        aria-describedby="confirmation-warning"
-      >
-        <h2 id="confirmation-title">
-          {copy.confirmAction.replace("{intent}", intent)}
-        </h2>
-        <dl>
-          <div>
-            <dt>App</dt>
-            <dd>{application.name}</dd>
-          </div>
-          <div>
-            <dt>{copy.targetVersion}</dt>
-            <dd>{application.releasedVersionLabel ?? copy.available}</dd>
-          </div>
-          <div>
-            <dt>{copy.forDevice}</dt>
-            <dd>{deviceName}</dd>
-          </div>
-        </dl>
-        <p id="confirmation-warning" className="unknown-action">
-          {copy.confirmationWarning}
-        </p>
-        <div className="dialog-actions">
-          <button className="secondary" autoFocus onClick={onCancel}>
-            {copy.cancel}
-          </button>
-          <button onClick={onConfirm}>{copy.confirm}</button>
+    <dialog
+      ref={dialogRef}
+      className="confirmation"
+      aria-modal="true"
+      onCancel={(event) => {
+        event.preventDefault();
+        onCancel();
+      }}
+      aria-labelledby="confirmation-title"
+      aria-describedby="confirmation-warning"
+    >
+      <h2 id="confirmation-title">
+        {copy.confirmAction.replace("{intent}", intent)}
+      </h2>
+      <dl>
+        <div>
+          <dt>App</dt>
+          <dd>{application.name}</dd>
         </div>
-      </section>
-    </div>
+        <div>
+          <dt>{copy.targetVersion}</dt>
+          <dd>{application.releasedVersionLabel ?? copy.available}</dd>
+        </div>
+        <div>
+          <dt>{copy.forDevice}</dt>
+          <dd>{deviceName}</dd>
+        </div>
+      </dl>
+      <p id="confirmation-warning" className="unknown-action">
+        <Icon name="warning" size={16} />
+        {copy.confirmationWarning}
+      </p>
+      <div className="dialog-actions">
+        <button className="secondary" autoFocus onClick={onCancel}>
+          {copy.cancel}
+        </button>
+        <button className="primary" onClick={onConfirm}>
+          {copy.confirm}
+        </button>
+      </div>
+    </dialog>
   );
 }

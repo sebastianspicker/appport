@@ -98,6 +98,7 @@ function createSignOut({
   setWarning,
 }: SignOutContext) {
   return async () => {
+    setWarning(undefined);
     cancel();
     const outcome = await native.signOut().catch(() => undefined);
     if (!outcome) {

@@ -86,6 +86,21 @@ pub struct NativeBootstrap {
     pub writes_enabled: bool,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LoadCatalogRequest {
+    pub view: CatalogView,
+    pub force_refresh: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogSnapshot {
+    pub bootstrap: NativeBootstrap,
+    pub apps: Vec<AvailableApp>,
+    pub catalog_revision: String,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeUpdates {
@@ -392,11 +407,34 @@ mod tests {
             },
             writes_enabled: false,
         };
-        let bootstrap = serde_json::to_value(bootstrap).unwrap();
+        let snapshot = serde_json::to_value(super::CatalogSnapshot {
+            bootstrap,
+            apps: vec![],
+            catalog_revision: "opaque-revision".into(),
+        })
+        .unwrap();
+        assert_eq!(snapshot["catalogRevision"], "opaque-revision");
+        assert_eq!(snapshot["apps"], serde_json::json!([]));
+        let bootstrap = &snapshot["bootstrap"];
         assert!(bootstrap.get("sessionExpiresAt").is_none());
         assert_eq!(bootstrap["assignedEligibleCount"], 2);
         assert_eq!(bootstrap["availableCount"], 2);
         assert_eq!(bootstrap["writesEnabled"], false);
+    }
+
+    #[test]
+    fn catalog_refresh_request_is_explicit_and_strict() {
+        let request: super::LoadCatalogRequest =
+            serde_json::from_str(r#"{"view":"updates","forceRefresh":true}"#).unwrap();
+        assert_eq!(request.view, CatalogView::Updates);
+        assert!(request.force_refresh);
+        for invalid in [
+            r#"{"view":"updates"}"#,
+            r#"{"view":"installed","forceRefresh":false}"#,
+            r#"{"view":"apps","forceRefresh":false,"token":"unexpected"}"#,
+        ] {
+            assert!(serde_json::from_str::<super::LoadCatalogRequest>(invalid).is_err());
+        }
     }
 
     #[test]

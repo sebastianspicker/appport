@@ -3,6 +3,7 @@
     "connect",
     "bootstrap",
     "list_apps",
+    "load_catalog",
     "request_action",
     "get_action",
     "load_app_icon",

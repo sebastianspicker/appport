@@ -1,22 +1,46 @@
 # Security policy
 
-Appport is a Windows client. It does not ship web routes, a network service, or Relution technical-account credentials. Its per-user SQLite journal contains action recovery metadata and never stores the access token.
+Security fixes target `0.1.0-alpha.4`. This alpha is built for testing with one
+Relution organization at a time. It is unsigned and not ready for production or
+distribution.
 
-## Security boundary
+## Report a vulnerability
 
-- The endpoint is a fixed HTTPS origin embedded at build time. There is no runtime endpoint override.
-- The WebView has no network permission. Rust owns outbound requests.
-- Windows Credential Manager stores a versioned record containing the personal token, validated username, and immutable Relution user UUID.
-- The per-user action journal applies a current-user Windows ACL to its directory, database, and SQLite sidecars.
-- The client sends device evidence only to the configured Relution API.
-- Alpha.4 embeds one exact qualification profile and matching write flag; it has no runtime write override. Write qualification also requires explicit qualification-tenant and disposable-resource approvals.
+Use GitHub's Report a vulnerability option if it is available on this repository.
+There is currently no published private security email address. If GitHub does not
+offer private reporting, arrange a private channel with the maintainer before
+sending vulnerability details.
 
-Relution remains responsible for user authentication, authorization, audit retention, and deployment mutations. Do not add administrative tokens to this repository.
+A useful report includes the affected version, steps to reproduce the problem,
+its likely impact, and any workaround you found. Keep credentials, tokens, device
+identifiers, customer data, and exploit details out of public issues and
+discussions.
 
-## Reporting
+## How Appport handles sensitive data
 
-Report a vulnerability privately to the maintainer. Include affected version, reproduction steps, impact, and any mitigation already applied. Do not include credentials, bearer tokens, device identifiers, or customer data.
+Personal tokens are entered in the desktop client's masked field or the
+qualification utility's masked console prompt. Windows Credential Manager stores
+the user's session. Tokens are never accepted through command arguments,
+environment variables, files, or build settings, and must never appear in logs or
+reports. The SQLite journal stores action identifiers and recovery state, without
+tokens.
 
-## Supported version
+The WebView cannot make network requests. Rust sends requests to one HTTPS Relution
+origin set at build time. The running application cannot switch origins,
+qualification profiles, or deployment permissions.
 
-Only the current qualification alpha version, 0.1.0-alpha.4, receives security fixes. It is unsigned, tenant-fixed, non-distributable, and must not target production.
+Appport refuses catalog access or deployment when it cannot establish the user's
+permissions and assigned device. Before sending a deployment request, it records a
+local reservation to prevent duplicate submissions. It sends the request once and
+does not retry it automatically.
+
+Windows state is stored under fixed paths protected for the current user. Path
+checks reject symlinks and reparse points. Support ZIPs require the user's
+confirmation and exclude credentials, raw Relution responses, inventory, and the
+action journal.
+
+Relution manages authentication, permissions, audit retention, device inventory,
+and deployments. Appport does not need administrative tokens, service credentials,
+or private keys in its source or build artifacts. See
+[Architecture](docs/ARCHITECTURE.md) for the request flow and
+[Configuration](docs/CONFIGURATION.md) for diagnostic logging.

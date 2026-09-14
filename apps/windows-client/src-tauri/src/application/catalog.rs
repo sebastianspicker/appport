@@ -1,5 +1,10 @@
 //! Catalog application workflow: generation-fenced cache, authorization, and icons.
 
+#[path = "catalog_reads.rs"]
+mod reads;
+use reads::{join2, join3};
+
+use super::catalog_cache::{AuthorizedCatalog, CatalogCache, CATALOG_TTL};
 use crate::{
     domain::{
         action::attach_active_actions,
@@ -11,54 +16,108 @@ use crate::{
         device::{match_device, same_uuid},
     },
     infrastructure::{
-        journal,
+        journal::ActionJournal,
         relution::{dto, RelutionClient},
         windows::evidence,
     },
 };
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex as StdMutex},
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::Arc,
+    time::Duration,
 };
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
-#[derive(Default)]
-struct CredentialCache {
-    generation: Option<u64>,
-    device: Option<DeviceSummary>,
-    catalog: Option<AuthorizedCatalog>,
-    // Kept as the icon authorization projection for the credential generation.
-    apps: Option<Vec<AvailableApp>>,
-    icons: HashMap<String, Option<String>>,
-}
+#[path = "catalog_authorization.rs"]
+mod authorization;
+
 #[derive(Clone)]
-struct AuthorizedCatalog {
-    assigned_eligible_count: u32,
-    rows: Vec<AvailableApp>,
+pub struct LoadedCatalog {
+    pub bootstrap: CatalogBootstrap,
+    pub rows: Vec<AvailableApp>,
+    pub revision: String,
 }
 
 /// Concrete application service. The cache belongs here, not in the HTTP adapter.
 pub struct CatalogService {
     client: Arc<RelutionClient>,
-    cache: StdMutex<CredentialCache>,
-    device_refresh: AsyncMutex<()>,
+    journal: ActionJournal,
+    cache: CatalogCache,
     catalog_refresh: AsyncMutex<()>,
     icon_requests: Semaphore,
+    icon_refresh: [AsyncMutex<()>; 16],
+    catalog_ttl: Duration,
     #[cfg(test)]
     test_device_evidence: Option<crate::domain::device::DeviceEvidence>,
 }
 
 impl CatalogService {
     pub fn new(client: Arc<RelutionClient>) -> Self {
+        Self::with_journal(client, ActionJournal::new())
+    }
+
+    pub(crate) fn with_journal(client: Arc<RelutionClient>, journal: ActionJournal) -> Self {
         Self {
             client,
-            cache: StdMutex::new(CredentialCache::default()),
-            device_refresh: AsyncMutex::new(()),
+            journal,
+            cache: CatalogCache::default(),
             catalog_refresh: AsyncMutex::new(()),
             icon_requests: Semaphore::new(4),
+            icon_refresh: std::array::from_fn(|_| AsyncMutex::new(())),
+            catalog_ttl: CATALOG_TTL,
             #[cfg(test)]
             test_device_evidence: None,
         }
+    }
+
+    pub(crate) fn journal(&self) -> ActionJournal {
+        self.journal.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn using_journal(mut self, journal: ActionJournal) -> Self {
+        self.journal = journal;
+        self
+    }
+
+    #[cfg(test)]
+    fn with_cache_ttl(mut self, ttl: Duration) -> Self {
+        self.catalog_ttl = ttl;
+        self
+    }
+
+    pub async fn load_catalog(
+        &self,
+        token: &str,
+        username: &str,
+        user_uuid: &str,
+        generation: u64,
+        locale: &str,
+        force_refresh: bool,
+    ) -> Result<LoadedCatalog, String> {
+        let catalog = self
+            .authorized_snapshot(token, user_uuid, generation, locale, force_refresh)
+            .await?;
+        let mut rows = catalog.rows;
+        attach_active_actions(
+            &mut rows,
+            self.journal.active_actions(&catalog.device.id).await?,
+        );
+        self.cache
+            .validate_revision(generation, locale, &catalog.revision)?;
+        let (available_count, update_keys) = bootstrap_catalog_summary(&rows);
+        Ok(LoadedCatalog {
+            bootstrap: CatalogBootstrap {
+                username: username.into(),
+                device: catalog.device,
+                assigned_eligible_count: catalog.assigned_eligible_count,
+                available_count,
+                update_keys,
+                writes_enabled: self.client.writes_enabled(),
+            },
+            rows,
+            revision: catalog.revision,
+        })
     }
 
     #[cfg(test)]
@@ -79,21 +138,10 @@ impl CatalogService {
         generation: u64,
         locale: &str,
     ) -> Result<CatalogBootstrap, String> {
-        let device = self
-            .cached_current_device(token, user_uuid, generation)
-            .await?;
-        let catalog = self
-            .cached_authorized_catalog(token, user_uuid, &device, generation, locale)
-            .await?;
-        let (available_count, update_keys) = bootstrap_catalog_summary(&catalog.rows);
-        Ok(CatalogBootstrap {
-            username: username.into(),
-            device,
-            assigned_eligible_count: catalog.assigned_eligible_count,
-            available_count,
-            update_keys,
-            writes_enabled: self.client.writes_enabled(),
-        })
+        Ok(self
+            .load_catalog(token, username, user_uuid, generation, locale, false)
+            .await?
+            .bootstrap)
     }
 
     pub async fn list_apps(
@@ -104,15 +152,10 @@ impl CatalogService {
         view: CatalogView,
         locale: &str,
     ) -> Result<Vec<AvailableApp>, String> {
-        let device = self
-            .cached_current_device(token, user_uuid, generation)
+        let loaded = self
+            .load_catalog(token, "", user_uuid, generation, locale, false)
             .await?;
-        let mut apps = self
-            .cached_authorized_catalog(token, user_uuid, &device, generation, locale)
-            .await?
-            .rows;
-        attach_active_actions(&mut apps, journal::active_actions(&device.id)?);
-        Ok(filter_catalog_view(apps, view))
+        Ok(filter_catalog_view(loaded.rows, view))
     }
 
     pub async fn icon(
@@ -123,7 +166,33 @@ impl CatalogService {
         generation: u64,
         locale: &str,
     ) -> Result<Option<String>, String> {
-        if let Some(icon) = self.cached_icon(generation, app_id)? {
+        self.icon_for_revision(token, user_uuid, app_id, generation, locale, None)
+            .await
+    }
+
+    pub async fn icon_for_revision(
+        &self,
+        token: &str,
+        user_uuid: &str,
+        app_id: &str,
+        generation: u64,
+        locale: &str,
+        catalog_revision: Option<&str>,
+    ) -> Result<Option<String>, String> {
+        let authorization = self
+            .icon_authorization(
+                token,
+                user_uuid,
+                app_id,
+                generation,
+                locale,
+                catalog_revision,
+            )
+            .await?;
+        if let Some(icon) = self
+            .cache
+            .icon(generation, &authorization.revision, app_id)?
+        {
             return Ok(icon);
         }
         let _permit = self
@@ -131,29 +200,54 @@ impl CatalogService {
             .acquire()
             .await
             .map_err(|_| "unknown: icon request limit is unavailable")?;
-        if let Some(icon) = self.cached_icon(generation, app_id)? {
+        let stripe = icon_stripe(&authorization.revision, app_id);
+        let _refresh = self.icon_refresh[stripe].lock().await;
+        if let Some(icon) = self
+            .cache
+            .icon(generation, &authorization.revision, app_id)?
+        {
             return Ok(icon);
         }
-        let cached_apps = { self.cache_for(generation)?.apps.clone() };
-        let apps = match cached_apps {
-            Some(apps) => apps,
-            None => {
-                let device = self
-                    .cached_current_device(token, user_uuid, generation)
-                    .await?;
-                self.cached_authorized_catalog(token, user_uuid, &device, generation, locale)
-                    .await?
-                    .rows
-            }
-        };
-        if !apps.iter().any(|app| app.id == app_id) {
-            return Err("server: application is not permitted".into());
-        }
         let icon = self.client.fetch_icon(token, app_id).await?;
-        self.cache_for(generation)?
-            .icons
-            .insert(app_id.into(), icon.clone());
+        let current = self.cache.authorize_icon(
+            generation,
+            locale,
+            Some(&authorization.revision),
+            app_id,
+            self.catalog_ttl,
+        )?;
+        if current.is_none() {
+            return Err("session-expired: icon authorization was invalidated".into());
+        }
+        self.cache
+            .store_icon(generation, &authorization.revision, app_id, icon.clone())?;
         Ok(icon)
+    }
+
+    async fn icon_authorization(
+        &self,
+        token: &str,
+        user_uuid: &str,
+        app_id: &str,
+        generation: u64,
+        locale: &str,
+        revision: Option<&str>,
+    ) -> Result<super::catalog_cache::IconAuthorization, String> {
+        if let Some(authorization) =
+            self.cache
+                .authorize_icon(generation, locale, revision, app_id, self.catalog_ttl)?
+        {
+            return Ok(authorization);
+        }
+        let catalog = self
+            .authorized_snapshot(token, user_uuid, generation, locale, false)
+            .await?;
+        if revision.is_some_and(|revision| revision != catalog.revision) {
+            return Err("server: catalog revision is no longer current".into());
+        }
+        self.cache
+            .authorize_icon(generation, locale, revision, app_id, self.catalog_ttl)?
+            .ok_or("session-expired: icon authorization was invalidated".into())
     }
 
     pub(crate) async fn current_device_uncached(
@@ -163,95 +257,92 @@ impl CatalogService {
     ) -> Result<DeviceSummary, String> {
         self.resolve_current_device(token, user_uuid).await
     }
-    pub(crate) async fn authorized_app_uncached(
+    pub(crate) async fn action_target(
         &self,
         token: &str,
         user_uuid: &str,
-        device: &DeviceSummary,
         app_id: &str,
         locale: &str,
-    ) -> Result<AvailableApp, String> {
-        self.authorized_catalog(token, user_uuid, device, locale)
-            .await?
-            .rows
+    ) -> Result<(DeviceSummary, AvailableApp), String> {
+        let (device, entries, groups) = join3(
+            self.resolve_current_device(token, user_uuid),
+            self.client.catalog(token, locale),
+            self.client.user_groups(token, user_uuid),
+        )
+        .await;
+        let device = device?;
+        let app = entries?
             .into_iter()
-            .find(|app| app.id == app_id)
-            .ok_or("server: application is not permitted".into())
-    }
-    pub(crate) async fn invalidate_apps(&self, generation: u64) -> Result<(), String> {
-        let _refresh = self.catalog_refresh.lock().await;
-        let mut cache = self
-            .cache
-            .lock()
-            .map_err(|_| "unknown: native cache is unavailable")?;
-        if cache.generation == Some(generation) {
-            cache.catalog = None;
-            cache.apps = None;
+            .find(|entry| same_uuid(&entry.uuid, app_id))
+            .and_then(|entry| app_from(catalog_entry(entry), self.client.native_app_uuid()))
+            .ok_or("server: application is not permitted")?;
+        let group_ids = groups?
+            .groups
+            .into_iter()
+            .map(|group| group.uuid)
+            .collect::<Vec<_>>();
+        let (allowed, inventory) = join2(
+            authorization::allowed(&self.client, token, user_uuid, &group_ids, &app.id),
+            self.client.installed_apps(token, &device.id),
+        )
+        .await;
+        if !allowed? {
+            return Err("server: application is not permitted".into());
         }
-        Ok(())
+        let inventory = inventory?;
+        let installed = inventory.iter().map(installed_app).find(|item| {
+            item.app_id
+                .as_deref()
+                .is_some_and(|id| same_uuid(id, &app.id))
+        });
+        match classify_catalog_inventory(app, installed.as_ref())? {
+            CatalogInventoryClassification::Visible(app) => Ok((device, *app)),
+            CatalogInventoryClassification::InstalledCurrent => {
+                Err("server: application is already current or update is not approved".into())
+            }
+        }
     }
 
-    async fn cached_current_device(
-        &self,
-        token: &str,
-        user_uuid: &str,
-        generation: u64,
-    ) -> Result<DeviceSummary, String> {
-        if let Some(device) = self.cache_for(generation)?.device.clone() {
-            return Ok(device);
-        }
-        let _refresh = self.device_refresh.lock().await;
-        if let Some(device) = self.cache_for(generation)?.device.clone() {
-            return Ok(device);
-        }
-        let device = self.resolve_current_device(token, user_uuid).await?;
-        self.cache_for(generation)?.device = Some(device.clone());
-        Ok(device)
+    pub fn invalidate_session(&self, generation: u64) -> Result<(), String> {
+        self.cache.invalidate_session(generation)
     }
-    async fn cached_authorized_catalog(
+
+    pub(crate) async fn invalidate_apps(&self, generation: u64) -> Result<(), String> {
+        self.cache.invalidate_apps(generation)
+    }
+
+    async fn authorized_snapshot(
         &self,
         token: &str,
         user_uuid: &str,
-        device: &DeviceSummary,
         generation: u64,
         locale: &str,
+        force_refresh: bool,
     ) -> Result<AuthorizedCatalog, String> {
-        if let Some(catalog) = self.cache_for(generation)?.catalog.clone() {
-            return Ok(catalog);
+        let context = self.cache.context(generation, locale)?;
+        if !force_refresh {
+            if let Some(catalog) = self.cache.catalog(generation, locale, self.catalog_ttl)? {
+                return Ok(catalog);
+            }
         }
         let _refresh = self.catalog_refresh.lock().await;
-        if let Some(catalog) = self.cache_for(generation)?.catalog.clone() {
+        if let Some(catalog) = self.cache.refreshed_since(&context, self.catalog_ttl)? {
             return Ok(catalog);
         }
-        let catalog = self
-            .authorized_catalog(token, user_uuid, device, locale)
-            .await?;
-        let cache = &mut *self.cache_for(generation)?;
-        cache.apps = Some(catalog.rows.clone());
-        cache.catalog = Some(catalog.clone());
+        if !force_refresh {
+            if let Some(catalog) = self.cache.catalog(generation, locale, self.catalog_ttl)? {
+                return Ok(catalog);
+            }
+        }
+        let catalog = match self.refresh_catalog(token, user_uuid, locale).await {
+            Ok(catalog) => catalog,
+            Err(error) => {
+                self.cache.record_failure(&context, error.clone())?;
+                return Err(error);
+            }
+        };
+        self.cache.store_catalog(&context, catalog.clone())?;
         Ok(catalog)
-    }
-    fn cache_for(
-        &self,
-        generation: u64,
-    ) -> Result<std::sync::MutexGuard<'_, CredentialCache>, String> {
-        let mut cache = self
-            .cache
-            .lock()
-            .map_err(|_| "unknown: native cache is unavailable")?;
-        if cache.generation.is_some_and(|cached| generation < cached) {
-            return Err("session-expired: stale cache generation".into());
-        }
-        if cache.generation != Some(generation) {
-            *cache = CredentialCache {
-                generation: Some(generation),
-                ..CredentialCache::default()
-            };
-        }
-        Ok(cache)
-    }
-    fn cached_icon(&self, generation: u64, app_id: &str) -> Result<Option<Option<String>>, String> {
-        Ok(self.cache_for(generation)?.icons.get(app_id).cloned())
     }
 
     async fn resolve_current_device(
@@ -288,6 +379,7 @@ impl CatalogService {
             status: device.status,
         })
     }
+    #[cfg(test)]
     async fn authorized_catalog(
         &self,
         token: &str,
@@ -295,85 +387,53 @@ impl CatalogService {
         device: &DeviceSummary,
         locale: &str,
     ) -> Result<AuthorizedCatalog, String> {
-        let entries = self.client.catalog(token, locale).await?;
-        let group_ids = self
-            .client
-            .user_groups(token, user_uuid)
-            .await?
-            .groups
-            .into_iter()
-            .map(|group| group.uuid)
-            .collect::<Vec<_>>();
-        let inventory = self
-            .client
-            .installed_apps(token, &device.id)
-            .await?
-            .iter()
-            .map(installed_app)
-            .collect::<Vec<_>>();
-        let mut rows = Vec::new();
-        let mut assigned_eligible_count = 0;
-        for entry in entries {
-            let Some(app) = app_from(catalog_entry(entry), self.client.native_app_uuid()) else {
-                continue;
-            };
-            if !self.allowed(token, user_uuid, &group_ids, &app.id).await? {
-                continue;
-            }
-            assigned_eligible_count += 1;
-            let installed = inventory.iter().find(|item| {
-                item.app_id
-                    .as_deref()
-                    .is_some_and(|id| same_uuid(id, &app.id))
-            });
-            if let CatalogInventoryClassification::Visible(app) =
-                classify_catalog_inventory(app, installed)?
-            {
-                rows.push(*app);
-            }
-        }
-        rows.sort_by_key(|app| app.name.to_lowercase());
-        Ok(AuthorizedCatalog {
-            assigned_eligible_count,
-            rows,
-        })
+        let (entries, groups) = join2(
+            self.client.catalog(token, locale),
+            self.client.user_groups(token, user_uuid),
+        )
+        .await;
+        authorization::authorize_catalog_inputs(
+            &self.client,
+            token,
+            user_uuid,
+            device.clone(),
+            locale,
+            entries?,
+            groups?,
+        )
+        .await
     }
-    async fn allowed(
+
+    async fn refresh_catalog(
         &self,
         token: &str,
         user_uuid: &str,
-        group_ids: &[String],
-        app_id: &str,
-    ) -> Result<bool, String> {
-        let permissions = self.client.app_permissions(token, app_id).await?;
-        for permission in permissions.results {
-            if permission.read
-                && permission.subject.kind.eq_ignore_ascii_case("USER")
-                && same_uuid(&permission.subject.uuid, user_uuid)
-            {
-                return Ok(true);
-            }
-            if permission.read && permission.subject.kind.eq_ignore_ascii_case("GROUP") {
-                if group_ids
-                    .iter()
-                    .any(|group| same_uuid(group, &permission.subject.uuid))
-                {
-                    return Ok(true);
-                }
-                let members = self
-                    .client
-                    .group_members(token, &permission.subject.uuid)
-                    .await?;
-                if members
-                    .into_iter()
-                    .any(|member| same_uuid(&member.uuid, user_uuid))
-                {
-                    return Ok(true);
-                }
-            }
-        }
-        Ok(false)
+        locale: &str,
+    ) -> Result<AuthorizedCatalog, String> {
+        let (device, entries, groups) = join3(
+            self.resolve_current_device(token, user_uuid),
+            self.client.catalog(token, locale),
+            self.client.user_groups(token, user_uuid),
+        )
+        .await;
+        authorization::authorize_catalog_inputs(
+            &self.client,
+            token,
+            user_uuid,
+            device?,
+            locale,
+            entries?,
+            groups?,
+        )
+        .await
     }
+}
+
+fn icon_stripe(revision: &str, app_id: &str) -> usize {
+    let mut hasher = DefaultHasher::new();
+    revision.hash(&mut hasher);
+    app_id.hash(&mut hasher);
+    hasher.finish() as usize % 16
 }
 
 fn catalog_entry(value: dto::Catalog) -> CatalogEntry {

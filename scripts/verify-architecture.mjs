@@ -3,6 +3,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 
+import {
+  demoPagesWorkflowFailures,
+  verificationWorkflowFailures,
+} from "./workflow-contracts.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 const frontendRoot = "apps/windows-client/src";
 const rustRoot = "apps/windows-client/src-tauri/src";
@@ -28,14 +33,6 @@ const requiredPaths = [
   `${rustRoot}/qualification/plan.rs`,
   `${rustRoot}/qualification/report.rs`,
 ];
-
-const failures = architectureFailures();
-if (failures.length > 0) {
-  console.error(failures.map((failure) => `- ${failure}`).join("\n"));
-  process.exitCode = 1;
-} else {
-  console.log("Architecture verification passed.");
-}
 
 export function architectureFailures() {
   const failures = [];
@@ -75,14 +72,16 @@ function verifyFrontendFeatureImports(failures) {
 
 function verifyWorkflowScripts(failures) {
   const scripts = JSON.parse(read("package.json")).scripts ?? {};
-  const workflow = read(".github/workflows/verify.yml");
-  for (const match of workflow.matchAll(/\bpnpm\s+([a-z][\w:-]*)/g)) {
-    const name = match[1];
-    if (name === "install" || name === "exec") continue;
-    if (!(name in scripts)) {
-      failures.push(`workflow invokes missing package script ${name}`);
-    }
-  }
+  failures.push(
+    ...verificationWorkflowFailures(
+      read(".github/workflows/verify.yml"),
+      scripts,
+    ),
+    ...demoPagesWorkflowFailures(
+      read(".github/workflows/demo-pages.yml"),
+      scripts,
+    ),
+  );
 }
 
 function verifyFrontendNativeImports(failures) {
@@ -112,42 +111,60 @@ function verifyRustStructure(failures) {
   for (const path of sourceFiles(rustRoot, /\.rs$/)) {
     const source = read(path);
     const relativePath = relative(root, path).replaceAll("\\", "/");
-    if (/^\s*use\s+[^;]*::\*\s*;/m.test(source)) {
-      failures.push(`${relativePath} contains a glob import`);
-    }
-    if (relativePath.startsWith(`${rustRoot}/domain/`)) {
-      if (
-        /\b(?:tauri|reqwest|windows|rusqlite)::/.test(source) ||
-        /\bcrate::(?:application|infrastructure|interface)\b/.test(source)
-      ) {
-        failures.push(`${relativePath} crosses the pure domain boundary`);
-      }
-    }
-    if (relativePath.startsWith(`${rustRoot}/infrastructure/relution/`)) {
-      if (
-        /\bcrate::(?:application|interface)\b/.test(source) ||
-        /\bcrate::infrastructure::(?:journal|windows)\b/.test(source)
-      ) {
-        failures.push(`${relativePath} crosses the Relution adapter boundary`);
-      }
-      if (
-        /\bfn\s+(?:bootstrap|list_apps|request_action|get_action|icon)\s*\(/.test(
-          source,
-        )
-      ) {
-        failures.push(
-          `${relativePath} contains an application workflow facade`,
-        );
-      }
-    }
-    if (
-      relativePath === `${rustRoot}/interface/commands.rs` &&
-      /Result<\s*support::Support(?:Details|BundleResult)/.test(source)
-    ) {
-      failures.push(
-        `${relativePath} exposes an infrastructure support type at the native interface`,
-      );
-    }
+    failures.push(...rustSourceFailures(relativePath, source));
+  }
+}
+
+export function rustSourceFailures(relativePath, source) {
+  const failures = [];
+  verifyRustGlobImports(failures, relativePath, source);
+  verifyPureDomainBoundary(failures, relativePath, source);
+  verifyRelutionAdapterBoundary(failures, relativePath, source);
+  verifyNativeSupportContract(failures, relativePath, source);
+  return failures;
+}
+
+function verifyRustGlobImports(failures, relativePath, source) {
+  if (/^\s*use\s+[^;]*::\*\s*;/m.test(source)) {
+    failures.push(`${relativePath} contains a glob import`);
+  }
+}
+
+function verifyPureDomainBoundary(failures, relativePath, source) {
+  if (!relativePath.startsWith(`${rustRoot}/domain/`)) return;
+  if (
+    /\b(?:tauri|reqwest|windows|rusqlite)::/.test(source) ||
+    /\bcrate::(?:application|infrastructure|interface)\b/.test(source)
+  ) {
+    failures.push(`${relativePath} crosses the pure domain boundary`);
+  }
+}
+
+function verifyRelutionAdapterBoundary(failures, relativePath, source) {
+  if (!relativePath.startsWith(`${rustRoot}/infrastructure/relution/`)) return;
+  if (
+    /\bcrate::(?:application|interface)\b/.test(source) ||
+    /\bcrate::infrastructure::(?:journal|windows)\b/.test(source)
+  ) {
+    failures.push(`${relativePath} crosses the Relution adapter boundary`);
+  }
+  if (
+    /\bfn\s+(?:bootstrap|list_apps|request_action|get_action|icon)\s*\(/.test(
+      source,
+    )
+  ) {
+    failures.push(`${relativePath} contains an application workflow facade`);
+  }
+}
+
+function verifyNativeSupportContract(failures, relativePath, source) {
+  if (
+    relativePath === `${rustRoot}/interface/commands.rs` &&
+    /Result<\s*support::Support(?:Details|BundleResult)/.test(source)
+  ) {
+    failures.push(
+      `${relativePath} exposes an infrastructure support type at the native interface`,
+    );
   }
 }
 
@@ -189,3 +206,15 @@ function exists(path) {
 function read(path) {
   return readFileSync(path, "utf8");
 }
+
+function run() {
+  const failures = architectureFailures();
+  if (failures.length > 0) {
+    console.error(failures.map((failure) => `- ${failure}`).join("\n"));
+    process.exitCode = 1;
+  } else {
+    console.log("Architecture verification passed.");
+  }
+}
+
+if (import.meta.main) run();

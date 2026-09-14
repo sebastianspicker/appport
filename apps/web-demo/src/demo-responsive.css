@@ -1,0 +1,224 @@
+/* stylelint-disable property-no-deprecated -- clip remains paired with clip-path for older WebView accessibility support. */
+@keyframes indeterminate {
+  from {
+    transform: translateX(-70%);
+  }
+
+  to {
+    transform: translateX(240%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
+
+@media (width <= 850px) {
+  .navigation-rail {
+    flex-basis: 68px;
+    width: 68px;
+    padding-inline: 8px;
+  }
+
+  .brand-lockup {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .brand-lockup > span:last-child,
+  .nav-item > span:not(.nav-count),
+  .device-card p,
+  .device-name,
+  .user-name,
+  .replace-token,
+  .session-controls > .portal-link {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+
+  .nav-item {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .nav-item.active::before {
+    left: -8px;
+  }
+
+  .nav-count {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 15px;
+    padding: 0 3px;
+    font-size: 9px;
+  }
+
+  .device-card {
+    display: none;
+  }
+
+  .user-row {
+    justify-content: center;
+    padding: 4px 0;
+  }
+
+  .user-row .avatar {
+    display: none;
+  }
+
+  .icon-button {
+    position: static;
+  }
+
+  .content-pane {
+    padding: 24px;
+  }
+}
+
+@media (width <= 620px) {
+  .app-shell {
+    display: block;
+  }
+
+  .navigation-rail {
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    flex-direction: row;
+    width: 100%;
+    min-height: auto;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--stroke);
+  }
+
+  .brand-lockup {
+    width: 34px;
+    padding: 0;
+  }
+
+  .navigation-rail nav {
+    display: flex;
+    flex: 1;
+    grid-template-columns: unset;
+  }
+
+  .nav-item {
+    flex: 1;
+  }
+
+  .support-link {
+    flex: 0 0 40px;
+    margin: 0;
+  }
+
+  .session-controls {
+    display: flex;
+    margin: 0 0 0 auto;
+    padding: 0;
+  }
+
+  .user-row {
+    padding: 0;
+  }
+
+  .content-pane {
+    padding: 22px 16px 30px;
+  }
+
+  .content-header {
+    display: grid;
+    align-items: start;
+    gap: 16px;
+  }
+
+  .toolbar {
+    width: 100%;
+  }
+
+  .search-field {
+    flex: 1;
+  }
+
+  .search-field input {
+    width: 100%;
+  }
+
+  .source-field {
+    max-width: 124px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (forced-colors: active) {
+  :root {
+    --bg-base: Canvas;
+    --bg-layer: Canvas;
+    --bg-card: Canvas;
+    --bg-subtle: Canvas;
+    --bg-inset: Canvas;
+    --text: CanvasText;
+    --text-2: CanvasText;
+    --text-3: CanvasText;
+    --accent: Highlight;
+    --on-accent: HighlightText;
+    --stroke: ButtonText;
+    --stroke-strong: ButtonText;
+    --accent-soft: Canvas;
+    --success-soft: Canvas;
+    --warning-soft: Canvas;
+    --danger-soft: Canvas;
+  }
+
+  .nav-item.active::before {
+    background: Highlight;
+  }
+
+  .card,
+  .state,
+  .device-card,
+  .support-panel details,
+  .confirmation,
+  .support-dialog,
+  .search-field,
+  .source-field,
+  .version-rail {
+    border: 1px solid ButtonText;
+    box-shadow: none;
+  }
+
+  .primary {
+    border: 1px solid ButtonText;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .status-pill,
+  .inline-error,
+  .unknown-action,
+  .sign-out-warning,
+  .support-status,
+  .support-warning,
+  .support-error,
+  .support-local-note {
+    border: 1px solid ButtonText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}

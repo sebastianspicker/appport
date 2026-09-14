@@ -28,10 +28,11 @@ export function ActionControl(props: ActionControlProps) {
     writesEnabled,
   } = props;
   const copy = copyFor(locale);
-  if (state === "unknown") return null;
+  if (state === "unknown" || state === "succeeded") return null;
   if (polling === "paused")
     return (
       <button
+        className="action-button secondary"
         onClick={() => {
           onResume(application.id);
         }}
@@ -40,8 +41,12 @@ export function ActionControl(props: ActionControlProps) {
       </button>
     );
   if (busy || (state && !isTerminalActionState(state)))
-    return <button disabled>{copy.starting}</button>;
-  if (!writesEnabled) return <p className="read-only-note">{copy.readOnly}</p>;
+    return (
+      <button className="action-button secondary" disabled>
+        {copy.starting}
+      </button>
+    );
+  if (!writesEnabled) return null;
   return (
     <ActionButton
       application={application}

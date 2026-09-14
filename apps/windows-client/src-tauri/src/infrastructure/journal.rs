@@ -1,262 +1,238 @@
 //! Durable, fail-closed local action ledger. A reservation is the action.
 
+mod storage;
+
 use crate::domain::action::{Action, ActiveAction, Reservation, State, Transition};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::Connection;
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
-const RETENTION_DAYS: i64 = 90;
-const SCHEMA: &str = "PRAGMA journal_mode=WAL;
-CREATE TABLE IF NOT EXISTS actions (
- id TEXT PRIMARY KEY, tenant TEXT NOT NULL, device_id TEXT NOT NULL, app_id TEXT NOT NULL,
- version_id TEXT NOT NULL, package_id TEXT, intent TEXT NOT NULL, baseline TEXT NOT NULL,
- correlation TEXT, state TEXT NOT NULL CHECK(state IN ('reserved','queued','sent','deferred','verifying','succeeded','failed','cancelled','unknown')),
- error_code TEXT, error_message TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS active_action_per_app ON actions(device_id,app_id)
- WHERE state IN ('reserved','queued','sent','deferred','verifying','unknown');";
-fn path() -> Result<PathBuf, String> {
-    let directory = journal_directory()?;
-    secure_current_user(&directory)?;
-    Ok(directory.join("actions.sqlite3"))
+use storage::{
+    action_in, active_actions_in, best_effort_prune, initialize, recover_in, reserve_in,
+    transition_in,
+};
+
+#[derive(Clone)]
+pub(crate) struct ActionJournal {
+    inner: Arc<JournalInner>,
+}
+
+struct JournalInner {
+    location: JournalLocation,
+    connection: Mutex<Option<OpenedJournal>>,
+}
+
+struct OpenedJournal {
+    path: PathBuf,
+    connection: Connection,
+}
+
+enum JournalLocation {
+    Default,
+    Fixed(PathBuf),
+}
+
+impl ActionJournal {
+    /// Creates an independent lazy journal handle for one process-level owner.
+    /// Clone the handle when the same connection must be shared by services.
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: Arc::new(JournalInner {
+                location: JournalLocation::Default,
+                connection: Mutex::new(None),
+            }),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn at_path(path: PathBuf) -> Self {
+        Self {
+            inner: Arc::new(JournalInner {
+                location: JournalLocation::Fixed(path),
+                connection: Mutex::new(None),
+            }),
+        }
+    }
+
+    /// Startup-only recovery. Normal initialization, reads, and writes do not
+    /// mutate reservations.
+    pub(crate) fn recover_interrupted_reservations(&self) -> Result<(), String> {
+        self.with_connection(|connection| {
+            let timestamp = now();
+            recover_in(connection, timestamp)?;
+            best_effort_prune(connection, timestamp);
+            Ok(())
+        })
+    }
+
+    pub(crate) async fn reserve(&self, reservation: Reservation<'_>) -> Result<(), String> {
+        let reservation = OwnedReservation::from(reservation);
+        self.run_blocking(move |connection| {
+            let timestamp = now();
+            reserve_in(connection, reservation.as_borrowed(), timestamp)?;
+            best_effort_prune(connection, timestamp);
+            Ok(())
+        })
+        .await
+    }
+
+    /// Compare-and-set transition. It changes exactly one existing action or fails.
+    pub(crate) async fn transition(
+        &self,
+        id: &str,
+        expected: State,
+        event: Transition<'_>,
+    ) -> Result<(), String> {
+        let id = id.to_owned();
+        let event = OwnedTransition::from(event);
+        self.run_blocking(move |connection| {
+            let timestamp = now();
+            transition_in(connection, &id, expected, event.as_borrowed(), timestamp)?;
+            best_effort_prune(connection, timestamp);
+            Ok(())
+        })
+        .await
+    }
+
+    pub(crate) async fn action(&self, id: &str) -> Result<Option<Action>, String> {
+        let id = id.to_owned();
+        self.run_blocking(move |connection| action_in(connection, &id))
+            .await
+    }
+
+    /// Read-only catalog visibility lookup; Unknown remains active.
+    pub(crate) async fn active_actions(
+        &self,
+        device_id: &str,
+    ) -> Result<Vec<ActiveAction>, String> {
+        let device_id = device_id.to_owned();
+        self.run_blocking(move |connection| active_actions_in(connection, &device_id))
+            .await
+    }
+
+    async fn run_blocking<T, F>(&self, operation: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Connection) -> Result<T, String> + Send + 'static,
+    {
+        let journal = self.clone();
+        tokio::task::spawn_blocking(move || journal.with_connection(operation))
+            .await
+            .map_err(|_| "unknown: action journal worker failed".to_owned())?
+    }
+
+    fn with_connection<T>(
+        &self,
+        operation: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut connection = self
+            .inner
+            .connection
+            .lock()
+            .map_err(|_| "unknown: action journal is unavailable")?;
+        if connection.is_none() {
+            let opened = open(self.inner.location.path()?)?;
+            *connection = Some(opened);
+        }
+        let opened = connection
+            .as_ref()
+            .ok_or("unknown: action journal is unavailable")?;
+        validate_existing_journal_files(&opened.path)?;
+        operation(&opened.connection)
+    }
+}
+
+impl Default for ActionJournal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl JournalLocation {
+    fn path(&self) -> Result<PathBuf, String> {
+        match self {
+            Self::Default => default_path(),
+            Self::Fixed(path) => Ok(path.clone()),
+        }
+    }
+}
+
+fn open(journal_path: PathBuf) -> Result<OpenedJournal, String> {
+    let directory = journal_path
+        .parent()
+        .ok_or("unknown: action journal directory is unavailable")?;
+    crate::infrastructure::windows::path_security::validate_not_reparse(directory)?;
+    secure_current_user(directory)?;
+    validate_existing_journal_files(&journal_path)?;
+    let connection =
+        Connection::open(&journal_path).map_err(|_| "unknown: action journal is unavailable")?;
+    initialize(&connection)?;
+    validate_existing_journal_files(&journal_path)?;
+    secure_existing_journal_files(&journal_path)?;
+    Ok(OpenedJournal {
+        path: journal_path,
+        connection,
+    })
+}
+
+fn validate_existing_journal_files(journal_path: &Path) -> Result<(), String> {
+    for path in journal_paths(journal_path) {
+        match fs::symlink_metadata(&path) {
+            Ok(_) => crate::infrastructure::windows::path_security::validate_not_reparse(&path)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("unknown: action journal is unavailable".into()),
+        }
+    }
+    Ok(())
+}
+
+fn secure_existing_journal_files(journal_path: &Path) -> Result<(), String> {
+    for path in journal_paths(journal_path) {
+        match fs::symlink_metadata(&path) {
+            Ok(_) => secure_current_user(&path)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("unknown: action journal is unavailable".into()),
+        }
+    }
+    Ok(())
+}
+
+fn journal_paths(path: &Path) -> [PathBuf; 3] {
+    [
+        path.to_path_buf(),
+        PathBuf::from(format!("{}-wal", path.display())),
+        PathBuf::from(format!("{}-shm", path.display())),
+    ]
 }
 
 #[cfg(windows)]
-fn journal_directory() -> Result<PathBuf, String> {
+fn default_path() -> Result<PathBuf, String> {
     crate::infrastructure::windows::system_tools::appport_local_data_directory()
+        .map(|directory| directory.join("actions.sqlite3"))
         .map_err(|_| "unknown: action journal directory is unavailable".into())
 }
 
 #[cfg(not(windows))]
-fn journal_directory() -> Result<PathBuf, String> {
+fn default_path() -> Result<PathBuf, String> {
     let base = std::env::var_os("LOCALAPPDATA").ok_or("unknown: LOCALAPPDATA is unavailable")?;
     let directory = PathBuf::from(base).join("Relution").join("Appport");
     fs::create_dir_all(&directory)
         .map_err(|_| "unknown: action journal directory is unavailable")?;
-    Ok(directory)
+    Ok(directory.join("actions.sqlite3"))
 }
+
 fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
 }
-fn open() -> Result<Connection, String> {
-    let journal_path = path()?;
-    let connection =
-        Connection::open(&journal_path).map_err(|_| "unknown: action journal is unavailable")?;
-    initialize(&connection)?;
-    secure_current_user(&journal_path)?;
-    for suffix in ["-wal", "-shm"] {
-        let sidecar = PathBuf::from(format!("{}{suffix}", journal_path.display()));
-        if sidecar.exists() {
-            secure_current_user(&sidecar)?;
-        }
-    }
-    Ok(connection)
-}
-fn initialize(connection: &Connection) -> Result<(), String> {
-    connection
-        .execute_batch(SCHEMA)
-        .map_err(|_| "unknown: action journal is unavailable".into())
-}
-/// Startup-only recovery. Normal reads and writes never mutate reservations.
-pub(crate) fn recover_interrupted_reservations() -> Result<(), String> {
-    let connection = open()?;
-    connection
-        .execute(
-            "UPDATE actions SET state='unknown', error_code='SUBMISSION_INTERRUPTED', error_message='The submission status could not be confirmed. Do not retry.', updated_at=?1 WHERE state='reserved'",
-            params![now()],
-        )
-        .map_err(|_| "unknown: action journal could not recover interrupted actions")?;
-    best_effort_prune(&connection, now());
-    Ok(())
-}
-pub(crate) fn reserve(reservation: Reservation<'_>) -> Result<(), String> {
-    let connection = open()?;
-    let timestamp = now();
-    let inserted = connection.execute(
-        "INSERT INTO actions(id,tenant,device_id,app_id,version_id,package_id,intent,baseline,state,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'reserved',?9,?9)",
-        params![reservation.id,reservation.tenant,reservation.device,reservation.app,reservation.version,reservation.package,reservation.intent.as_str(),reservation.baseline,timestamp],
-    ).map_err(|_| "server: an active application action already exists")?;
-    if inserted != 1 {
-        return Err("unknown: action journal reservation did not persist".into());
-    }
-    best_effort_prune(&connection, timestamp);
-    Ok(())
-}
 
-/// Compare-and-set transition. It changes exactly one existing action or fails.
-pub(crate) fn transition(id: &str, expected: State, event: Transition<'_>) -> Result<(), String> {
-    let connection = open()?;
-    transition_in(&connection, id, expected, event, now())?;
-    best_effort_prune(&connection, now());
-    Ok(())
-}
-
-fn transition_in(
-    connection: &Connection,
-    id: &str,
-    expected: State,
-    event: Transition<'_>,
-    timestamp: i64,
-) -> Result<(), String> {
-    if !event.allowed_from(expected) {
-        return Err("server: illegal application action transition".into());
-    }
-    let target = event.target();
-    let (correlation, code, message) = event.detail();
-    let changed = connection
-        .execute(
-            "UPDATE actions SET state=?2, correlation=COALESCE(?3,correlation), error_code=?4, error_message=?5, updated_at=?6 WHERE id=?1 AND state=?7 AND (?3 IS NULL OR correlation IS NULL OR correlation=?3)",
-            params![id, target.as_str(), correlation, code, message, timestamp, expected.as_str()],
-        )
-        .map_err(|_| "unknown: action journal could not be updated")?;
-    if changed == 1 {
-        return Ok(());
-    }
-    let exists = connection
-        .query_row("SELECT 1 FROM actions WHERE id=?1", params![id], |_| Ok(()))
-        .optional()
-        .map_err(|_| "unknown: action journal is unavailable")?
-        .is_some();
-    Err(if exists {
-        "server: stale application action transition".into()
-    } else {
-        "server: application action was not found".into()
-    })
-}
-
-pub(crate) fn action(id: &str) -> Result<Option<Action>, String> {
-    let connection = open()?;
-    connection
-        .query_row(
-            "SELECT id,device_id,app_id,version_id,package_id,intent,baseline,correlation,state,error_code,error_message,created_at,updated_at FROM actions WHERE id=?1",
-            params![id],
-            action_from_row,
-        )
-        .optional()
-        .map_err(|_| "unknown: action journal is unavailable".into())
-}
-
-/// Read-only catalog visibility lookup; it includes Unknown because it remains active.
-pub(crate) fn active_actions(device_id: &str) -> Result<Vec<ActiveAction>, String> {
-    active_actions_in(&open()?, device_id)
-}
-
-fn active_actions_in(
-    connection: &Connection,
-    device_id: &str,
-) -> Result<Vec<ActiveAction>, String> {
-    let rows = connection
-        .prepare("SELECT id,app_id,state FROM actions WHERE device_id=?1 ORDER BY created_at,id")
-        .and_then(|mut statement| {
-            statement
-                .query_map(params![device_id], active_action_from_row)
-                .map(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-        });
-    rows.and_then(|actions| {
-        actions.map(|actions| {
-            actions
-                .into_iter()
-                .filter(|action| action.state.catalog_active())
-                .collect()
-        })
-    })
-    .map_err(|_| "unknown: action journal is unavailable".into())
-}
-
-fn active_action_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ActiveAction> {
-    Ok(ActiveAction {
-        id: row.get(0)?,
-        app_id: row.get(1)?,
-        state: State::decode(&row.get::<_, String>(2)?)
-            .map_err(|_| rusqlite::Error::InvalidColumnName("state".into()))?,
-    })
-}
-
-fn action_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Action> {
-    let state = State::decode(&row.get::<_, String>(8)?)
-        .map_err(|_| rusqlite::Error::InvalidColumnName("state".into()))?;
-    Ok(Action {
-        id: row.get(0)?,
-        device_id: row.get(1)?,
-        app_id: row.get(2)?,
-        version_id: row.get(3)?,
-        package_id: row.get(4)?,
-        intent: crate::domain::action::Intent::decode(&row.get::<_, String>(5)?),
-        baseline: row.get(6)?,
-        correlation: row.get(7)?,
-        state,
-        error_code: row.get(9)?,
-        error_message: row.get(10)?,
-        created_at: row.get(11)?,
-        updated_at: row.get(12)?,
-    })
-}
-
-fn prune(connection: &Connection, timestamp: i64) -> Result<(), String> {
-    connection
-        .execute(
-            "DELETE FROM actions WHERE state IN ('succeeded','failed','cancelled') AND updated_at < ?1",
-            params![timestamp - RETENTION_DAYS * 86400],
-        )
-        .map_err(|_| "unknown: action journal could not be pruned")?;
-    Ok(())
-}
-
-// Retention failure must not obscure a successfully persisted action outcome.
-fn best_effort_prune(connection: &Connection, timestamp: i64) {
-    let _ = prune(connection, timestamp);
-}
-
-#[cfg(windows)]
-fn current_user_sid() -> Result<String, String> {
-    let output = crate::infrastructure::windows::system_tools::command("whoami.exe")
-        .map_err(|_| "unknown: current-user security identity is unavailable")?
-        .args(["/user", "/fo", "csv", "/nh"])
-        .output()
-        .map_err(|_| "unknown: current-user security identity is unavailable")?;
-    if !output.status.success() {
-        return Err("unknown: current-user security identity is unavailable".into());
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .split(',')
-        .nth(1)
-        .map(|value| value.trim().trim_matches('"').to_owned())
-        .filter(|value| value.starts_with("S-1-"))
-        .ok_or_else(|| "unknown: current-user security identity is unavailable".into())
-}
-
-#[cfg(windows)]
-pub(crate) fn secure_current_user(path: &std::path::Path) -> Result<(), String> {
-    let sid = current_user_sid()?;
-    let grant = if path.is_dir() {
-        format!("*{sid}:(OI)(CI)F")
-    } else {
-        format!("*{sid}:F")
-    };
-    let status = crate::infrastructure::windows::system_tools::command("icacls.exe")
-        .map_err(|_| "unknown: action journal ACL could not be applied")?
-        .arg(path)
-        .args(["/inheritance:r", "/grant:r"])
-        .arg(grant)
-        .args(["/remove:g", "*S-1-1-0", "*S-1-5-11", "*S-1-5-32-545", "/q"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map_err(|_| "unknown: action journal ACL could not be applied")?;
-    status
-        .success()
-        .then_some(())
-        .ok_or_else(|| "unknown: action journal ACL could not be applied".into())
-}
-
-#[cfg(not(windows))]
-fn secure_current_user(_: &std::path::Path) -> Result<(), String> {
-    Ok(())
+pub(crate) fn secure_current_user(path: &Path) -> Result<(), String> {
+    crate::infrastructure::windows::path_security::secure_current_user(path)
 }
 
 #[cfg(windows)]
@@ -283,6 +259,111 @@ pub fn qualification_acl_self_check() -> Result<(), String> {
 #[cfg(not(windows))]
 pub fn qualification_acl_self_check() -> Result<(), String> {
     Err("unknown: Windows ACLs are unavailable".into())
+}
+
+struct OwnedReservation {
+    id: String,
+    tenant: String,
+    device: String,
+    app: String,
+    version: String,
+    package: Option<String>,
+    intent: crate::domain::action::Intent,
+    baseline: String,
+}
+
+impl From<Reservation<'_>> for OwnedReservation {
+    fn from(value: Reservation<'_>) -> Self {
+        Self {
+            id: value.id.to_owned(),
+            tenant: value.tenant.to_owned(),
+            device: value.device.to_owned(),
+            app: value.app.to_owned(),
+            version: value.version.to_owned(),
+            package: value.package.map(str::to_owned),
+            intent: value.intent,
+            baseline: value.baseline.to_owned(),
+        }
+    }
+}
+
+impl OwnedReservation {
+    fn as_borrowed(&self) -> Reservation<'_> {
+        Reservation {
+            id: &self.id,
+            tenant: &self.tenant,
+            device: &self.device,
+            app: &self.app,
+            version: &self.version,
+            package: self.package.as_deref(),
+            intent: self.intent,
+            baseline: &self.baseline,
+        }
+    }
+}
+
+enum OwnedTransition {
+    SubmissionAccepted,
+    SubmissionRejected,
+    SubmissionUncertain,
+    RemoteObserved {
+        state: State,
+        correlation: String,
+        error_code: Option<String>,
+    },
+    VerificationTimedOut,
+    InventoryConfirmed,
+    RemoteMissing {
+        correlation_known: bool,
+    },
+}
+
+impl From<Transition<'_>> for OwnedTransition {
+    fn from(value: Transition<'_>) -> Self {
+        match value {
+            Transition::SubmissionAccepted => Self::SubmissionAccepted,
+            Transition::SubmissionRejected => Self::SubmissionRejected,
+            Transition::SubmissionUncertain => Self::SubmissionUncertain,
+            Transition::RemoteObserved {
+                state,
+                correlation,
+                error_code,
+            } => Self::RemoteObserved {
+                state,
+                correlation: correlation.to_owned(),
+                error_code: error_code.map(str::to_owned),
+            },
+            Transition::VerificationTimedOut => Self::VerificationTimedOut,
+            Transition::InventoryConfirmed => Self::InventoryConfirmed,
+            Transition::RemoteMissing { correlation_known } => {
+                Self::RemoteMissing { correlation_known }
+            }
+        }
+    }
+}
+
+impl OwnedTransition {
+    fn as_borrowed(&self) -> Transition<'_> {
+        match self {
+            Self::SubmissionAccepted => Transition::SubmissionAccepted,
+            Self::SubmissionRejected => Transition::SubmissionRejected,
+            Self::SubmissionUncertain => Transition::SubmissionUncertain,
+            Self::RemoteObserved {
+                state,
+                correlation,
+                error_code,
+            } => Transition::RemoteObserved {
+                state: *state,
+                correlation,
+                error_code: error_code.as_deref(),
+            },
+            Self::VerificationTimedOut => Transition::VerificationTimedOut,
+            Self::InventoryConfirmed => Transition::InventoryConfirmed,
+            Self::RemoteMissing { correlation_known } => Transition::RemoteMissing {
+                correlation_known: *correlation_known,
+            },
+        }
+    }
 }
 
 #[cfg(test)]

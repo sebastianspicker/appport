@@ -1,52 +1,59 @@
 # Release status: 0.1.0-alpha.4
 
-Status date: 2026-08-10
+Appport is an alpha for testing on managed Windows devices. It is not ready for
+production or distribution. The repository includes the desktop application, a
+command-line qualification utility, build and test tools, and a browser demo with
+fictional data.
 
-## Repository scope
+## What the repository checks
 
-The active repository contains the standalone Tauri 2 Windows client, its React interface, native Rust implementation, source tests, documentation, and candidate-evidence tooling. It does not contain the retired web service or PWA implementation.
+`pnpm verify:source` checks the desktop frontend, portable Rust code, documentation,
+architecture, and build-verification tools. `pnpm demo:verify` checks the browser
+demo separately. Passing these commands is useful local validation, but it does
+not establish that an MSI installs correctly or that the client works with a live
+Relution tenant.
 
-## Verified locally
+The project has no license yet. Licensing and third-party attribution need to be
+settled before distribution.
 
-The alpha.4 source implementation is available for local verification. No
-command result is recorded here as alpha.4 release evidence. Documentation
-validation is a local source check only; it does not establish a reproducible
-clean checkout, a Windows build, an MSI, a signature, or a managed-tenant
-result.
+## What a candidate build needs
 
-## Qualification contract
+Each alpha.4 MSI targets one approved Relution qualification tenant. Its build
+profile is either `read_only` or `write_qualification`, and the embedded write flag
+must match that choice. The write profile also requires approved disposable
+resources and a separate plan describing the test.
 
-`APPPORT_QUALIFICATION_PROFILE` is compile-time only and must be `read_only` or
-`write_qualification`. `APPPORT_RELUTION_WRITES_ENABLED` must exactly match the
-selected profile. Release builds require
-`APPPORT_QUALIFICATION_TENANT_APPROVED=true` and
-`APPPORT_RELUTION_TENANT_CLASS=qualification`. The write profile also requires
-`APPPORT_DISPOSABLE_RESOURCES_APPROVED=true` and an externally supplied,
-non-secret qualification plan.
+The evidence tools tie the MSI, qualification utility, installed-runtime self-check,
+build configuration, and source revision together. A valid candidate records:
 
-Tokens are supplied only through masked console input. They must never appear in
-arguments, environment variables, files, logs, or reports.
+```text
+candidateReady=true
+signed=false
+distributable=false
+diagnosticsEnabled=false
+```
 
-## Not qualified
+These values describe a test candidate, not a release. The
+[operations guide](docs/OPERATIONS.md) explains how to build it and collect the
+required results.
 
-- No clean-checkout source-gate result, approved tenant inputs, Windows MSVC MSI,
-  MSI hash, configuration fingerprint, or Windows ACL and Credential Manager
-  result has been recorded for alpha.4.
-- No public license is recorded. Licensing and third-party attribution require
-  owner review before publication.
-- No `candidateReady=true` evidence has been recorded.
-- No live read-only or write-qualification pilot evidence has been recorded; in
-  particular, no `pilotQualified=true` result has been recorded.
-- Managed-device connection, catalog, icon, inventory, background checks,
-  disposable-resource write qualification, and destructive authorization remain
-  unrun external gates.
-- Signing, publication, production qualification, administrative operations, and
-  Relution application uninstall are outside alpha.4 and have no authorization or
-  evidence. MSI uninstall is used only to clean up candidate verification.
+## What still needs verification
 
-An alpha.4 MSI is tenant-fixed, unsigned, and non-distributable.
-`candidateReady` describes completed candidate build evidence. `pilotQualified`
-describes separately completed live qualification under the selected profile; it
-must not be inferred from `candidateReady`.
+No reports establishing `candidateReady` or `pilotQualified` are committed to this
+repository. Windows and live-tenant testing still need to establish:
 
-See the [release checklist](docs/RELEASE_CHECKLIST.md), [alpha.4 release notes](docs/releases/0.1.0-alpha.4.md), and [alpha.3 historical release notes](docs/releases/0.1.0-alpha.3.md).
+- MSI installation and Windows Credential Manager, access controls, scheduled
+  tasks, notifications, and protocol handling;
+- live sign-in, exact device matching, catalog and icon loading, inventory,
+  recursive group permissions, and background checks;
+- deployment requests against approved disposable resources, including permission
+  checks and cleanup.
+
+`pilotQualified=true` requires a separate approved live test whose reports match
+the candidate. It cannot be inferred from source tests or `candidateReady=true`.
+MSI removal is part of test cleanup; uninstalling applications through Relution is
+outside the alpha's scope. Administrative operations and production use are also
+outside that scope. Signing and publication remain separate release work.
+
+See the [alpha.4 release notes](docs/releases/0.1.0-alpha.4.md) for the profile and
+reporting changes in this version.

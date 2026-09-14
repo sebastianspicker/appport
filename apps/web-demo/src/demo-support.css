@@ -1,0 +1,92 @@
+.support-panel {
+  margin-top: 34px;
+}
+
+.support-panel details {
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-card);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.support-summary {
+  display: grid;
+  gap: 3px;
+  padding: 16px;
+  cursor: pointer;
+}
+
+.support-summary span {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.support-content {
+  padding: 0 16px 16px;
+}
+
+.support-content > p:first-child {
+  color: var(--text-2);
+}
+
+.support-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  gap: 12px 20px;
+  margin: 18px 0;
+}
+
+.support-details div {
+  min-width: 0;
+}
+
+.support-details dt {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.support-details dd {
+  margin: 3px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.support-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.support-status,
+.support-warning,
+.support-error,
+.support-local-note {
+  margin: 14px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.support-status {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.support-warning,
+.support-local-note {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.support-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.support-dialog {
+  max-width: 480px;
+}
+
+.support-dialog::backdrop {
+  background: rgb(20 22 26 / 42%);
+}

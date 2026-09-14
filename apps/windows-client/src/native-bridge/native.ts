@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppAction,
+  CatalogSnapshot,
   AvailableApp,
   ConnectRequest,
   ConnectOutcome,
@@ -17,9 +18,15 @@ export const native = {
   bootstrap: () => invoke<NativeBootstrap>("bootstrap"),
   apps: (view: "apps" | "updates") =>
     invoke<AvailableApp[]>("list_apps", { view }),
+  loadCatalog: (request: { view: "apps" | "updates"; forceRefresh: boolean }) =>
+    invoke<CatalogSnapshot>("load_catalog", { request }),
   act: (appId: string) => invoke<AppAction>("request_action", { appId }),
   action: (actionId: string) => invoke<AppAction>("get_action", { actionId }),
-  icon: (appId: string) => invoke<string | null>("load_app_icon", { appId }),
+  icon: (appId: string, catalogRevision?: string) =>
+    invoke<string | null>("load_app_icon", {
+      appId,
+      ...(catalogRevision === undefined ? {} : { catalogRevision }),
+    }),
   signOut: () => invoke<SignOutOutcome>("sign_out"),
   supportDetails: () => invoke<SupportDetails>("support_details"),
   generateSupportBundle: (confirmedSupportIdentifiers: true) =>
