@@ -1,7 +1,7 @@
 import { type Mocked, vi } from "vitest";
 import type {
-  AppAction,
   AvailableApp,
+  CatalogSnapshot,
   NativeBootstrap,
   SignOutOutcome,
   SupportBundleResult,
@@ -47,6 +47,14 @@ export function nativeBootstrap(
   };
 }
 
+export function catalogSnapshot(
+  apps: AvailableApp[] = [],
+  bootstrap = nativeBootstrap(),
+  catalogRevision = "revision-1",
+): CatalogSnapshot {
+  return { apps, bootstrap, catalogRevision };
+}
+
 export function supportDetails(
   overrides: Partial<SupportDetails> = {},
 ): SupportDetails {
@@ -83,10 +91,12 @@ export function signOutOutcome(
 
 export function deferred<Value>() {
   let resolve!: (value: Value) => void;
-  const promise = new Promise<Value>((complete) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<Value>((complete, fail) => {
     resolve = complete;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 export type NativeMock = Mocked<typeof nativeApi>;
@@ -101,6 +111,9 @@ export function createNativeMock(): NativeMock {
       .fn<typeof nativeApi.bootstrap>()
       .mockResolvedValue(nativeBootstrap()),
     apps: vi.fn<typeof nativeApi.apps>().mockResolvedValue([]),
+    loadCatalog: vi
+      .fn<typeof nativeApi.loadCatalog>()
+      .mockResolvedValue(catalogSnapshot()),
     act: vi.fn<typeof nativeApi.act>(),
     action: vi.fn<typeof nativeApi.action>(),
     icon: vi.fn<typeof nativeApi.icon>().mockResolvedValue(null),
@@ -131,6 +144,7 @@ export function resetNativeMockDefaults(mock: NativeMock) {
   mock.connect.mockReset();
   mock.bootstrap.mockReset().mockResolvedValue(nativeBootstrap());
   mock.apps.mockReset().mockResolvedValue([]);
+  mock.loadCatalog.mockReset().mockResolvedValue(catalogSnapshot());
   mock.act.mockReset();
   mock.action.mockReset();
   mock.icon.mockReset().mockResolvedValue(null);

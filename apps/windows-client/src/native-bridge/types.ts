@@ -40,6 +40,12 @@ export interface NativeBootstrap {
   writesEnabled: boolean;
 }
 
+export interface CatalogSnapshot {
+  bootstrap: NativeBootstrap;
+  apps: AvailableApp[];
+  catalogRevision: string;
+}
+
 export interface SupportDetails {
   appVersion: string;
   sourceRevision: string;

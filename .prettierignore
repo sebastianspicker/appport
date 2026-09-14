@@ -5,9 +5,12 @@
 .repowise/
 .worktrees/
 apps/windows-client/dist/
+apps/web-demo/dist/
 apps/windows-client/src-tauri/gen/
 apps/windows-client/src-tauri/target/
 coverage/
 node_modules/
 release-artifacts/
+design-preview/
+output/product-design-exploration-*/
 target/

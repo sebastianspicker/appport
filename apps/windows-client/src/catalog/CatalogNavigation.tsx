@@ -17,7 +17,7 @@ export function CatalogNavigation({
   onSelect: Dispatch<View>;
 }) {
   return (
-    <nav aria-label="Software views">
+    <nav className="catalog-navigation" aria-label="Software">
       {views.map((item) => (
         <ViewButton
           key={item}
@@ -46,21 +46,35 @@ function ViewButton({
   onSelect: Dispatch<View>;
 }) {
   const copy = copyFor(locale);
-  const label = bootstrap
-    ? item === "apps"
-      ? `${copy.apps} (${bootstrap.availableCount})`
-      : `${copy.updates} (${bootstrap.updates.count})`
-    : item === "apps"
-      ? copy.apps
-      : copy.updates;
+  const { count, label } = viewDetails(bootstrap, copy, item);
   return (
     <button
-      className={active ? "active" : ""}
+      aria-current={active ? "page" : undefined}
+      aria-label={label}
+      className={`nav-item${active ? " active" : ""}`}
       onClick={() => {
         onSelect(item);
       }}
     >
-      {label}
+      <span>{copy[item]}</span>
+      {count !== undefined && (
+        <span
+          className={`nav-count${item === "updates" && count > 0 ? " attention" : ""}`}
+        >
+          {count}
+        </span>
+      )}
     </button>
   );
+}
+
+function viewDetails(
+  bootstrap: NativeBootstrap | undefined,
+  copy: ReturnType<typeof copyFor>,
+  item: View,
+) {
+  if (!bootstrap) return { count: undefined, label: copy[item] };
+  const count =
+    item === "apps" ? bootstrap.availableCount : bootstrap.updates.count;
+  return { count, label: `${copy[item]} (${count})` };
 }

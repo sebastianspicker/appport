@@ -3,6 +3,7 @@ import type { MutableRefObject } from "react";
 import type { Locale } from "../i18n/copy";
 import type { AvailableApp, NativeBootstrap } from "../native-bridge/types";
 import { native } from "../native-bridge/native";
+import { setIconCatalogRevision } from "./iconPool";
 import { problemFor } from "../native-bridge/problem";
 import {
   type CatalogPhase,
@@ -57,7 +58,7 @@ export function useCatalogLoading(
   const requestId = useRef(0);
   const requestedView = useRef<View | undefined>(undefined);
   const load = useCallback(
-    async (activeView?: View, showLoading = true) => {
+    async (activeView?: View, showLoading = true, forceRefresh = false) => {
       const currentRequest = ++requestId.current;
       const currentGeneration = generation.current;
       if (showLoading) setters.setPhase("loading");
@@ -74,10 +75,10 @@ export function useCatalogLoading(
         return;
       requestedView.current = selectedView;
       try {
-        const [bootstrap, apps] = await Promise.all([
-          native.bootstrap(),
-          native.apps(selectedView),
-        ]);
+        const { bootstrap, apps, catalogRevision } = await native.loadCatalog({
+          view: selectedView,
+          forceRefresh,
+        });
         if (
           !isCurrentRequest(
             mounted,
@@ -88,6 +89,8 @@ export function useCatalogLoading(
           )
         )
           return;
+        setIconCatalogRevision(catalogRevision);
+        setters.setCatalogRevision(catalogRevision);
         applyCatalog(setters, bootstrap, apps);
       } catch (error) {
         if (

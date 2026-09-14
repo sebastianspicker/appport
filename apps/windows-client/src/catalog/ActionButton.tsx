@@ -1,6 +1,8 @@
+import { designCopyFor } from "../i18n/designCopy";
 import { copyFor, type Locale } from "../i18n/copy";
 import type { ConfirmationHandler } from "./confirmation";
 import type { AvailableApp } from "../native-bridge/types";
+import { Icon } from "../ui/Icon";
 
 export function ActionButton({
   application,
@@ -16,6 +18,7 @@ export function ActionButton({
   const copy = copyFor(locale);
   return (
     <button
+      className="action-button primary"
       onClick={(event) => {
         onConfirm({ application, opener: event.currentTarget });
       }}
@@ -24,9 +27,10 @@ export function ActionButton({
         application,
         state,
         copy.retryAction,
-        copy.update,
-        copy.install,
+        designCopyFor(locale).reviewUpdate,
+        designCopyFor(locale).reviewInstall,
       )}
+      <Icon name="arrow" size={20} />
     </button>
   );
 }

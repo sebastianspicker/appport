@@ -21,8 +21,10 @@ export type Catalog = CatalogSetters & {
   apps: AvailableApp[];
   bootstrap: NativeBootstrap | undefined;
   busy: string | undefined;
+  busyApps: ReadonlySet<string>;
   connect: (request: ConnectRequest) => Promise<void>;
   iconSession: number;
+  catalogRevision: string;
   load: ReturnType<typeof useCatalogLoading>;
   mounted: MutableRefObject<boolean>;
   phase: CatalogPhase;

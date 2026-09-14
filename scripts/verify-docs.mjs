@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { extname, join, relative, resolve } from "node:path";
+
+import { documentationLinkFailures } from "./documentation-links.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const fileSystem = process.getBuiltinModule("node:fs");
@@ -15,7 +17,9 @@ function verifyDocumentation() {
     markdownFiles.map((path) => [path, readText(path)]),
   );
 
-  for (const path of markdownFiles) verifyLinks(path, markdownContents);
+  for (const path of markdownFiles) {
+    failures.push(...documentationLinkFailures(root, path, markdownContents));
+  }
   verifyPackageScripts(markdownFiles, markdownContents);
   verifyReleaseVersions();
   verifyStandaloneBoundary();
@@ -29,64 +33,6 @@ function verifyDocumentation() {
       `Documentation verification passed for ${markdownFiles.length} Markdown files.`,
     );
   }
-}
-
-function verifyLinks(path, markdownContents) {
-  const contents = markdownContents.get(path);
-  for (const match of contents.matchAll(/!?\[[^\]\r\n]*\]\(([^()\r\n]*)\)/g)) {
-    const [, rawTargetMatch] = match;
-    verifyLink(
-      path,
-      rawTargetMatch.trim().replace(/^<|>$/g, ""),
-      markdownContents,
-    );
-  }
-}
-
-function verifyLink(path, rawTarget, markdownContents) {
-  if (isExternalTarget(rawTarget)) return;
-  const { rawFile, rawAnchor, target } = resolveTarget(path, rawTarget);
-  if (!isWithinRoot(target)) {
-    failures.push(`${relative(root, path)} links outside the repository`);
-    return;
-  }
-  if (!exists(target)) {
-    failures.push(
-      `${relative(root, path)} links to missing ${rawFile || rawTarget}`,
-    );
-    return;
-  }
-  verifyAnchor(path, target, rawAnchor, markdownContents);
-}
-
-function isExternalTarget(rawTarget) {
-  return (
-    !rawTarget ||
-    /^(?:https?:|mailto:|data:)/i.test(rawTarget) ||
-    rawTarget.startsWith("/")
-  );
-}
-
-function resolveTarget(path, rawTarget) {
-  const [rawFile, rawAnchor] = rawTarget.split("#", 2);
-  return {
-    rawFile,
-    rawAnchor,
-    target: rawFile
-      ? resolve(dirname(path), decodeURIComponent(rawFile))
-      : path,
-  };
-}
-
-function verifyAnchor(path, target, rawAnchor, markdownContents) {
-  if (!rawAnchor || extname(target) !== ".md") return;
-  const anchors = markdownAnchors(
-    cachedMarkdownContents(target, markdownContents),
-  );
-  if (anchors.has(decodeURIComponent(rawAnchor).toLowerCase())) return;
-  failures.push(
-    `${relative(root, path)} links to missing anchor #${rawAnchor} in ${relative(root, target)}`,
-  );
 }
 
 function verifyPackageScripts(markdownFiles, markdownContents) {
@@ -121,16 +67,33 @@ export function missingPnpmScripts(
   manifestForDirectory,
 ) {
   const failures = [];
-  for (const { directory, script } of commands) {
+  for (const command of commands) {
+    const { script } = command;
     if (allowedPnpmCommands.has(script)) continue;
-    const manifest = directory ? manifestForDirectory(directory) : rootManifest;
-    if (!manifest?.scripts || !Object.hasOwn(manifest.scripts, script)) {
-      failures.push(
-        `references missing package script ${script}${directory ? ` in ${directory}` : ""}`,
-      );
-    }
+    const manifest = manifestForCommand(
+      command,
+      rootManifest,
+      manifestForDirectory,
+    );
+    if (hasPnpmScript(manifest, script)) continue;
+    failures.push(missingPnpmScriptMessage(command));
   }
   return failures;
+}
+
+function manifestForCommand(command, rootManifest, manifestForDirectory) {
+  return command.directory
+    ? manifestForDirectory(command.directory)
+    : rootManifest;
+}
+
+function hasPnpmScript(manifest, script) {
+  return Boolean(manifest?.scripts && Object.hasOwn(manifest.scripts, script));
+}
+
+function missingPnpmScriptMessage({ directory, script }) {
+  const directorySuffix = directory ? ` in ${directory}` : "";
+  return `references missing package script ${script}${directorySuffix}`;
 }
 
 function pnpmScript(arguments_) {
@@ -233,7 +196,6 @@ export const forbiddenStandalonePaths = [
   "next-env.d.ts",
   "tsconfig.json",
   "vitest.config.ts",
-  "eslint.config.mjs",
   "docs/HTTP_API.md",
   "src/app",
   "src/server",
@@ -301,11 +263,6 @@ function readText(path) {
   return fileSystem.readFileSync(path, "utf8");
 }
 
-function cachedMarkdownContents(path, markdownContents) {
-  if (!markdownContents.has(path)) markdownContents.set(path, readText(path));
-  return markdownContents.get(path);
-}
-
 function isWithinRoot(path) {
   const pathFromRoot = relative(root, resolve(path));
   return (
@@ -315,29 +272,17 @@ function isWithinRoot(path) {
 }
 
 function isExcluded(path) {
-  return /(?:^|\/)(?:\.codacy|\.codegraph|\.git|\.local|\.next|\.repowise|\.serena|\.worktrees|coverage|dist|node_modules|release-artifacts|target)(?:\/|$)/.test(
-    relative(root, path).replaceAll("\\", "/"),
-  );
-}
-
-function markdownAnchors(contents) {
-  const anchors = new Set();
-  const counts = new Map();
-  for (const line of contents.split("\n")) {
-    const match = /^(?:#{1,6})\s+(.+?)\s*#*$/.exec(line);
-    if (!match) continue;
-    const base = match[1]
-      .toLowerCase()
-      .replace(/[`*_~]/g, "")
-      .replace(/[^\p{L}\p{N}\s-]/gu, "")
-      .trim()
-      .replace(/\s+/g, "-");
-    const storedCount = counts.get(base);
-    const count = storedCount === undefined ? 0 : storedCount;
-    counts.set(base, count + 1);
-    anchors.add(count === 0 ? base : `${base}-${count}`);
+  const display = relative(root, path).replaceAll("\\", "/");
+  if (
+    /^(?:design-preview(?:\/|$)|output\/product-design-exploration-[^/]*(?:\/|$))/.test(
+      display,
+    )
+  ) {
+    return true;
   }
-  return anchors;
+  return /(?:^|\/)(?:\.codacy|\.codegraph|\.git|\.local|\.next|\.repowise|\.serena|\.worktrees|coverage|dist|node_modules|release-artifacts|target)(?:\/|$)/.test(
+    display,
+  );
 }
 
 if (import.meta.main) verifyDocumentation();

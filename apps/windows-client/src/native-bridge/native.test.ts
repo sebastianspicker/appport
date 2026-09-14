@@ -37,6 +37,14 @@ describe("native command boundary", () => {
       expected: ["list_apps", { view: "updates" }],
     },
     {
+      name: "load_catalog",
+      call: () => native.loadCatalog({ view: "updates", forceRefresh: true }),
+      expected: [
+        "load_catalog",
+        { request: { view: "updates", forceRefresh: true } },
+      ],
+    },
+    {
       name: "request_action",
       call: () => native.act("firefox"),
       expected: ["request_action", { appId: "firefox" }],
@@ -81,6 +89,14 @@ describe("native command boundary", () => {
     expect(commands.map(({ name }) => name).sort()).toEqual(
       [...nativeContract.commands].sort(),
     );
+  });
+
+  it("binds icons to the displayed catalog revision", async () => {
+    await native.icon("firefox", "opaque-revision");
+    expect(invoke).toHaveBeenCalledWith("load_app_icon", {
+      appId: "firefox",
+      catalogRevision: "opaque-revision",
+    });
   });
 
   it("shares the native enum contract", () => {

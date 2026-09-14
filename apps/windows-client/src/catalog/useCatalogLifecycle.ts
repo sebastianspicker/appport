@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type SetStateAction,
+} from "react";
 import { resetIconSession } from "./AppIcon";
 import { native } from "../native-bridge/native";
 import type { PollTimerRegistry, View } from "./types";
@@ -11,7 +18,13 @@ export function useViewSelection() {
   const [view, setView] = useState<View>();
   const currentView = useRef<View | undefined>(undefined);
   const initialView = useRef<Promise<View> | undefined>(undefined);
-  currentView.current = view;
+  const selectView = useCallback((next: SetStateAction<View | undefined>) => {
+    setView((previous) => {
+      const selected = typeof next === "function" ? next(previous) : next;
+      currentView.current = selected;
+      return selected;
+    });
+  }, []);
   const resolveView = useCallback(() => {
     if (currentView.current) return Promise.resolve(currentView.current);
     const requestedView =
@@ -22,13 +35,13 @@ export function useViewSelection() {
   useEffect(() => {
     let active = true;
     void resolveView().then((selectedView) => {
-      if (active) setView(selectedView);
+      if (active) selectView(selectedView);
     });
     return () => {
       active = false;
     };
-  }, [resolveView]);
-  return [view, setView, resolveView] as const;
+  }, [resolveView, selectView]);
+  return [view, selectView, resolveView] as const;
 }
 
 export function useMounted() {

@@ -1,27 +1,19 @@
 //! Fixed-origin Relution HTTP adapter. It owns endpoint and DTO operations only.
 
+use crate::build_config::is_fixed_https_origin;
 use crate::domain::device::same_uuid;
 use serde_json::json;
 use std::time::Duration;
 use url::Url;
 
 pub(crate) mod dto;
+mod response;
 
 use transport::{encode, network, status};
 
 const MAX_JSON_BYTES: usize = 10 * 1024 * 1024;
 const PAGE_SIZE: usize = 100;
 const MAX_PAGES: usize = 100;
-
-fn fixed_https(url: &Url) -> bool {
-    url.scheme() == "https"
-        && url.host_str().is_some()
-        && url.username().is_empty()
-        && url.password().is_none()
-        && url.query().is_none()
-        && url.fragment().is_none()
-        && url.path() == "/"
-}
 
 fn valid_id(value: &str) -> bool {
     let bytes = value.as_bytes();
@@ -62,7 +54,7 @@ impl RelutionConfig {
             "configuration: APPPORT_RELUTION_API_BASE_URL was not embedded in this build",
         )?)
         .map_err(|_| "configuration: invalid Relution API URL")?;
-        if !fixed_https(&base) {
+        if !is_fixed_https_origin(&base) {
             return Err("configuration: Relution API URL must be a fixed HTTPS origin".into());
         }
         let organization_uuid = option_env!("APPPORT_RELUTION_ORGANIZATION_UUID")

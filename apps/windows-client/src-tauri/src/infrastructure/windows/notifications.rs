@@ -175,7 +175,16 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
     );
     let value = serde_json::to_string(&["qualification@1"])
         .map_err(|_| "unknown: qualification notification value invalid")?;
-    let result = crate::infrastructure::windows::system_tools::command("reg.exe")
+    let result = write_qualification_notification(&key, value)
+        .and_then(|_| query_qualification_notification(&key));
+    let cleanup = cleanup_qualification_notification(&key);
+    let absent = qualification_notification_absent(&key);
+    result.and(cleanup).and(absent)
+}
+
+#[cfg(windows)]
+fn write_qualification_notification(key: &str, value: String) -> Result<(), String> {
+    let status = crate::infrastructure::windows::system_tools::command("reg.exe")
         .map_err(|_| "unknown: qualification notification registry unavailable".to_owned())?
         .args([
             "add",
@@ -191,41 +200,46 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map_err(|_| "unknown: qualification notification registry unavailable".to_owned())
-        .and_then(|status| {
-            status
-                .success()
-                .then_some(())
-                .ok_or_else(|| "unknown: qualification notification write failed".to_owned())
-        })
-        .and_then(|_| {
-            let output = crate::infrastructure::windows::system_tools::command("reg.exe")
-                .map_err(|_| "unknown: qualification notification query failed".to_owned())?
-                .args(["query", &key, "/v", "UpdateNotificationKeys"])
-                .output()
-                .map_err(|_| "unknown: qualification notification query failed".to_owned())?;
-            (output.status.success()
-                && String::from_utf8_lossy(&output.stdout).contains("qualification@1"))
-            .then_some(())
-            .ok_or_else(|| "unknown: qualification notification state missing".to_owned())
-        });
-    let cleanup = crate::infrastructure::windows::system_tools::command("reg.exe")
+        .map_err(|_| "unknown: qualification notification registry unavailable".to_owned())?;
+    status
+        .success()
+        .then_some(())
+        .ok_or_else(|| "unknown: qualification notification write failed".to_owned())
+}
+
+#[cfg(windows)]
+fn query_qualification_notification(key: &str) -> Result<(), String> {
+    let output = crate::infrastructure::windows::system_tools::command("reg.exe")
+        .map_err(|_| "unknown: qualification notification query failed".to_owned())?
+        .args(["query", key, "/v", "UpdateNotificationKeys"])
+        .output()
+        .map_err(|_| "unknown: qualification notification query failed".to_owned())?;
+    (output.status.success() && String::from_utf8_lossy(&output.stdout).contains("qualification@1"))
+        .then_some(())
+        .ok_or_else(|| "unknown: qualification notification state missing".to_owned())
+}
+
+#[cfg(windows)]
+fn cleanup_qualification_notification(key: &str) -> Result<(), String> {
+    let status = crate::infrastructure::windows::system_tools::command("reg.exe")
         .map_err(|_| "unknown: qualification notification cleanup failed".to_owned())?
-        .args(["delete", &key, "/f"])
+        .args(["delete", key, "/f"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map_err(|_| "unknown: qualification notification cleanup failed".to_owned())
-        .and_then(|status| {
-            status
-                .success()
-                .then_some(())
-                .ok_or_else(|| "unknown: qualification notification cleanup failed".to_owned())
-        });
-    let absent = crate::infrastructure::windows::system_tools::command("reg.exe")
+        .map_err(|_| "unknown: qualification notification cleanup failed".to_owned())?;
+    status
+        .success()
+        .then_some(())
+        .ok_or_else(|| "unknown: qualification notification cleanup failed".to_owned())
+}
+
+#[cfg(windows)]
+fn qualification_notification_absent(key: &str) -> Result<(), String> {
+    crate::infrastructure::windows::system_tools::command("reg.exe")
         .and_then(|mut command| {
             command
-                .args(["query", &key])
+                .args(["query", key])
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .status()
@@ -234,8 +248,7 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
         .map(|status| !status.success())
         .unwrap_or(false)
         .then_some(())
-        .ok_or_else(|| "unknown: qualification notification key remains".into());
-    result.and(cleanup).and(absent)
+        .ok_or_else(|| "unknown: qualification notification key remains".into())
 }
 
 #[cfg(not(windows))]

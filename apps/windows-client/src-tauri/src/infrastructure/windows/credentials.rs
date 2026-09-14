@@ -37,6 +37,10 @@ impl CredentialRecord {
         )
     }
 
+    pub(crate) fn user_uuid(&self) -> &str {
+        &self.user_uuid
+    }
+
     pub(crate) fn into_access_token(self) -> String {
         self.access_token
     }

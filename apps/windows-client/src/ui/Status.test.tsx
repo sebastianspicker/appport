@@ -7,6 +7,9 @@ describe("Status", () => {
   it("announces loading without a retry", () => {
     render(<Status problem="loading" retry={vi.fn()} locale="en" />);
     expect(screen.getByRole("status")).toBeTruthy();
+    expect(
+      screen.getByRole("progressbar", { name: "Loading this device" }),
+    ).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
   });
 

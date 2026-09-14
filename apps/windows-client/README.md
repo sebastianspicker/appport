@@ -1,48 +1,49 @@
 # Appport Windows client
 
-This package contains the React and Tauri 2 application for managed Windows 11
-x64 devices.
+The Windows client lets users browse software available to their managed PC and
+request installs or updates through Relution. It targets Windows 11 x64 and uses
+React for the interface and Tauri 2 with Rust for native features.
 
-React renders the Available, Updates, action, and support interfaces. Rust owns
-Relution HTTPS communication, device matching, Credential Manager access,
-scheduled checks, notifications, local persistence, and protocol activation.
-The WebView has no network access.
+This package also builds `relution-appport-qualification`, a separate command-line
+tool for testing the same application services against an approved Relution tenant.
 
-The catalog includes only supported Windows applications authorized through
-direct or recursive Relution `RELEASE` permissions. Applications that are
-already current remain an internal classification; there is no Installed or
-Assigned view. The client does not run Winget or installers itself.
+## Run and test
 
-The support panel can copy device details, create a consented local ZIP, and
-open the fixed `Relution\Appport\SupportBundles` directory under the current
-user's local application data. It cannot upload bundles, execute scripts, or
-write to a user-selected path.
+Run these commands from the repository root:
 
-## Commands
+| Task | Command |
+| --- | --- |
+| Preview the React interface | `pnpm --dir apps/windows-client dev` |
+| Check frontend types | `pnpm frontend:check` |
+| Run frontend tests | `pnpm frontend:test` |
+| Build the frontend | `pnpm frontend:build` |
+| Run Rust tests | `pnpm rust:test` |
+| Run the full source checks | `pnpm verify:source` |
 
-```sh
-pnpm --dir apps/windows-client dev
-pnpm verify:source
-```
+The React preview runs without Rust and cannot sign in or contact Relution. To run
+the native application on Windows, configure the build inputs first, then run
+`pnpm --dir apps/windows-client tauri dev`. Build its MSI with
+`pnpm windows:package` on a Windows x64 host with the MSVC toolchain.
 
-The first command starts the Vite-only UI server. It does not compile Rust,
-embed release configuration, or contact a tenant. Run
-`pnpm --dir apps/windows-client tauri dev` only on a configured Windows host.
-Run `pnpm windows:package` on a Windows build host to build the configured MSI.
+See [Development](../../docs/DEVELOPMENT.md) for toolchain versions and setup, and
+[Configuration](../../docs/CONFIGURATION.md) for the Relution build inputs.
 
-Alpha.4 supports `read_only` and `write_qualification` compile-time profiles.
-Candidate builds require approved qualification-tenant inputs, diagnostics
-disabled, and a writes flag that exactly matches the selected profile. The
-write profile also requires approved disposable resources and a separately
-supplied non-secret qualification plan.
+## How it works
 
-The client accepts personal tokens only through its masked sign-in field. The
-qualification utility accepts tokens only through masked console input. Tokens
-must not appear in arguments, environment variables, files, logs, or reports.
+Users sign in with a personal token. Relution supplies their identity, assigned
+device, permissions, software inventory, and deployment state. Available lists
+software the user can install; Updates lists newer versions for installed software.
+Applications already at the current version stay out of the catalog.
 
-## References
+Rust handles HTTPS requests, device matching, permissions, Credential Manager,
+scheduled checks, notifications, the action journal, and protocol activation. The
+WebView has no network access. Relution handles deployment, so Appport does not run
+installers itself.
 
-- [Architecture](../../docs/ARCHITECTURE.md)
-- [Configuration](../../docs/CONFIGURATION.md)
-- [Development](../../docs/DEVELOPMENT.md)
-- [Native client behavior](../../docs/NATIVE_WINDOWS_CLIENT.md)
+Alpha.4 builds use either the `read_only` or `write_qualification` profile, with a
+matching write flag. The write profile requires approved disposable resources and
+a separate test plan. Each build is fixed to one qualification tenant and remains
+unsigned and unavailable for distribution.
+
+[Architecture](../../docs/ARCHITECTURE.md) describes the code and request flow.
+[Operations](../../docs/OPERATIONS.md) covers Windows builds and live testing.

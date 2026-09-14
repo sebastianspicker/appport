@@ -1,5 +1,6 @@
 import { copyFor, problemCopy, type Copy, type Locale } from "../i18n/copy";
 import type { ClientProblem } from "../native-bridge/types";
+import { Icon } from "./Icon";
 
 export function Status({
   problem,
@@ -14,8 +15,20 @@ export function Status({
   const [title, body] = problemCopy(locale, problem);
   return (
     <section className="state" role={statusRole(problem)}>
+      {problem !== "loading" && (
+        <Icon name={problem === "empty" ? "apps" : "warning"} size={24} />
+      )}
       <h2>{title}</h2>
       <p>{body}</p>
+      {problem === "loading" && (
+        <span
+          className="indeterminate-progress loading-progress"
+          role="progressbar"
+          aria-label={title}
+        >
+          <i />
+        </span>
+      )}
       <StatusRetry
         problem={problem}
         retry={retry}
@@ -26,7 +39,7 @@ export function Status({
 }
 
 function statusRole(problem: ClientProblem) {
-  return problem === "loading" ? "status" : "alert";
+  return problem === "loading" || problem === "empty" ? "status" : "alert";
 }
 function retryLabel(problem: ClientProblem, copy: Copy) {
   return problem === "session-expired" ? copy.signIn : copy.retry;
@@ -52,6 +65,7 @@ function StatusRetry({
     return null;
   return (
     <button
+      className="secondary action-button"
       onClick={() => {
         void retry();
       }}

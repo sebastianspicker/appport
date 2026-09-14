@@ -10,7 +10,10 @@ mod write;
 use crate::{
     application::{actions::ActionService, catalog::CatalogService},
     build_config::QualificationProfile,
-    infrastructure::relution::{RelutionClient, RelutionConfig},
+    infrastructure::{
+        journal::ActionJournal,
+        relution::{RelutionClient, RelutionConfig},
+    },
 };
 use checks::{add_not_run_write_checks, failed, passed};
 use read::run_read_checks;
@@ -128,7 +131,27 @@ async fn run_configured(
             );
         }
     };
-    let catalog = Arc::new(CatalogService::new(Arc::clone(&client)));
+    let journal = ActionJournal::new();
+    if profile.writes_enabled() {
+        if let Err(error) = crate::interface::runtime::acquire_singleton()
+            .and_then(|()| journal.recover_interrupted_reservations())
+        {
+            crate::infrastructure::logging::write(&error);
+            checks.push(failed(
+                "exclusive_action_owner",
+                "exclusive action journal startup failed",
+            ));
+            return finish_report(
+                profile,
+                started,
+                writes_enabled,
+                None,
+                Some(binding),
+                checks,
+            );
+        }
+    }
+    let catalog = Arc::new(CatalogService::with_journal(Arc::clone(&client), journal));
     let actions = Arc::new(ActionService::new(
         Arc::clone(&client),
         Arc::clone(&catalog),

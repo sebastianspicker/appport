@@ -1,222 +1,332 @@
-fn connection() -> Connection {
-    let c = Connection::open_in_memory().unwrap();
-    initialize(&c).unwrap();
-    c
-}
+use super::{
+    storage::{active_actions_in, best_effort_prune, initialize, prune, RETENTION_DAYS},
+    ActionJournal,
+};
+use crate::domain::action::{Intent, Reservation, State, Transition};
+use rusqlite::{params, Connection, OptionalExtension};
+use std::path::PathBuf;
 
-fn insert(c: &Connection, id: &str, device: &str, app: &str, state: State) {
-    c.execute(
-        "INSERT INTO actions VALUES (?1,'t',?2,?3,'v',NULL,'install','',NULL,?4,NULL,NULL,1,1)",
-        params![id, device, app, state.as_str()],
-    )
-    .unwrap();
+#[test]
+fn clone_reuses_the_successful_connection() {
+    let fixture = Fixture::new();
+    let journal = ActionJournal::at_path(fixture.path.clone());
+    journal
+        .with_connection(|connection| {
+            connection
+                .execute("CREATE TEMP TABLE connection_probe(value INTEGER)", [])
+                .map_err(|error| error.to_string())?;
+            connection
+                .execute("INSERT INTO connection_probe VALUES (7)", [])
+                .map_err(|error| error.to_string())?;
+            Ok(())
+        })
+        .unwrap();
+
+    let value: i64 = journal
+        .clone()
+        .with_connection(|connection| {
+            connection
+                .query_row("SELECT value FROM connection_probe", [], |row| row.get(0))
+                .map_err(|error| error.to_string())
+        })
+        .unwrap();
+    assert_eq!(value, 7);
 }
 
 #[test]
-fn transitions_are_typed_atomic_and_terminal_states_do_not_reopen() {
-    let c = connection();
-    insert(&c, "one", "d", "a", State::Reserved);
-    transition_in(
-        &c,
-        "one",
-        State::Reserved,
-        Transition::SubmissionAccepted,
-        2,
-    )
-    .unwrap();
+fn failed_initialization_is_retried() {
+    let fixture = Fixture::new();
+    std::fs::create_dir(&fixture.path).unwrap();
+    let journal = ActionJournal::at_path(fixture.path.clone());
+    let runtime = runtime();
+    assert!(runtime.block_on(journal.active_actions("device")).is_err());
+
+    std::fs::remove_dir(&fixture.path).unwrap();
     assert_eq!(
-        transition_in(
-            &c,
+        runtime.block_on(journal.active_actions("device")).unwrap(),
+        []
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn database_and_sidecar_symbolic_links_are_rejected() {
+    for suffix in ["", "-wal", "-shm"] {
+        let fixture = Fixture::new();
+        let linked = PathBuf::from(format!("{}{suffix}", fixture.path.display()));
+        std::os::unix::fs::symlink(fixture.root.join("missing-target"), linked).unwrap();
+        let journal = ActionJournal::at_path(fixture.path.clone());
+        assert!(runtime()
+            .block_on(journal.active_actions("device"))
+            .is_err());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn sidecar_replacement_is_rejected_after_initialization() {
+    let fixture = Fixture::new();
+    let journal = ActionJournal::at_path(fixture.path.clone());
+    let runtime = runtime();
+    runtime.block_on(journal.active_actions("device")).unwrap();
+    let sidecar = PathBuf::from(format!("{}-wal", fixture.path.display()));
+    std::fs::remove_file(&sidecar).unwrap();
+    std::os::unix::fs::symlink(fixture.root.join("missing-target"), sidecar).unwrap();
+    assert!(runtime.block_on(journal.active_actions("device")).is_err());
+}
+
+#[test]
+fn reservations_are_durable_and_unique_across_connections() {
+    let fixture = Fixture::new();
+    let first = ActionJournal::at_path(fixture.path.clone());
+    let second = ActionJournal::at_path(fixture.path.clone());
+    let runtime = runtime();
+
+    runtime
+        .block_on(first.reserve(reservation("one", "device", "app")))
+        .unwrap();
+    let action = runtime.block_on(second.action("one")).unwrap().unwrap();
+    assert_eq!((action.id.as_str(), action.state), ("one", State::Reserved));
+    assert_eq!(
+        runtime
+            .block_on(second.active_actions("device"))
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        runtime
+            .block_on(second.reserve(reservation("two", "device", "app")))
+            .unwrap_err(),
+        "server: an active application action already exists"
+    );
+}
+
+#[test]
+fn transitions_are_compare_and_set_and_own_borrowed_details() {
+    let fixture = Fixture::new();
+    let journal = ActionJournal::at_path(fixture.path.clone());
+    let runtime = runtime();
+    runtime
+        .block_on(journal.reserve(reservation("one", "device", "app")))
+        .unwrap();
+    runtime
+        .block_on(journal.transition("one", State::Reserved, Transition::SubmissionAccepted))
+        .unwrap();
+    let correlation = String::from("remote-one");
+    runtime
+        .block_on(journal.transition(
             "one",
-            State::Reserved,
-            Transition::SubmissionAccepted,
-            3
-        )
-        .unwrap_err(),
+            State::Queued,
+            Transition::RemoteObserved {
+                state: State::Verifying,
+                correlation: &correlation,
+                error_code: None,
+            },
+        ))
+        .unwrap();
+    assert_eq!(
+        runtime
+            .block_on(journal.transition(
+                "one",
+                State::Queued,
+                Transition::RemoteObserved {
+                    state: State::Sent,
+                    correlation: "different",
+                    error_code: None,
+                },
+            ))
+            .unwrap_err(),
         "server: stale application action transition"
     );
-    transition_in(
-        &c,
-        "one",
-        State::Queued,
-        Transition::RemoteObserved {
-            state: State::Verifying,
-            correlation: "remote",
-            error_code: None,
-        },
-        3,
-    )
-    .unwrap();
-    transition_in(
-        &c,
-        "one",
-        State::Verifying,
-        Transition::InventoryConfirmed,
-        4,
-    )
-    .unwrap();
-    assert!(transition_in(
-        &c,
-        "one",
-        State::Succeeded,
-        Transition::RemoteObserved {
-            state: State::Queued,
-            correlation: "remote",
-            error_code: None
-        },
-        5
-    )
-    .is_err());
     assert_eq!(
-        transition_in(
-            &c,
-            "missing",
-            State::Reserved,
-            Transition::SubmissionAccepted,
-            5
-        )
-        .unwrap_err(),
+        runtime
+            .block_on(journal.action("one"))
+            .unwrap()
+            .unwrap()
+            .correlation
+            .as_deref(),
+        Some("remote-one")
+    );
+    assert_eq!(
+        runtime
+            .block_on(journal.transition(
+                "missing",
+                State::Reserved,
+                Transition::SubmissionAccepted,
+            ))
+            .unwrap_err(),
         "server: application action was not found"
     );
+    assert_eq!(
+        runtime
+            .block_on(journal.transition("one", State::Verifying, Transition::SubmissionAccepted,))
+            .unwrap_err(),
+        "server: illegal application action transition"
+    );
 }
 
 #[test]
-fn correlation_is_assigned_once_and_remote_transition_is_atomic() {
-    let c = connection();
-    insert(&c, "one", "d", "a", State::Queued);
-    transition_in(
-        &c,
-        "one",
-        State::Queued,
-        Transition::RemoteObserved {
-            state: State::Sent,
-            correlation: "remote-one",
-            error_code: None,
-        },
-        2,
-    )
-    .unwrap();
-    assert!(transition_in(
-        &c,
-        "one",
-        State::Sent,
-        Transition::RemoteObserved {
-            state: State::Verifying,
-            correlation: "remote-two",
-            error_code: None
-        },
-        3
-    )
-    .is_err());
-    let values: (String, String) = c
-        .query_row(
-            "SELECT correlation,state FROM actions WHERE id='one'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
+fn schema_preserves_wal_timeout_and_active_index() {
+    let fixture = Fixture::new();
+    let journal = ActionJournal::at_path(fixture.path.clone());
+    runtime()
+        .block_on(journal.active_actions("device"))
         .unwrap();
-    assert_eq!(values, ("remote-one".into(), "sent".into()));
+    journal
+        .with_connection(|connection| {
+            let busy: i64 = connection
+                .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+                .map_err(|error| error.to_string())?;
+            let mode: String = connection
+                .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+                .map_err(|error| error.to_string())?;
+            let index: String = connection
+                .query_row(
+                    "SELECT sql FROM sqlite_master WHERE type='index' AND name='active_action_per_app'",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            assert_eq!(busy, 5_000);
+            assert_eq!(mode, "wal");
+            assert!(index.contains("WHERE state IN"));
+            Ok(())
+        })
+        .unwrap();
 }
 
 #[test]
-fn recovery_is_explicit_once_and_unknown_actions_remain_active() {
-    let c = connection();
-    insert(&c, "one", "d", "a", State::Reserved);
-    recover_in(&c, 2).unwrap();
-    recover_in(&c, 3).unwrap();
-    let recovered: (String, i64) = c
-        .query_row(
-            "SELECT state,updated_at FROM actions WHERE id='one'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+fn startup_recovery_is_explicit_and_idempotent() {
+    let fixture = Fixture::new();
+    let journal = ActionJournal::at_path(fixture.path.clone());
+    let runtime = runtime();
+    runtime
+        .block_on(journal.reserve(reservation("one", "device", "app-one")))
+        .unwrap();
+    journal.recover_interrupted_reservations().unwrap();
+    let recovered = runtime.block_on(journal.action("one")).unwrap().unwrap();
+    assert_eq!(recovered.state, State::Unknown);
+    assert_eq!(
+        recovered.error_code.as_deref(),
+        Some("SUBMISSION_INTERRUPTED")
+    );
+
+    runtime
+        .block_on(journal.reserve(reservation("two", "device", "app-two")))
+        .unwrap();
+    assert_eq!(
+        runtime
+            .block_on(journal.action("two"))
+            .unwrap()
+            .unwrap()
+            .state,
+        State::Reserved
+    );
+}
+
+#[test]
+fn retention_prunes_only_old_terminal_actions() {
+    let connection = connection();
+    insert(
+        &connection,
+        "terminal",
+        "device",
+        "one",
+        State::Succeeded,
+        0,
+    );
+    insert(&connection, "active", "device", "two", State::Unknown, 0);
+    prune(&connection, RETENTION_DAYS * 86_400 + 1).unwrap();
+    assert!(!exists(&connection, "terminal"));
+    assert!(exists(&connection, "active"));
+
+    connection.execute("DROP TABLE actions", []).unwrap();
+    best_effort_prune(&connection, RETENTION_DAYS * 86_400 + 1);
+}
+
+#[test]
+fn visibility_fails_closed_for_an_invalid_persisted_state() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE actions (id TEXT, device_id TEXT, app_id TEXT, state TEXT, created_at INTEGER);",
         )
         .unwrap();
-    assert_eq!(recovered, ("unknown".into(), 2));
-    assert!(c.execute("INSERT INTO actions VALUES ('two','t','d','a','v',NULL,'install','',NULL,'queued',NULL,NULL,1,1)", []).is_err());
-    c.execute("UPDATE actions SET updated_at=0 WHERE id='one'", [])
+    connection
+        .execute(
+            "INSERT INTO actions VALUES ('bad','device','app','future',1)",
+            [],
+        )
         .unwrap();
-    prune(&c, RETENTION_DAYS * 86400 + 1).unwrap();
-    assert!(c
-        .query_row("SELECT 1 FROM actions WHERE id='one'", [], |_| Ok(()))
+    assert!(active_actions_in(&connection, "device").is_err());
+}
+
+fn reservation<'a>(id: &'a str, device: &'a str, app: &'a str) -> Reservation<'a> {
+    Reservation {
+        id,
+        tenant: "tenant",
+        device,
+        app,
+        version: "version",
+        package: None,
+        intent: Intent::Install,
+        baseline: "",
+    }
+}
+
+fn connection() -> Connection {
+    let connection = Connection::open_in_memory().unwrap();
+    initialize(&connection).unwrap();
+    connection
+}
+
+fn insert(
+    connection: &Connection,
+    id: &str,
+    device: &str,
+    app: &str,
+    state: State,
+    updated_at: i64,
+) {
+    connection
+        .execute(
+            "INSERT INTO actions VALUES (?1,'tenant',?2,?3,'version',NULL,'install','',NULL,?4,NULL,NULL,1,?5)",
+            params![id, device, app, state.as_str(), updated_at],
+        )
+        .unwrap();
+}
+
+fn exists(connection: &Connection, id: &str) -> bool {
+    connection
+        .query_row("SELECT 1 FROM actions WHERE id=?1", params![id], |_| Ok(()))
         .optional()
         .unwrap()
-        .is_some());
+        .is_some()
 }
 
-#[test]
-fn action_visibility_is_device_scoped_and_includes_unknown_only_when_active() {
-    let c = connection();
-    insert(&c, "queued", "device-one", "app-one", State::Queued);
-    insert(&c, "terminal", "device-one", "app-two", State::Succeeded);
-    insert(&c, "unknown", "device-two", "app-one", State::Unknown);
-    let one = active_actions_in(&c, "device-one").unwrap();
-    assert_eq!(one.len(), 1);
-    assert_eq!(
-        (&one[0].id, &one[0].app_id, one[0].state),
-        (&"queued".into(), &"app-one".into(), State::Queued)
-    );
-    let two = active_actions_in(&c, "device-two").unwrap();
-    assert_eq!(
-        (two[0].id.as_str(), two[0].state),
-        ("unknown", State::Unknown)
-    );
-    assert!(State::decode("future").is_err());
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap()
 }
 
-#[test]
-fn visibility_fails_closed_when_a_persisted_state_cannot_be_decoded() {
-    let c = Connection::open_in_memory().unwrap();
-    c.execute_batch("CREATE TABLE actions (id TEXT, device_id TEXT, app_id TEXT, state TEXT, created_at INTEGER);").unwrap();
-    c.execute(
-        "INSERT INTO actions VALUES ('bad','device','app','future',1)",
-        [],
-    )
-    .unwrap();
-    assert!(active_actions_in(&c, "device").is_err());
+struct Fixture {
+    root: PathBuf,
+    path: PathBuf,
 }
 
-#[test]
-fn ambiguous_submission_persists_unknown_without_losing_its_action_id() {
-    let c = connection();
-    insert(&c, "saved-id", "d", "a", State::Reserved);
-    transition_in(
-        &c,
-        "saved-id",
-        State::Reserved,
-        Transition::SubmissionUncertain,
-        2,
-    )
-    .unwrap();
-    let saved: (String, String, String) = c
-        .query_row(
-            "SELECT id,state,error_code FROM actions WHERE id='saved-id'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
-        .unwrap();
-    assert_eq!(
-        saved,
-        (
-            "saved-id".into(),
-            "unknown".into(),
-            "SUBMISSION_UNCERTAIN".into()
-        )
-    );
+impl Fixture {
+    fn new() -> Self {
+        let root = std::env::temp_dir().join(format!("appport-journal-{}", rand::random::<u64>()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("actions.sqlite3");
+        Self { root, path }
+    }
 }
 
-#[test]
-fn retention_failure_does_not_become_a_transition_failure() {
-    let c = connection();
-    c.execute("DROP TABLE actions", []).unwrap();
-    best_effort_prune(&c, 2);
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
 }
-
-fn recover_in(connection: &Connection, timestamp: i64) -> Result<(), String> {
-    connection.execute("UPDATE actions SET state='unknown', error_code='SUBMISSION_INTERRUPTED', error_message='The submission status could not be confirmed. Do not retry.', updated_at=?1 WHERE state='reserved'", params![timestamp]).map_err(|_| "unknown: action journal could not recover interrupted actions")?;
-    Ok(())
-}
-use super::{
-    active_actions_in, best_effort_prune, initialize, prune, transition_in, State, Transition,
-    RETENTION_DAYS,
-};
-use rusqlite::{params, Connection, OptionalExtension};

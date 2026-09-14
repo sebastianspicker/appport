@@ -1,0 +1,258 @@
+.catalog-help,
+.catalog-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.catalog-help {
+  margin: 20px 0 0;
+}
+
+.catalog-notice {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-control);
+  background: var(--bg-subtle);
+}
+
+.version-rail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.version-rail span,
+.version-rail strong {
+  overflow-wrap: anywhere;
+}
+
+.version-rail strong {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  min-width: 112px;
+  min-height: 44px;
+  flex: 0 0 auto;
+  padding: 5px 16px;
+  border-radius: var(--r-control);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.read-only-note {
+  margin: auto 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.status-line {
+  display: grid;
+  gap: 8px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.version-rail .status-pill {
+  width: max-content;
+}
+
+.status-pill.success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.status-pill.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.status-pill.working {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.indeterminate-progress {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--bg-inset);
+}
+
+.indeterminate-progress > i {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: indeterminate 1.25s ease-in-out infinite alternate;
+}
+
+.action-polling small {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+.status-note {
+  margin: auto 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.status-note code,
+.unknown-action code {
+  overflow-wrap: anywhere;
+}
+
+.inline-error,
+.unknown-action,
+.sign-out-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: auto 0 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+.inline-error,
+.sign-out-warning {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.unknown-action {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.unknown-action span {
+  min-width: 0;
+}
+
+.unknown-action code {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-2);
+}
+
+.state {
+  display: grid;
+  gap: 12px;
+  padding: 28px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-card);
+  background: var(--bg-card);
+  max-width: 620px;
+  margin: 20px auto;
+}
+
+.state h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.state p {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.state > .icon {
+  color: var(--warning);
+}
+
+.loading-progress {
+  width: 100%;
+}
+
+.state button {
+  align-self: start;
+}
+
+.search-empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--stroke-strong);
+  border-radius: var(--r-card);
+  color: var(--text-2);
+}
+
+.state:has(.loading-progress) > .icon,
+.state[role="status"] > .icon {
+  color: var(--accent);
+}
+
+.version-label {
+  flex-basis: 100%;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.task-status .status-pill {
+  font-size: 17px;
+  padding: 8px 12px;
+}
+
+.task-status .status-line {
+  gap: 18px;
+  min-width: min(100%, 340px);
+}
+
+.task-status .action-polling small {
+  font-size: 14px;
+}
+
+.task-status .indeterminate-progress {
+  height: 5px;
+}
+
+@media (width <= 560px) {
+  .success-receipt > div {
+    flex-basis: calc(100% - 60px);
+    min-width: 0;
+  }
+
+  .success-receipt button {
+    width: 100%;
+  }
+}

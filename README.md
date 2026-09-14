@@ -1,57 +1,126 @@
 # Appport
 
-Appport is a self-service software catalog for managed Windows 11 devices. It
-runs as a Tauri desktop application and shows the Windows applications and
-updates authorized for the current user and device in Relution.
+Appport is a software catalog for Relution-managed Windows 11 PCs. Users can find
+applications they have permission to install on their assigned device and request
+installs or updates. Relution handles the deployment.
 
-The React WebView is network-isolated. Native Rust code owns authentication,
-Relution requests, device matching, action safety, Windows integration, and
-local persistence.
+[Browser demo](https://sebastianspicker.github.io/appport/) ·
+[Run locally](#try-it-locally) ·
+[Documentation](#documentation)
 
-![Appport application catalog mockup](docs/assets/appport-catalog-mockup.svg)
+Try the interface in your browser without an account. The demo uses fictional
+software, users, and devices; its actions install nothing and reset when you reload
+the page. If the hosted demo is unavailable, use the local commands below or see
+[GitHub Pages setup](apps/web-demo/README.md#github-pages).
 
-The mockup contains no tenant or managed-device data and is not release
-evidence.
+## Screenshot tour
 
-## Repository layout
+These screenshots show the running browser demo in Chromium. The demo and Windows
+client use separate code, so the tour illustrates the interface rather than native
+Windows behavior.
 
-    apps/windows-client/  Tauri, Rust, React, and Vite client
-    docs/                 Product, development, operations, and release documentation
-    scripts/              Source verification and release-evidence tooling
+### Find software
 
-## Requirements
+Available lists software to install. Search by name or publisher, or filter by
+package source. The examples include a failed request you can retry and an
+unresolved request that stays locked for review.
 
-- Node 26.5.x
-- pnpm 11.6.0
-- Rust 1.96.0 with Clippy and rustfmt
-- Windows 11 x64 with the MSVC toolchain for MSI builds
+![Available software with search, source filters, and sample action states](docs/assets/screenshots/available.png)
 
-Install dependencies and run the complete deterministic source gate:
+### Review updates
+
+Updates puts the installed and target versions next to each other. The demo
+follows your system's light or dark theme.
+
+![Updates in dark mode, showing current and target versions for two applications](docs/assets/screenshots/updates.png)
+
+### Confirm a request
+
+Install and Update ask for confirmation. In the demo, confirming starts a short
+simulation: Queued, Verifying, then Succeeded.
+
+![Install confirmation for Drawpad, with Cancel and Confirm controls](docs/assets/screenshots/confirmation.png)
+
+### Find device details
+
+Expand Demo support details to see the fictional user, PC, and Windows information.
+The Windows client can also create a local support ZIP after the user confirms;
+the browser demo creates no files.
+
+![Expanded support details for the fictional DEMO-PC-047 device](docs/assets/screenshots/support.png)
+
+See [screenshot notes](docs/assets/screenshots/README.md) for capture settings and
+refresh instructions.
+
+## Project status
+
+The current version is `0.1.0-alpha.4`. This alpha is intended for testing; Windows
+builds are unsigned and not ready for distribution. [Release status](RELEASE_STATUS.md)
+lists the Windows and live Relution checks still needed.
+
+Each Windows build is configured for one Relution organization, with its server
+origin, organization UUID, and Appport application UUID set at build time. The
+source can be configured for different organizations; the running client cannot
+switch between them. Appport specifically targets Relution and Windows.
+
+The project does not yet have a license permitting reuse or redistribution.
+
+## Try it locally
+
+Install Node.js 26.5.x and pnpm 11.6.0, then run these commands from the repository
+root:
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm demo:build
+pnpm --dir apps/web-demo exec vite preview --host 127.0.0.1
+```
+
+Open the address printed by Vite. This serves the same browser build used for
+GitHub Pages. You do not need Windows, Rust, or a Relution account to try it.
+
+Run the demo's checks with:
+
+```sh
+pnpm demo:verify
+```
+
+## Work on the Windows client
+
+The desktop app uses React, Tauri 2, and Rust. React renders the interface. Rust
+handles personal-token sign-in, Relution requests, device matching, Windows
+integration, and local state. A deployment is reported as successful only after
+Relution inventory confirms the expected package and version.
+
+Use Rust 1.96.0 with Clippy and rustfmt alongside Node.js and pnpm. Running the
+native app or building an MSI requires Windows 11 x64 and the MSVC toolchain.
+[Development](docs/DEVELOPMENT.md) covers setup and tests;
+[Configuration](docs/CONFIGURATION.md) lists the build inputs.
+
+Run the full source checks with:
+
+```sh
 pnpm verify:source
 ```
 
-For frontend-only work, `pnpm --dir apps/windows-client dev` starts Vite without
-compiling Rust or contacting Relution. Run
-`pnpm --dir apps/windows-client tauri dev` only on a configured Windows host.
+This checks the desktop frontend, portable Rust code, architecture, documentation,
+and build-verification tools. Run `pnpm demo:verify` separately for the demo.
+Windows integration and live Relution testing are covered in
+[Operations](docs/OPERATIONS.md).
 
-Alpha.4 qualification builds use a fixed approved tenant and an explicit
-compile-time profile. They are unsigned and non-distributable. See the
-[configuration guide](docs/CONFIGURATION.md) and
-[release checklist](docs/RELEASE_CHECKLIST.md) before building or qualifying a
-candidate.
+| Directory | Contents |
+| --- | --- |
+| [`apps/windows-client`](apps/windows-client/README.md) | Windows app and command-line qualification utility |
+| [`apps/web-demo`](apps/web-demo/README.md) | Browser demo with fictional data |
+| `scripts` | Repository checks and qualification evidence tools |
+| `docs` | Architecture, setup, operations, and release notes |
 
 ## Documentation
 
-- [Product principles](docs/PRODUCT.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Configuration](docs/CONFIGURATION.md)
-- [Development](docs/DEVELOPMENT.md)
-- [Native Windows client](docs/NATIVE_WINDOWS_CLIENT.md)
-- [Operations](docs/OPERATIONS.md)
-- [Release checklist](docs/RELEASE_CHECKLIST.md)
-- [Current release status](RELEASE_STATUS.md)
+- [Architecture](docs/ARCHITECTURE.md): components and request flow
+- [Development](docs/DEVELOPMENT.md): setup, commands, and tests
+- [Configuration](docs/CONFIGURATION.md): build inputs, credentials, and diagnostics
+- [Operations](docs/OPERATIONS.md): Windows builds and qualification
+- [Contributing](CONTRIBUTING.md): preparing a pull request
+- [Security](SECURITY.md): reporting a vulnerability
 - [Alpha.4 release notes](docs/releases/0.1.0-alpha.4.md)
-- [Security policy](SECURITY.md)

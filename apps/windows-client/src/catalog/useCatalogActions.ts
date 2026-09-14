@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { useActionHydrator, type HydrationContext } from "./useActionHydrator";
 import { copyFor, type Locale } from "../i18n/copy";
 import type { AppAction, AvailableApp } from "../native-bridge/types";
 import { native } from "../native-bridge/native";
@@ -28,27 +29,9 @@ type ActivePollContext = {
   setPolling: Dispatch<SetStateAction<Map<string, PollingState>>>;
 };
 
-type HydrationMarker = {
-  actionId: string;
-  sessionGeneration: number;
-};
-
-type HydrationAttempt = HydrationMarker & {
-  actionGeneration: number;
-};
-
-type HydrationContext = ActionGenerationContext & {
-  beginPolling: (action: AppAction) => void;
-  isCurrent: (
-    appId: string,
-    actionGeneration: number,
-    sessionGeneration: number,
-  ) => boolean;
-  load: () => Promise<void>;
-  mounted: MutableRefObject<boolean>;
-  pollTimers: PollTimerRegistry;
-  setActions: Dispatch<SetStateAction<Map<string, AppAction>>>;
-  setPolling: Dispatch<SetStateAction<Map<string, PollingState>>>;
+type PerAppActionStartContext = Omit<ActionStartContext, "setBusy"> & {
+  pendingStarts: MutableRefObject<Map<string, symbol>>;
+  setBusyApps: Dispatch<SetStateAction<Set<string>>>;
 };
 
 function saveAction(
@@ -215,28 +198,29 @@ function useActionStarter({
   locale,
   poll,
   pollTimers,
+  pendingStarts,
   setActionFailures,
   setActions,
-  setBusy,
+  setBusyApps,
   setPolling,
-}: ActionStartContext) {
+}: PerAppActionStartContext) {
   return useCallback(
     async (application: AvailableApp) => {
+      if (pendingStarts.current.has(application.id)) return;
+      const pendingToken = Symbol(application.id);
+      pendingStarts.current.set(application.id, pendingToken);
+      setBusyApps(new Set(pendingStarts.current.keys()));
       pollTimers.clear(application.id);
       const { actionGeneration, sessionGeneration } = nextActionGeneration(
         application.id,
         { actionGenerations, generation },
       );
-      setBusy(application.id);
       setActionFailures((existing) => withoutKey(existing, application.id));
       try {
         const started = await native.act(application.id);
         if (!isCurrent(application.id, actionGeneration, sessionGeneration))
           return;
         saveAction(started, setActions);
-        setBusy((current) =>
-          current === application.id ? undefined : current,
-        );
         setPolling((existing) =>
           new Map(existing).set(application.id, "polling"),
         );
@@ -244,9 +228,6 @@ function useActionStarter({
       } catch (error) {
         if (!isCurrent(application.id, actionGeneration, sessionGeneration))
           return;
-        setBusy((current) =>
-          current === application.id ? undefined : current,
-        );
         setActionFailures((existing) =>
           new Map(existing).set(
             application.id,
@@ -255,6 +236,11 @@ function useActionStarter({
               : copyFor(locale).actionStartFailed[0],
           ),
         );
+      } finally {
+        if (pendingStarts.current.get(application.id) === pendingToken) {
+          pendingStarts.current.delete(application.id);
+          setBusyApps(new Set(pendingStarts.current.keys()));
+        }
       }
     },
     [
@@ -264,9 +250,10 @@ function useActionStarter({
       locale,
       poll,
       pollTimers,
+      pendingStarts,
       setActionFailures,
       setActions,
-      setBusy,
+      setBusyApps,
       setPolling,
     ],
   );
@@ -286,67 +273,6 @@ function useResumeAction(
   );
 }
 
-function isHydrated(
-  hydrated: ReadonlyMap<string, HydrationMarker>,
-  appId: string,
-  marker: HydrationMarker,
-) {
-  const previous = hydrated.get(appId);
-  return (
-    previous?.actionId === marker.actionId &&
-    previous.sessionGeneration === marker.sessionGeneration
-  );
-}
-
-function beginHydrationAttempt(
-  context: HydrationContext,
-  hydrated: Map<string, HydrationMarker>,
-  application: AvailableApp,
-) {
-  const actionId = application.activeActionId;
-  const sessionGeneration = context.generation.current;
-  if (!actionId) return;
-  const marker = { actionId, sessionGeneration };
-  if (isHydrated(hydrated, application.id, marker)) return;
-  hydrated.set(application.id, marker);
-  return {
-    ...marker,
-    actionGeneration: nextActionGeneration(application.id, context)
-      .actionGeneration,
-  };
-}
-
-function isCurrentHydrationResult(
-  context: HydrationContext,
-  application: AvailableApp,
-  attempt: HydrationAttempt,
-  action: AppAction,
-) {
-  return (
-    context.isCurrent(
-      application.id,
-      attempt.actionGeneration,
-      attempt.sessionGeneration,
-    ) &&
-    action.id === attempt.actionId &&
-    action.appId === application.id
-  );
-}
-
-function discardFailedHydration(
-  context: HydrationContext,
-  hydrated: Map<string, HydrationMarker>,
-  application: AvailableApp,
-  attempt: HydrationAttempt,
-) {
-  const stillCurrent =
-    context.mounted.current &&
-    context.generation.current === attempt.sessionGeneration &&
-    context.actionGenerations.current.get(application.id) ===
-      attempt.actionGeneration;
-  if (stillCurrent) hydrated.delete(application.id);
-}
-
 async function applyHydratedAction(
   context: HydrationContext,
   action: AppAction,
@@ -364,41 +290,6 @@ async function applyHydratedAction(
   );
 }
 
-async function hydrateAction(
-  context: HydrationContext,
-  hydrated: Map<string, HydrationMarker>,
-  application: AvailableApp,
-) {
-  const attempt = beginHydrationAttempt(context, hydrated, application);
-  if (!attempt) return;
-  try {
-    const action = await native.action(attempt.actionId);
-    if (!isCurrentHydrationResult(context, application, attempt, action))
-      return;
-    await applyHydratedAction(context, action);
-  } catch {
-    discardFailedHydration(context, hydrated, application, attempt);
-  }
-}
-
-function useActionHydrator(context: HydrationContext) {
-  const hydrated = useRef(new Map<string, HydrationMarker>());
-  const hydrateActions = useCallback(
-    async (applications: AvailableApp[]) => {
-      await Promise.all(
-        applications.map((application) =>
-          hydrateAction(context, hydrated.current, application),
-        ),
-      );
-    },
-    [context],
-  );
-  const resetHydration = useCallback(() => {
-    hydrated.current.clear();
-  }, []);
-  return { hydrateActions, resetHydration };
-}
-
 export function useActionWorkflow(
   locale: Locale,
   mounted: MutableRefObject<boolean>,
@@ -412,11 +303,12 @@ export function useActionWorkflow(
   const [actionFailures, setActionFailures] = useState<Map<string, string>>(
     () => new Map(),
   );
-  const [busy, setBusy] = useState<string>();
+  const [busyApps, setBusyApps] = useState<Set<string>>(() => new Set());
   const [polling, setPolling] = useState<Map<string, PollingState>>(
     () => new Map(),
   );
   const actionGenerations = useRef(new Map<string, number>());
+  const pendingStarts = useRef(new Map<string, symbol>());
   const { beginPolling, isCurrent, poll } = useActionPoller({
     actionGenerations,
     generation,
@@ -450,8 +342,10 @@ export function useActionWorkflow(
       setPolling,
     ],
   );
-  const { hydrateActions, resetHydration } =
-    useActionHydrator(hydrationContext);
+  const { hydrateActions, resetHydration } = useActionHydrator(
+    hydrationContext,
+    applyHydratedAction,
+  );
   const startAction = useActionStarter({
     actionGenerations,
     generation,
@@ -459,26 +353,32 @@ export function useActionWorkflow(
     locale,
     poll,
     pollTimers,
+    pendingStarts,
     setActionFailures,
     setActions,
-    setBusy,
+    setBusyApps,
     setPolling,
   });
   const resumeAction = useResumeAction(actions, beginPolling);
   const resetActions = useCallback(() => {
     pollTimers.clear();
-    actionGenerations.current.clear();
+    for (const [appId, value] of actionGenerations.current)
+      actionGenerations.current.set(appId, value + 1);
+    pendingStarts.current.clear();
     resetHydration();
     setActionFailures(new Map());
     setActions(new Map());
-    setBusy(undefined);
+    setBusyApps(new Set());
     setPolling(new Map());
-  }, [actionGenerations, pollTimers, resetHydration]);
+  }, [actionGenerations, pendingStarts, pollTimers, resetHydration]);
+
+  const busy = busyApps.values().next().value;
 
   return {
     actionFailures,
     actions,
     busy,
+    busyApps,
     hydrateActions,
     polling,
     resetActions,

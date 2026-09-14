@@ -1,26 +1,26 @@
 use super::{dto, has_blocking_remote_action, Action, ActionService, AvailableApp, RelutionClient};
 use crate::{
-    application::catalog::CatalogService,
+    application::{
+        action_test_support::{catalog_response, DIRECT_PERMISSION, EMPTY_INVENTORY},
+        catalog::CatalogService,
+        test_support::{client, run, server as requests_server, Response},
+    },
     domain::{
         action::{Reservation, State},
         catalog::{AppInstallState, AppSource},
         device::DeviceEvidence,
     },
-    infrastructure::{journal, relution::RelutionConfig},
+    infrastructure::journal,
 };
 use std::{
     ffi::OsString,
-    io::{Read, Write},
-    net::TcpListener,
     path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
-    thread,
     time::{SystemTime, UNIX_EPOCH},
 };
-use url::Url;
 
 static JOURNAL_ENVIRONMENT: Mutex<()> = Mutex::new(());
 
@@ -61,14 +61,6 @@ impl Drop for JournalSandbox {
     }
 }
 
-fn run<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("runtime")
-        .block_on(future)
-}
-
 fn app() -> AvailableApp {
     AvailableApp {
         id: "app".into(),
@@ -86,18 +78,6 @@ fn app() -> AvailableApp {
         active_action_state: None,
         has_icon: false,
     }
-}
-
-fn client(base: Url, writes_enabled: bool) -> Arc<RelutionClient> {
-    Arc::new(
-        RelutionClient::new(RelutionConfig {
-            base,
-            organization_uuid: "tenant".into(),
-            native_app_uuid: "native".into(),
-            writes_enabled,
-        })
-        .expect("client"),
-    )
 }
 
 fn service(client: Arc<RelutionClient>) -> ActionService {
@@ -118,101 +98,15 @@ fn service_with_test_evidence(client: Arc<RelutionClient>) -> (ActionService, Ar
     (ActionService::new(client, Arc::clone(&catalog)), catalog)
 }
 
-struct Response {
-    status: u16,
-    body: &'static str,
-}
-
-fn requests_server(
-    expected: usize,
-    response: impl Fn(&str) -> Response + Send + 'static,
-) -> (Url, Arc<AtomicUsize>, thread::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
-    let address = listener.local_addr().expect("mock address");
-    let requests = Arc::new(AtomicUsize::new(0));
-    let count = Arc::clone(&requests);
-    let handle = thread::spawn(move || {
-        for _ in 0..expected {
-            let (mut stream, _) = listener.accept().expect("request");
-            let mut request = [0_u8; 16 * 1024];
-            let bytes = stream.read(&mut request).expect("read request");
-            let response = response(std::str::from_utf8(&request[..bytes]).expect("HTTP text"));
-            count.fetch_add(1, Ordering::SeqCst);
-            write!(stream, "HTTP/1.1 {} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", response.status, response.body.len(), response.body).expect("write response");
-        }
-    });
-    (
-        Url::parse(&format!("http://{address}/")).expect("mock URL"),
-        requests,
-        handle,
-    )
-}
-
-const ASSIGNED_DEVICE: &str = r#"{"results":[{"uuid":"device","deviceId":"device-evidence","name":"Device","status":"COMPLIANT","platform":"WINDOWS","userUuid":"user","organizationUuid":"tenant","serialNumber":null}]}"#;
-const CATALOG: &str = r#"{"results":[{"uuid":"app","name":"App","defaultName":null,"description":null,"developerInformation":null,"subType":"WINGET","platforms":["WINDOWS"],"versions":{"RELEASE":{"uuid":"version","versionName":"2"}},"icon":"icon","internalName":"app.package"}]}"#;
-const GROUPS: &str = r#"{"groups":[]}"#;
-const EMPTY_INVENTORY: &str = r#"{"results":[]}"#;
-const DIRECT_PERMISSION: &str =
-    r#"{"results":[{"read":true,"userGroupInfo":{"uuid":"user","type":"USER"}}]}"#;
-
-fn catalog_response(request: &str, permission: &'static str) -> Option<Response> {
-    if request.contains("/api/management/v2/devices/baseInfo/query") {
-        return Some(Response {
-            status: 200,
-            body: ASSIGNED_DEVICE,
-        });
-    }
-    if request.contains("/api/management/v1/content/apps/baseInfo") {
-        return Some(Response {
-            status: 200,
-            body: CATALOG,
-        });
-    }
-    if request.contains("/api/management/v1/security/users/user/groups") {
-        return Some(Response {
-            status: 200,
-            body: GROUPS,
-        });
-    }
-    if request.contains("/api/management/v2/devices/device/installedApps/baseInfo/query") {
-        return Some(Response {
-            status: 200,
-            body: EMPTY_INVENTORY,
-        });
-    }
-    if request.contains("/api/management/v1/content/apps/app/permissions/RELEASE") {
-        return Some(Response {
-            status: 200,
-            body: permission,
-        });
-    }
-    None
-}
-
 fn one_request_server(
     expected_path: &'static str,
     status: u16,
     body: &'static str,
-) -> (Url, Arc<AtomicUsize>, thread::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
-    let address = listener.local_addr().expect("mock address");
-    let requests = Arc::new(AtomicUsize::new(0));
-    let count = Arc::clone(&requests);
-    let handle = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("request");
-        let mut request = [0_u8; 16 * 1024];
-        let bytes = stream.read(&mut request).expect("read request");
-        assert!(std::str::from_utf8(&request[..bytes])
-            .expect("HTTP text")
-            .contains(expected_path));
-        count.fetch_add(1, Ordering::SeqCst);
-        write!(stream, "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).expect("write response");
-    });
-    (
-        Url::parse(&format!("http://{address}/")).expect("mock URL"),
-        requests,
-        handle,
-    )
+) -> (url::Url, Arc<AtomicUsize>, std::thread::JoinHandle<()>) {
+    requests_server(1, move |request| {
+        assert!(request.contains(expected_path));
+        Response::json(status, body)
+    })
 }
 
 #[test]
@@ -250,7 +144,7 @@ fn reserved_submission_is_not_retried_and_ambiguous_delivery_stays_unknown() {
         one_request_server("/content/apps/app/versions/version/deployments", 503, "{}");
     let client = client(base, true);
     let service = service(Arc::clone(&client));
-    journal::reserve(Reservation {
+    run(journal::ActionJournal::new().reserve(Reservation {
         id: "action",
         tenant: "tenant",
         device: "device",
@@ -259,19 +153,18 @@ fn reserved_submission_is_not_retried_and_ambiguous_delivery_stays_unknown() {
         package: Some("app.package"),
         intent: crate::domain::action::Intent::Install,
         baseline: "",
-    })
+    }))
     .expect("reserve before deployment");
 
-    service
-        .record_submission(
-            "action",
-            run(client.deploy("token", "app", "version", "device")),
-        )
-        .expect("ambiguous response is retained");
+    run(service.record_submission(
+        "action",
+        run(client.deploy("token", "app", "version", "device")),
+    ))
+    .expect("ambiguous response is retained");
 
     handle.join().expect("mock server");
     assert_eq!(requests.load(Ordering::SeqCst), 1);
-    let action = journal::action("action")
+    let action = run(journal::ActionJournal::new().action("action"))
         .expect("journal read")
         .expect("saved action");
     assert_eq!(action.state, State::Unknown);
@@ -325,10 +218,7 @@ fn request_action_revalidates_cached_authority_then_reserves_before_one_deployme
             return response;
         }
         if request.contains("/api/management/v1/devices/device/actions") {
-            return Response {
-                status: 200,
-                body: EMPTY_INVENTORY,
-            };
+            return Response::json(200, EMPTY_INVENTORY);
         }
         assert!(request
             .contains("POST /api/management/v1/content/apps/app/versions/version/deployments"));
@@ -343,14 +233,12 @@ fn request_action_revalidates_cached_authority_then_reserves_before_one_deployme
             );
         }
         deployment_requests.fetch_add(1, Ordering::SeqCst);
-        let active = journal::active_actions("device").expect("read durable reservation");
+        let active = run(journal::ActionJournal::new().active_actions("device"))
+            .expect("read durable reservation");
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].app_id, "app");
         assert_eq!(active[0].state, State::Reserved);
-        Response {
-            status: 200,
-            body: r#"{"results":[{"successful":true}]}"#,
-        }
+        Response::json(200, r#"{"results":[{"successful":true}]}"#)
     });
     let client = client(base, true);
     let (service, catalog) = service_with_test_evidence(client);
@@ -363,7 +251,7 @@ fn request_action_revalidates_cached_authority_then_reserves_before_one_deployme
     assert_eq!(requests.load(Ordering::SeqCst), 12);
     assert_eq!(deployments.load(Ordering::SeqCst), 1);
     assert_eq!(action.state, crate::domain::action::ActionState::Queued);
-    let saved = journal::action(&action.id)
+    let saved = run(journal::ActionJournal::new().action(&action.id))
         .expect("journal read")
         .expect("saved action");
     assert_eq!(saved.state, State::Queued);
@@ -415,25 +303,19 @@ fn request_action_persists_unknown_after_one_ambiguous_deployment_submission() {
             return response;
         }
         if request.contains("/api/management/v1/devices/device/actions") {
-            return Response {
-                status: 200,
-                body: EMPTY_INVENTORY,
-            };
+            return Response::json(200, EMPTY_INVENTORY);
         }
         assert!(request
             .contains("POST /api/management/v1/content/apps/app/versions/version/deployments"));
         deployment_requests.fetch_add(1, Ordering::SeqCst);
         assert_eq!(
-            journal::active_actions("device")
+            run(journal::ActionJournal::new().active_actions("device"))
                 .expect("read durable reservation")
                 .as_slice()[0]
                 .state,
             State::Reserved
         );
-        Response {
-            status: 503,
-            body: "{}",
-        }
+        Response::json(503, "{}")
     });
     let (service, _) = service_with_test_evidence(client(base, true));
 
@@ -444,7 +326,7 @@ fn request_action_persists_unknown_after_one_ambiguous_deployment_submission() {
     assert_eq!(requests.load(Ordering::SeqCst), 7);
     assert_eq!(deployments.load(Ordering::SeqCst), 1);
     assert_eq!(action.state, crate::domain::action::ActionState::Unknown);
-    let saved = journal::action(&action.id)
+    let saved = run(journal::ActionJournal::new().action(&action.id))
         .expect("journal read")
         .expect("saved action");
     assert_eq!(saved.state, State::Unknown);
@@ -477,7 +359,7 @@ fn request_action_denies_unauthorized_apps_before_reservation_or_deployment() {
     handle.join().expect("mock server");
     assert_eq!(requests.load(Ordering::SeqCst), 5);
     assert_eq!(deployments.load(Ordering::SeqCst), 0);
-    assert!(journal::active_actions("device")
+    assert!(run(journal::ActionJournal::new().active_actions("device"))
         .expect("journal read")
         .is_empty());
 }
@@ -496,10 +378,10 @@ fn request_action_blocks_matching_remote_actions_before_reservation_or_deploymen
             return response;
         }
         assert!(request.contains("/api/management/v1/devices/device/actions"));
-        Response {
-            status: 200,
-            body: r#"{"results":[{"uuid":"remote","state":"PENDING","creationDate":1,"details":{"appUuid":"app","versionUuid":"version","appInternalName":"app.package"}}]}"#,
-        }
+        Response::json(
+            200,
+            r#"{"results":[{"uuid":"remote","state":"PENDING","creationDate":1,"details":{"appUuid":"app","versionUuid":"version","appInternalName":"app.package"}}]}"#,
+        )
     });
     let (service, _) = service_with_test_evidence(client(base, true));
 
@@ -511,7 +393,7 @@ fn request_action_blocks_matching_remote_actions_before_reservation_or_deploymen
     handle.join().expect("mock server");
     assert_eq!(requests.load(Ordering::SeqCst), 6);
     assert_eq!(deployments.load(Ordering::SeqCst), 0);
-    assert!(journal::active_actions("device")
+    assert!(run(journal::ActionJournal::new().active_actions("device"))
         .expect("journal read")
         .is_empty());
 }

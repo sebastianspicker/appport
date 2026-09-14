@@ -1,51 +1,74 @@
 # Configuration
 
-Appport has no server runtime configuration in this repository. The supported client build inputs are:
+Appport's native configuration is fixed when Rust compiles the desktop client and
+qualification utility. Users cannot change the Relution endpoint, organization, or
+qualification profile at runtime. Rebuild the binaries to change any of these
+settings.
 
-| Variable | Use |
+## Build settings
+
+| Variable | Value |
 | --- | --- |
-| APPPORT_RELUTION_API_BASE_URL | Required. Fixed HTTPS Relution API root URL embedded in the client. |
-| APPPORT_RELUTION_ORGANIZATION_UUID | Required. Fixed Relution organization UUID embedded in the client. |
-| APPPORT_NATIVE_APP_UUID | Required. Fixed Appport application UUID embedded in the client. |
-| APPPORT_QUALIFICATION_PROFILE | Required for qualification builds. Compile-time value: `read_only` or `write_qualification`. |
-| APPPORT_RELUTION_WRITES_ENABLED | Required build assertion. Must exactly match the selected qualification profile. |
-| APPPORT_QUALIFICATION_TENANT_APPROVED | Required for release builds. Must be exactly `true`. |
-| APPPORT_RELUTION_TENANT_CLASS | Required for release builds. Must be exactly `qualification`. |
-| APPPORT_DISPOSABLE_RESOURCES_APPROVED | Required for the `write_qualification` profile. Must be exactly `true`. |
-| APPPORT_SOURCE_VERIFICATION | Set to `true` only for non-release source checks without tenant inputs. |
-| APPPORT_RELUTION_DIAGNOSTICS | Compile-time opt-in response diagnostics. Set exactly `true` or `false`; source verification defaults to `false`, while qualification builds must set it explicitly. |
+| `APPPORT_RELUTION_API_BASE_URL` | HTTPS origin of the Relution API. Credentials, paths, queries, and fragments are rejected. |
+| `APPPORT_RELUTION_ORGANIZATION_UUID` | UUID of the Relution organization used by this build. |
+| `APPPORT_NATIVE_APP_UUID` | UUID of the Appport application in Relution. Appport removes this application from its own catalog. It must differ from the organization UUID. |
+| `APPPORT_QUALIFICATION_PROFILE` | `read_only` or `write_qualification`. |
+| `APPPORT_RELUTION_WRITES_ENABLED` | `false` for `read_only`; `true` for `write_qualification`. Any other pairing fails the build. |
+| `APPPORT_RELUTION_DIAGNOSTICS` | Exactly `true` or `false`. Candidate builds use `false`. |
+| `APPPORT_QUALIFICATION_TENANT_APPROVED` | Exactly `true` for a release build. |
+| `APPPORT_RELUTION_TENANT_CLASS` | Exactly `qualification` for a release build. |
+| `APPPORT_DISPOSABLE_RESOURCES_APPROVED` | Exactly `true` for `write_qualification`. |
+| `APPPORT_SOURCE_REVISION` | The exact 40-character hexadecimal commit ID built into the candidate and its reports. |
+| `APPPORT_SOURCE_VERIFICATION` | Repository source-check mode. The verification script sets this to `true` and supplies non-routable test values. |
 
-`read_only` requires `APPPORT_RELUTION_WRITES_ENABLED=false`.
-`write_qualification` requires `APPPORT_RELUTION_WRITES_ENABLED=true`. A build
-fails closed if the values do not match. The write profile additionally needs an
-externally supplied, non-secret qualification plan; it is not a repository input
-and must not be committed or embedded in evidence.
+The build script calculates `APPPORT_CONFIGURATION_FINGERPRINT_SHA256` from the
+effective settings and sets `APPPORT_QUALIFICATION_BUILD`. These two values are
+generated and should not be supplied manually.
 
-Release builds require the endpoint, both UUID inputs, tenant approval, and
-tenant class. Endpoint values must be a fixed HTTPS origin with no credentials,
-path, query string, or fragment. Release builds reject placeholder hosts and nil
-or repeated-placeholder UUIDs. A build without valid embedded inputs fails
-closed instead of selecting configuration at runtime. Release builds also reject
-source-verification mode.
+Release builds fail when required values are missing or inconsistent. Validation
+also rejects placeholder hosts, nil and repeated-placeholder UUIDs, a source-check
+configuration used for a release build, or any tenant classification other than the
+values above.
 
-The approved qualification origin and UUIDs are non-secret build inputs.
-Relution owns authentication, authorization, token, and audit configuration.
-The client accepts its token through the masked sign-in field, and the
-qualification utility uses masked console input. Never put tokens in arguments,
-environment variables, files, logs, or reports. Do not place administrative credentials,
-client secrets, or private keys in a client environment file or build invocation.
+The write profile needs a JSON plan that matches
+[`qualification-plan.schema.json`](qualification-plan.schema.json). Pass the plan to
+the qualification utility at runtime. It contains identifiers for disposable test
+resources, expected versions, and cleanup responsibility. Keep this tenant-specific
+file out of the repository and generated release records.
 
-The client supports personal-token sign-in only. Appport does not use Basic
-authentication, portal cookies, or HTML login scraping.
+## Personal tokens
 
-`APPPORT_RELUTION_DIAGNOSTICS=true` creates a diagnostic artifact: its
-configuration fingerprint differs from a normal candidate. It records each
-Relution HTTP response's method, API path, status, and sanitized response body
-in `%LOCALAPPDATA%\\Relution\\Appport\\relution-debug.log` (with one rotated
-`.log.1` file). It never records request data, headers, query values, or
-response headers. The response log is capped at 256 KiB per file and each body
-at 8 KiB. JSON values that can identify users, devices, applications, packages,
-or credentials are redacted; malformed and binary response bodies are omitted.
-Use it only for controlled troubleshooting. The active and rotated files expire
-at the next diagnostic write after seven days; remove both immediately after collecting the needed evidence
-and retain them only under the applicable incident-data policy.
+The desktop client accepts a personal token through its masked sign-in field. The
+qualification utility reads tokens from masked console input. Appport does not read
+tokens from command-line arguments, environment variables, configuration files, or
+build settings, and it never writes them to logs or reports.
+
+Personal tokens are the only supported authentication method. Basic authentication,
+portal cookies, HTML login, client secrets, private keys, and administrative
+credentials are unsupported.
+
+## Diagnostic logging
+
+Set `APPPORT_RELUTION_DIAGNOSTICS=true` only for troubleshooting. The setting changes
+the configuration fingerprint, and a diagnostic build cannot pass candidate checks.
+
+On Windows, diagnostic builds write sanitized Relution response records to:
+
+```text
+%LOCALAPPDATA%\Relution\Appport\relution-debug.log
+%LOCALAPPDATA%\Relution\Appport\relution-debug.log.1
+```
+
+Each record contains the HTTP method, API path, response status, and a sanitized
+response body. Request data, request and response headers, query values, malformed
+or binary bodies, and identifying JSON values are omitted. A body is limited to
+8 KiB. Each log file is limited to 256 KiB.
+
+Native debug builds also write these records to stderr with the
+`APPPORT_RELUTION_DIAGNOSTIC` prefix. Terminal, IDE, and CI output can therefore
+contain tenant troubleshooting data. Logs expire on the first diagnostic write
+after seven days. Remove the files and captured output when the investigation is
+finished, unless they must be retained for an incident.
+
+See [Development](DEVELOPMENT.md) for a read-only Windows development example and
+[Operations](OPERATIONS.md) for candidate build instructions.

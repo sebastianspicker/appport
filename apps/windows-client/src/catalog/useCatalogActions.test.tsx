@@ -1,5 +1,4 @@
 import { act, renderHook } from "@testing-library/react";
-import { useRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppAction, AvailableApp } from "../native-bridge/types";
 import { native } from "../native-bridge/native";
@@ -38,6 +37,26 @@ function availableApp(
     hasIcon: false,
     ...overrides,
   };
+}
+
+function restartedApplication() {
+  return availableApp("firefox", {
+    activeActionId: "restart-42",
+    activeActionState: "queued",
+    installState: "available",
+  });
+}
+
+function expectTerminalReload(
+  workflow: {
+    actions: ReadonlyMap<string, AppAction>;
+    polling: ReadonlyMap<string, unknown>;
+  },
+  load: ReturnType<typeof vi.fn>,
+) {
+  expect(workflow.actions.get("firefox")?.state).toBe("succeeded");
+  expect(workflow.polling.has("firefox")).toBe(false);
+  expect(load).toHaveBeenCalledTimes(1);
 }
 
 function appAction(
@@ -93,11 +112,7 @@ describe("useActionWorkflow", () => {
       .mockResolvedValueOnce(appAction("queued", { id: "restart-42" }))
       .mockResolvedValueOnce(appAction("succeeded", { id: "restart-42" }));
     const { result } = renderHook(() => useActionHarness(load));
-    const application = availableApp("firefox", {
-      activeActionId: "restart-42",
-      activeActionState: "queued",
-      installState: "available",
-    });
+    const application = restartedApplication();
 
     await act(async () => {
       await result.current.workflow.hydrateActions([application]);
@@ -115,11 +130,7 @@ describe("useActionWorkflow", () => {
     });
 
     expect(native.action).toHaveBeenCalledTimes(2);
-    expect(result.current.workflow.actions.get("firefox")?.state).toBe(
-      "succeeded",
-    );
-    expect(result.current.workflow.polling.has("firefox")).toBe(false);
-    expect(load).toHaveBeenCalledTimes(1);
+    expectTerminalReload(result.current.workflow, load);
   });
 
   it("ignores stale and mismatched hydration results", async () => {
@@ -131,11 +142,7 @@ describe("useActionWorkflow", () => {
         appAction("queued", { appId: "other-app", id: "other-action" }),
       );
     const { result } = renderHook(useActionHarness);
-    const application = availableApp("firefox", {
-      activeActionId: "restart-42",
-      activeActionState: "queued",
-      installState: "available",
-    });
+    const application = restartedApplication();
 
     const hydration = result.current.workflow.hydrateActions([application]);
     act(() => {
@@ -159,11 +166,7 @@ describe("useActionWorkflow", () => {
       .mockRejectedValueOnce(new Error("temporary IPC failure"))
       .mockResolvedValueOnce(appAction("queued", { id: "restart-42" }));
     const { result } = renderHook(useActionHarness);
-    const application = availableApp("firefox", {
-      activeActionId: "restart-42",
-      activeActionState: "queued",
-      installState: "available",
-    });
+    const application = restartedApplication();
 
     await act(async () => {
       await result.current.workflow.hydrateActions([application]);
@@ -200,11 +203,7 @@ describe("useActionWorkflow", () => {
       await vi.advanceTimersByTimeAsync(2_000);
     });
 
-    expect(result.current.workflow.actions.get("firefox")?.state).toBe(
-      "succeeded",
-    );
-    expect(result.current.workflow.polling.has("firefox")).toBe(false);
-    expect(load).toHaveBeenCalledTimes(1);
+    expectTerminalReload(result.current.workflow, load);
   });
 
   it("reloads the catalog after a terminal hydrated result", async () => {
@@ -249,5 +248,86 @@ describe("useActionWorkflow", () => {
     });
 
     expect(native.action).not.toHaveBeenCalled();
+  });
+
+  it("keeps concurrent applications pending and rejects duplicate submissions", async () => {
+    const first = deferred<AppAction>();
+    const second = deferred<AppAction>();
+    vi.mocked(native.act).mockImplementation((appId) => {
+      if (appId === "alpha") return first.promise;
+      if (appId === "beta") return second.promise;
+      throw new Error("unexpected application " + appId);
+    });
+    const { result } = renderHook(useActionHarness);
+    let firstStart!: Promise<void>;
+    let secondStart!: Promise<void>;
+
+    act(() => {
+      firstStart = result.current.workflow.startAction(availableApp("alpha"));
+      secondStart = result.current.workflow.startAction(availableApp("beta"));
+      void result.current.workflow.startAction(availableApp("alpha"));
+    });
+
+    expect(native.act).toHaveBeenCalledTimes(2);
+    expect(native.act).toHaveBeenNthCalledWith(1, "alpha");
+    expect(native.act).toHaveBeenNthCalledWith(2, "beta");
+    expect(result.current.workflow.busyApps).toEqual(
+      new Set(["alpha", "beta"]),
+    );
+
+    await act(async () => {
+      first.resolve(
+        appAction("failed", { id: "alpha-action", appId: "alpha" }),
+      );
+      await firstStart;
+    });
+    expect(result.current.workflow.busyApps).toEqual(new Set(["beta"]));
+    expect(result.current.workflow.busy).toBe("beta");
+
+    await act(async () => {
+      second.resolve(appAction("failed", { id: "beta-action", appId: "beta" }));
+      await secondStart;
+    });
+    expect(result.current.workflow.busyApps).toEqual(new Set());
+  });
+
+  it("does not let a stale completion clear a newer generation start", async () => {
+    const stale = deferred<AppAction>();
+    const current = deferred<AppAction>();
+    vi.mocked(native.act)
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(current.promise);
+    const { result } = renderHook(useActionHarness);
+    let staleStart!: Promise<void>;
+    let currentStart!: Promise<void>;
+
+    act(() => {
+      staleStart = result.current.workflow.startAction(availableApp("alpha"));
+    });
+    act(() => {
+      result.current.workflow.resetActions();
+      currentStart = result.current.workflow.startAction(availableApp("alpha"));
+    });
+
+    await act(async () => {
+      stale.resolve(
+        appAction("failed", { id: "stale-action", appId: "alpha" }),
+      );
+      await staleStart;
+    });
+    expect(result.current.workflow.busyApps).toEqual(new Set(["alpha"]));
+    expect(result.current.workflow.actions.has("alpha")).toBe(false);
+
+    await act(async () => {
+      current.resolve(
+        appAction("failed", { id: "current-action", appId: "alpha" }),
+      );
+      await currentStart;
+    });
+    expect(result.current.workflow.busyApps).toEqual(new Set());
+    expect(result.current.workflow.actions.get("alpha")?.id).toBe(
+      "current-action",
+    );
+    expect(native.act).toHaveBeenCalledTimes(2);
   });
 });

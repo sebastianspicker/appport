@@ -1,0 +1,22 @@
+{
+  "minLines": 10,
+  "minTokens": 50,
+  "mode": "strict",
+  "maxLines": 500,
+  "format": ["rust", "typescript", "tsx", "javascript", "css"],
+  "threshold": 1,
+  "baseline": "quality-duplication-baseline.json",
+  "failOnNewClones": 0,
+  "ignore": [
+    "**/.git/**",
+    "**/.local/**",
+    "**/.worktrees/**",
+    "**/archive/**",
+    "**/design-preview/**",
+    "**/dist/**",
+    "**/generated/**",
+    "**/index/**",
+    "**/node_modules/**",
+    "**/target/**"
+  ]
+}

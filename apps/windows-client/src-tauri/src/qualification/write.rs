@@ -334,7 +334,7 @@ impl ActionQualification<'_> {
                 .await
             {
                 Ok(current) if current.state == ActionState::Succeeded => {
-                    self.record_succeeded_action(name, &current.id);
+                    self.record_succeeded_action(name, &current.id).await;
                     return;
                 }
                 Ok(current)
@@ -359,12 +359,12 @@ impl ActionQualification<'_> {
             .push(failed(name, "action inventory confirmation timed out"));
     }
 
-    fn record_succeeded_action(&mut self, name: &'static str, action_id: &str) {
-        let attributed = crate::infrastructure::journal::action(action_id)
-            .ok()
-            .flatten()
-            .and_then(|saved| saved.correlation)
-            .is_some();
+    async fn record_succeeded_action(&mut self, name: &'static str, action_id: &str) {
+        let attributed = self
+            .actions
+            .has_remote_attribution(action_id)
+            .await
+            .unwrap_or(false);
         self.checks.push(if attributed {
             passed(
                 name,

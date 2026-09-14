@@ -8,7 +8,6 @@ use crate::{
     },
 };
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 pub(crate) enum SupportWorkflowError {
     Client(String),
@@ -17,15 +16,11 @@ pub(crate) enum SupportWorkflowError {
 
 pub(crate) struct SupportService {
     catalog: Arc<CatalogService>,
-    confirmation_generation: Mutex<Option<u64>>,
 }
 
 impl SupportService {
     pub(crate) fn new(catalog: Arc<CatalogService>) -> Self {
-        Self {
-            catalog,
-            confirmation_generation: Mutex::new(None),
-        }
+        Self { catalog }
     }
 
     pub(crate) async fn details(
@@ -38,56 +33,40 @@ impl SupportService {
         let (details, _) = self
             .collect_details(token, username, user_uuid, generation)
             .await?;
-        *self.confirmation_generation.lock().await = Some(generation);
         Ok(details)
     }
 
-    pub(crate) async fn generate_bundle(
+    pub(crate) async fn prepare_bundle(
         &self,
-        confirmed_support_identifiers: bool,
         token: &str,
         username: &str,
         user_uuid: &str,
         generation: u64,
-    ) -> Result<support::SupportBundleResult, SupportWorkflowError> {
-        if !confirmed_support_identifiers {
-            return Err(SupportWorkflowError::Support(
-                support::SupportError::ConsentRequired,
-            ));
-        }
+    ) -> Result<support::SupportBundleRequest, SupportWorkflowError> {
         let (details, collector_warnings) = self
             .collect_details(token, username, user_uuid, generation)
             .await
             .map_err(SupportWorkflowError::Client)?;
-        if self.confirmation_generation.lock().await.take() != Some(generation) {
-            return Err(SupportWorkflowError::Support(
-                support::SupportError::ConsentRequired,
-            ));
-        }
         let catalog_summary = support::SupportCatalogSummary {
             assigned_eligible_count: details.assigned_eligible_count,
             available_count: details.available_count,
             update_count: details.update_count,
         };
         let (client_log, client_log_1) = logging::support_log_paths();
-        let request = support::SupportBundleRequest {
+        Ok(support::SupportBundleRequest {
             consent: true,
             created_at: local::epoch().to_string(),
             details,
             catalog_summary,
-            network_summary: support_collectors::collect_network_summary(),
+            network_summary: tokio::task::spawn_blocking(
+                support_collectors::collect_network_summary,
+            )
+            .await
+            .map_err(|_| SupportWorkflowError::Support(support::SupportError::AssemblyFailed))?,
             collector_warnings,
             client_log,
             client_log_1,
-        };
-        tokio::task::spawn_blocking(move || support::generate_support_bundle(&request))
-            .await
-            .map_err(|_| SupportWorkflowError::Support(support::SupportError::AssemblyFailed))?
-            .map_err(SupportWorkflowError::Support)
-    }
-
-    pub(crate) async fn clear_confirmation(&self) {
-        *self.confirmation_generation.lock().await = None;
+        })
     }
 
     async fn collect_details(
@@ -107,7 +86,9 @@ impl SupportService {
                 &platform::current_locale(),
             )
             .await?;
-        let platform = support_collectors::collect_platform_data();
+        let platform = tokio::task::spawn_blocking(support_collectors::collect_platform_data)
+            .await
+            .map_err(|_| "support: platform details collection failed")?;
         Ok((
             support::SupportDetails {
                 app_version: env!("CARGO_PKG_VERSION").into(),

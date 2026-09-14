@@ -21,22 +21,30 @@ export function CatalogResults({
     );
   if (catalog.phase !== "ready")
     return (
-      <Status problem={catalog.phase} locale={locale} retry={catalog.load} />
+      <Status
+        problem={catalog.phase}
+        locale={locale}
+        retry={() => catalog.load(catalog.view, true, true)}
+      />
     );
   return (
-    <section className="grid" aria-live="polite">
+    <section className="catalog-list" aria-live="polite">
       {catalog.rows.map((application) => (
         <AppCard
           key={application.id}
           application={application}
           action={catalog.actions.get(application.id)}
           actionFailure={catalog.actionFailures.get(application.id)}
-          busy={catalog.busy === application.id}
+          busy={catalog.busyApps.has(application.id)}
           iconSession={catalog.iconSession}
+          catalogRevision={catalog.catalogRevision}
           locale={locale}
           onConfirm={onConfirm}
           polling={catalog.polling.get(application.id)}
           onResume={catalog.resumeAction}
+          deviceName={
+            catalog.bootstrap?.device.name ?? copyFor(locale).currentDevice
+          }
           writesEnabled={catalog.bootstrap?.writesEnabled === true}
         />
       ))}

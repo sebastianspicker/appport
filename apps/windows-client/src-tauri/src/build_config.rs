@@ -96,7 +96,7 @@ pub fn validate_origin(value: &str, reject_placeholder: bool) -> Result<(), &'st
     Ok(())
 }
 
-fn is_fixed_https_origin(url: &Url) -> bool {
+pub(crate) fn is_fixed_https_origin(url: &Url) -> bool {
     url.scheme() == "https"
         && url.host_str().is_some()
         && url.username().is_empty()

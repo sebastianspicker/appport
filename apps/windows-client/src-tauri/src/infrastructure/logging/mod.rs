@@ -53,31 +53,7 @@ pub(crate) fn support_log_paths() -> (Option<PathBuf>, Option<PathBuf>) {
 fn prepare_log_directory(path: &std::path::Path) -> bool {
     #[cfg(windows)]
     {
-        use std::os::windows::fs::MetadataExt;
-        let Ok(base) = crate::infrastructure::windows::system_tools::local_app_data() else {
-            return false;
-        };
-        if path != base.join("Relution").join("Appport") {
-            return false;
-        }
-        let mut current = base;
-        for component in ["Relution", "Appport"] {
-            current.push(component);
-            if !current.exists() && fs::create_dir(&current).is_err() {
-                return false;
-            }
-            let Ok(metadata) = fs::symlink_metadata(&current) else {
-                return false;
-            };
-            if !metadata.is_dir()
-                || metadata.file_type().is_symlink()
-                || metadata.file_attributes() & 0x400 != 0
-                || crate::infrastructure::journal::secure_current_user(&current).is_err()
-            {
-                return false;
-            }
-        }
-        true
+        prepare_windows_log_directory(path)
     }
     #[cfg(not(windows))]
     {
@@ -86,6 +62,40 @@ fn prepare_log_directory(path: &std::path::Path) -> bool {
                 .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
                 .unwrap_or(false)
     }
+}
+
+#[cfg(windows)]
+fn prepare_windows_log_directory(path: &std::path::Path) -> bool {
+    let Ok(base) = crate::infrastructure::windows::system_tools::local_app_data() else {
+        return false;
+    };
+    if path != base.join("Relution").join("Appport") {
+        return false;
+    }
+    let mut current = base;
+    for component in ["Relution", "Appport"] {
+        current.push(component);
+        if !prepare_log_component(&current) {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(windows)]
+fn prepare_log_component(path: &std::path::Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    if !path.exists() && fs::create_dir(path).is_err() {
+        return false;
+    }
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    metadata.is_dir()
+        && !metadata.file_type().is_symlink()
+        && metadata.file_attributes() & 0x400 == 0
+        && crate::infrastructure::journal::secure_current_user(path).is_ok()
 }
 
 pub fn sanitize(value: &str) -> String {

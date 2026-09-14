@@ -14,6 +14,7 @@ export type PollingState = "polling" | "paused";
 export type CatalogPhase = "ready" | ClientProblem;
 
 export type CatalogSetters = {
+  setCatalogRevision: Dispatch<SetStateAction<string>>;
   setApps: Dispatch<SetStateAction<AvailableApp[]>>;
   setBootstrap: Dispatch<SetStateAction<NativeBootstrap | undefined>>;
   setPhase: Dispatch<SetStateAction<CatalogPhase>>;

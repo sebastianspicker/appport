@@ -128,6 +128,16 @@ pub struct ActiveAction {
     pub app_id: String,
     pub state: State,
 }
+/// Credential-free request identity shared by preflight and durable storage.
+pub struct ActionRequest {
+    pub id: String,
+    pub device_id: String,
+    pub app_id: String,
+    pub version_id: String,
+    pub package_id: Option<String>,
+    pub intent: Intent,
+    pub baseline: String,
+}
 pub struct Reservation<'a> {
     pub id: &'a str,
     pub tenant: &'a str,

@@ -16,8 +16,10 @@ export const sourceGateCommands = Object.freeze([
   ["format", "pnpm", ["format:check"]],
   ["documentation", "pnpm", ["docs:verify"]],
   ["architecture", "pnpm", ["architecture:check"]],
+  ["tooling-tests", "pnpm", ["tooling:test"]],
   ["evidence-tests", "pnpm", ["evidence:test"]],
   ["qualification", "pnpm", ["qualification:check"]],
+  ["quality", "pnpm", ["quality:source:static"]],
   ["frontend-types", "pnpm", ["frontend:check"]],
   ["frontend-tests", "pnpm", ["frontend:test"]],
   ["frontend-build", "pnpm", ["frontend:build"]],
@@ -30,3 +32,53 @@ export const sourceGateCommands = Object.freeze([
 export const sourceGateNames = Object.freeze(
   sourceGateCommands.map(([name]) => name),
 );
+
+const expectedStaticQualityCommand = [
+  "pnpm quality:lint:source",
+  "pnpm quality:style:source",
+  "pnpm quality:size:source",
+  "pnpm quality:duplicates:source",
+].join(" && ");
+
+export function sourceGateCompositionFailures(
+  scripts,
+  commands = sourceGateCommands,
+) {
+  const failures = [];
+  if (scripts["quality:source:static"] !== expectedStaticQualityCommand) {
+    failures.push(
+      "quality:source:static must compose all source static checks",
+    );
+  }
+  if (
+    scripts["quality:source"] !==
+    "pnpm quality:source:static && node scripts/verify-source.mjs --gate rust-clippy"
+  ) {
+    failures.push("quality:source must compose static quality and Clippy");
+  }
+  verifyGate(failures, commands, "quality", "quality:source:static");
+  verifyGate(failures, commands, "tooling-tests", "tooling:test");
+
+  const clippyGates = commands.filter(
+    ([, executable, arguments_]) =>
+      executable === "pnpm" && arguments_.includes("rust:clippy"),
+  );
+  if (clippyGates.length !== 1 || clippyGates[0][0] !== "rust-clippy") {
+    failures.push(
+      "aggregate source gates must run dedicated Clippy exactly once",
+    );
+  }
+  return failures;
+}
+
+function verifyGate(failures, commands, name, script) {
+  const matches = commands.filter(([gateName]) => gateName === name);
+  if (
+    matches.length !== 1 ||
+    matches[0][1] !== "pnpm" ||
+    matches[0][2].length !== 1 ||
+    matches[0][2][0] !== script
+  ) {
+    failures.push(`${name} gate must invoke pnpm ${script} exactly once`);
+  }
+}
