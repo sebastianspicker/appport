@@ -1,14 +1,17 @@
 //! Shared native session fixtures and deterministic admission observation.
 
-use super::AppState;
-use crate::{application::catalog::CatalogService, infrastructure::relution::RelutionClient};
+use super::DesktopService;
+use crate::{
+    application::catalog::CatalogService, domain::catalog::CatalogView,
+    infrastructure::relution::RelutionClient,
+};
 use std::{sync::Arc, time::Duration};
 
 pub(super) async fn signed_in_state(
     client: Arc<RelutionClient>,
     catalog: Arc<CatalogService>,
-) -> Arc<AppState> {
-    let state = Arc::new(AppState::new(client, catalog, "apps".into()));
+) -> Arc<DesktopService> {
+    let state = Arc::new(DesktopService::new(client, catalog, CatalogView::Apps));
     let mut session = state.session.lock().await;
     let operation = session.begin_sign_in();
     session
@@ -19,7 +22,7 @@ pub(super) async fn signed_in_state(
 }
 
 pub(super) async fn cancel_after_admission<T>(
-    state: &AppState,
+    state: &DesktopService,
     waiter: tokio::task::JoinHandle<T>,
 ) {
     tokio::time::timeout(Duration::from_secs(1), async {
@@ -35,8 +38,8 @@ pub(super) async fn cancel_after_admission<T>(
 
 /// Sign-out must remain pending while an admitted durable write is paused.
 pub(super) async fn blocked_sign_out(
-    state: &Arc<AppState>,
-) -> tokio::task::JoinHandle<crate::interface::wire::SignOutOutcome> {
+    state: &Arc<DesktopService>,
+) -> tokio::task::JoinHandle<super::SignOutOutcome> {
     let state = Arc::clone(state);
     let mut task = tokio::spawn(async move { state.sign_out_current().await });
     assert!(tokio::time::timeout(Duration::from_millis(20), &mut task)

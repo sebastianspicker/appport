@@ -3,8 +3,7 @@ import { ActionControl } from "./ActionControl";
 import { ActionSummary } from "./ActionSummary";
 import type { ConfirmationHandler } from "./confirmation";
 import type { AppAction, AvailableApp } from "../native-bridge/types";
-import type { PollingState } from "./types";
-import type { ResumeAction } from "./useCatalogActions";
+import type { PollingState, ResumeAction } from "./model";
 
 type AppActionStateProps = {
   application: AvailableApp;

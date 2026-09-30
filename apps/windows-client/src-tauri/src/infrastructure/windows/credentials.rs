@@ -1,5 +1,7 @@
 //! Windows Credential Manager persistence for Relution sessions.
 
+use crate::error::Error;
+
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct CredentialRecord {
     version: u8,
@@ -13,13 +15,13 @@ impl CredentialRecord {
         access_token: String,
         username: String,
         user_uuid: String,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Error> {
         if access_token.is_empty()
             || access_token.len() > 4096
             || username.is_empty()
             || user_uuid.is_empty()
         {
-            return Err("unknown: invalid Relution credential".into());
+            return Err(Error::unknown("invalid Relution credential"));
         }
         Ok(Self {
             version: 1,
@@ -139,7 +141,7 @@ fn read(target_name: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(windows)]
-fn write(target_name: &str, mut bytes: Vec<u8>) -> Result<(), String> {
+fn write(target_name: &str, mut bytes: Vec<u8>) -> Result<(), Error> {
     use windows::{
         core::PWSTR,
         Win32::Security::Credentials::{
@@ -158,12 +160,12 @@ fn write(target_name: &str, mut bytes: Vec<u8>) -> Result<(), String> {
             ..Default::default()
         };
         CredWriteW(&credential, 0)
-            .map_err(|_| "unknown: Windows Credential Manager could not save session".into())
+            .map_err(|_| Error::unknown("Windows Credential Manager could not save session"))
     }
 }
 
 #[cfg(windows)]
-fn delete(target_name: &str) -> Result<(), String> {
+fn delete(target_name: &str) -> Result<(), Error> {
     use windows::{
         core::PCWSTR,
         Win32::{
@@ -179,7 +181,9 @@ fn delete(target_name: &str) -> Result<(), String> {
             Err(error) if error.code() == windows::core::HRESULT::from_win32(ERROR_NOT_FOUND.0) => {
                 Ok(())
             }
-            Err(_) => Err("unknown: Windows Credential Manager could not delete session".into()),
+            Err(_) => Err(Error::unknown(
+                "Windows Credential Manager could not delete session",
+            )),
         }
     }
 }
@@ -199,19 +203,20 @@ pub(crate) fn load() -> Option<CredentialRecord> {
 }
 
 #[cfg(windows)]
-pub(crate) fn save(value: &CredentialRecord) -> Result<(), String> {
-    let bytes = serde_json::to_vec(value).map_err(|_| "unknown: invalid Relution credential")?;
+pub(crate) fn save(value: &CredentialRecord) -> Result<(), Error> {
+    let bytes =
+        serde_json::to_vec(value).map_err(|_| Error::unknown("invalid Relution credential"))?;
     write(TARGET, bytes)
 }
 
 #[cfg(windows)]
-pub(crate) fn clear() -> Result<(), String> {
+pub(crate) fn clear() -> Result<(), Error> {
     delete(TARGET)?;
     delete(&obsolete_target())
 }
 
 #[cfg(windows)]
-pub(crate) fn qualification_credential_self_check() -> Result<(), String> {
+pub(crate) fn qualification_credential_self_check() -> Result<(), Error> {
     let target = format!(
         "Relution/Appport/qualification-self-check-{}",
         std::process::id()
@@ -220,13 +225,13 @@ pub(crate) fn qualification_credential_self_check() -> Result<(), String> {
     let result = write(&target, bytes.clone()).and_then(|_| {
         (read(&target).as_deref() == Some(bytes.as_slice()))
             .then_some(())
-            .ok_or_else(|| "unknown: qualification credential round-trip failed".into())
+            .ok_or_else(|| Error::unknown("qualification credential round-trip failed"))
     });
     let cleanup = delete(&target).and_then(|_| {
         read(&target)
             .is_none()
             .then_some(())
-            .ok_or_else(|| "unknown: qualification credential remains".into())
+            .ok_or_else(|| Error::unknown("qualification credential remains"))
     });
     result.and(cleanup)
 }
@@ -237,18 +242,18 @@ pub(crate) fn load() -> Option<CredentialRecord> {
 }
 
 #[cfg(not(windows))]
-pub(crate) fn save(_: &CredentialRecord) -> Result<(), String> {
+pub(crate) fn save(_: &CredentialRecord) -> Result<(), Error> {
     Ok(())
 }
 
 #[cfg(not(windows))]
-pub(crate) fn clear() -> Result<(), String> {
+pub(crate) fn clear() -> Result<(), Error> {
     Ok(())
 }
 
 #[cfg(not(windows))]
-pub(crate) fn qualification_credential_self_check() -> Result<(), String> {
-    Err("unknown: Windows Credential Manager is unavailable".into())
+pub(crate) fn qualification_credential_self_check() -> Result<(), Error> {
+    Err(Error::unknown("Windows Credential Manager is unavailable"))
 }
 
 #[cfg(all(test, windows))]

@@ -2,13 +2,15 @@
 
 use super::{
     test_support::{blocked_sign_out, cancel_after_admission, signed_in_state},
-    AppState,
+    DesktopService,
 };
 use crate::{
     application::{
         catalog::CatalogService,
         test_support::{client, run},
     },
+    domain::support::SupportBundleResult,
+    error::ErrorKind,
     infrastructure::{
         local::uuid_key,
         windows::{support, support_collectors},
@@ -17,7 +19,7 @@ use crate::{
 use std::{sync::Arc, time::Duration};
 use tokio::sync::oneshot;
 
-async fn state() -> Arc<AppState> {
+async fn state() -> Arc<DesktopService> {
     let client = client(url::Url::parse("http://127.0.0.1:9/").unwrap(), false);
     let catalog = Arc::new(CatalogService::new(Arc::clone(&client)));
     let state = signed_in_state(client, catalog).await;
@@ -59,7 +61,7 @@ fn archive_admission_survives_waiter_cancellation_before_session_recheck() {
                     entered.send(()).unwrap();
                     pending.recv_timeout(Duration::from_secs(5)).unwrap();
                     std::fs::write(output, b"synthetic archive").unwrap();
-                    Ok(support::SupportBundleResult {
+                    Ok(SupportBundleResult {
                         bundle_file_name: "test.zip".into(),
                         bytes: 17,
                         warnings: vec![],
@@ -107,7 +109,7 @@ fn stale_bundle_collection_cannot_consume_new_session_confirmation() {
                 panic!("stale collection must never reach the archive writer")
             })
             .await;
-        assert_eq!(result.err().unwrap().code, "SESSION_EXPIRED");
+        assert_eq!(result.err().unwrap().kind(), ErrorKind::SessionExpired);
         assert!(state
             .session
             .lock()

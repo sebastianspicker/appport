@@ -2,6 +2,7 @@ use super::{
     allowed_catalog_response, client, concurrent_server, device, join2, run, CatalogService,
     Response,
 };
+use crate::error::Error;
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -75,7 +76,7 @@ fn stale_icon_completion_is_rejected_after_application_invalidation() {
     invalidation.expect("application invalidation");
     assert!(matches!(
         icon,
-        Err(error) if error == "session-expired: icon authorization was invalidated"
+        Err(error) if error == Error::session_expired("icon authorization was invalidated")
     ));
     assert_eq!(requests.load(Ordering::SeqCst), 5);
 }

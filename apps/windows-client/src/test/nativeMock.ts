@@ -107,10 +107,6 @@ export function createNativeMock(): NativeMock {
       .fn<typeof nativeApi.initialView>()
       .mockResolvedValue("apps"),
     connect: vi.fn<typeof nativeApi.connect>(),
-    bootstrap: vi
-      .fn<typeof nativeApi.bootstrap>()
-      .mockResolvedValue(nativeBootstrap()),
-    apps: vi.fn<typeof nativeApi.apps>().mockResolvedValue([]),
     loadCatalog: vi
       .fn<typeof nativeApi.loadCatalog>()
       .mockResolvedValue(catalogSnapshot()),
@@ -142,8 +138,6 @@ export function createNativeMock(): NativeMock {
 export function resetNativeMockDefaults(mock: NativeMock) {
   mock.initialView.mockReset().mockResolvedValue("apps");
   mock.connect.mockReset();
-  mock.bootstrap.mockReset().mockResolvedValue(nativeBootstrap());
-  mock.apps.mockReset().mockResolvedValue([]);
   mock.loadCatalog.mockReset().mockResolvedValue(catalogSnapshot());
   mock.act.mockReset();
   mock.action.mockReset();

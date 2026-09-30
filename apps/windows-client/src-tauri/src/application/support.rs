@@ -2,6 +2,8 @@
 
 use crate::{
     application::catalog::CatalogService,
+    domain::support::SupportDetails,
+    error::Error,
     infrastructure::{
         local, logging,
         windows::{platform, support, support_collectors},
@@ -10,7 +12,7 @@ use crate::{
 use std::sync::Arc;
 
 pub(crate) enum SupportWorkflowError {
-    Client(String),
+    Client(Error),
     Support(support::SupportError),
 }
 
@@ -29,7 +31,7 @@ impl SupportService {
         username: &str,
         user_uuid: &str,
         generation: u64,
-    ) -> Result<support::SupportDetails, String> {
+    ) -> Result<SupportDetails, Error> {
         let (details, _) = self
             .collect_details(token, username, user_uuid, generation)
             .await?;
@@ -75,7 +77,7 @@ impl SupportService {
         username: &str,
         user_uuid: &str,
         generation: u64,
-    ) -> Result<(support::SupportDetails, Vec<String>), String> {
+    ) -> Result<(SupportDetails, Vec<String>), Error> {
         let bootstrap = self
             .catalog
             .bootstrap(
@@ -88,9 +90,9 @@ impl SupportService {
             .await?;
         let platform = tokio::task::spawn_blocking(support_collectors::collect_platform_data)
             .await
-            .map_err(|_| "support: platform details collection failed")?;
+            .map_err(|_| Error::support("platform details collection failed"))?;
         Ok((
-            support::SupportDetails {
+            SupportDetails {
                 app_version: env!("CARGO_PKG_VERSION").into(),
                 source_revision: option_env!("APPPORT_SOURCE_REVISION")
                     .unwrap_or("unavailable")

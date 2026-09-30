@@ -1,13 +1,17 @@
 //! Managed Windows device evidence collection.
 
 use crate::domain::device::DeviceEvidence;
+use crate::error::Error;
 
-pub fn collect() -> Result<DeviceEvidence, String> {
-    let hostname = hostname().ok_or("device_match_failed: Windows hostname is unavailable")?;
+pub fn collect() -> Result<DeviceEvidence, Error> {
+    let hostname =
+        hostname().ok_or_else(|| Error::device_match_failed("Windows hostname is unavailable"))?;
     let (smbios_uuid, bios_serial) = firmware();
     let ent_dmid = ent_dmid();
     if ent_dmid.is_none() && smbios_uuid.is_none() && bios_serial.is_none() {
-        return Err("device_match_failed: no stable Windows identifier is available".into());
+        return Err(Error::device_match_failed(
+            "no stable Windows identifier is available",
+        ));
     }
     Ok(DeviceEvidence {
         version: 1,

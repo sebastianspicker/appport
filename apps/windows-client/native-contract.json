@@ -1,8 +1,6 @@
 {
   "commands": [
     "connect",
-    "bootstrap",
-    "list_apps",
     "load_catalog",
     "request_action",
     "get_action",

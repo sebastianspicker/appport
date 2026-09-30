@@ -2,7 +2,10 @@
 
 mod storage;
 
-use crate::domain::action::{Action, ActiveAction, Reservation, State, Transition};
+use crate::{
+    domain::action::{Action, ActiveAction, Reservation, State, Transition},
+    error::Error,
+};
 use rusqlite::Connection;
 use std::{
     fs,
@@ -59,7 +62,7 @@ impl ActionJournal {
 
     /// Startup-only recovery. Normal initialization, reads, and writes do not
     /// mutate reservations.
-    pub(crate) fn recover_interrupted_reservations(&self) -> Result<(), String> {
+    pub(crate) fn recover_interrupted_reservations(&self) -> Result<(), Error> {
         self.with_connection(|connection| {
             let timestamp = now();
             recover_in(connection, timestamp)?;
@@ -68,7 +71,7 @@ impl ActionJournal {
         })
     }
 
-    pub(crate) async fn reserve(&self, reservation: Reservation<'_>) -> Result<(), String> {
+    pub(crate) async fn reserve(&self, reservation: Reservation<'_>) -> Result<(), Error> {
         let reservation = OwnedReservation::from(reservation);
         self.run_blocking(move |connection| {
             let timestamp = now();
@@ -85,7 +88,7 @@ impl ActionJournal {
         id: &str,
         expected: State,
         event: Transition<'_>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         let id = id.to_owned();
         let event = OwnedTransition::from(event);
         self.run_blocking(move |connection| {
@@ -97,49 +100,46 @@ impl ActionJournal {
         .await
     }
 
-    pub(crate) async fn action(&self, id: &str) -> Result<Option<Action>, String> {
+    pub(crate) async fn action(&self, id: &str) -> Result<Option<Action>, Error> {
         let id = id.to_owned();
         self.run_blocking(move |connection| action_in(connection, &id))
             .await
     }
 
     /// Read-only catalog visibility lookup; Unknown remains active.
-    pub(crate) async fn active_actions(
-        &self,
-        device_id: &str,
-    ) -> Result<Vec<ActiveAction>, String> {
+    pub(crate) async fn active_actions(&self, device_id: &str) -> Result<Vec<ActiveAction>, Error> {
         let device_id = device_id.to_owned();
         self.run_blocking(move |connection| active_actions_in(connection, &device_id))
             .await
     }
 
-    async fn run_blocking<T, F>(&self, operation: F) -> Result<T, String>
+    async fn run_blocking<T, F>(&self, operation: F) -> Result<T, Error>
     where
         T: Send + 'static,
-        F: FnOnce(&Connection) -> Result<T, String> + Send + 'static,
+        F: FnOnce(&Connection) -> Result<T, Error> + Send + 'static,
     {
         let journal = self.clone();
         tokio::task::spawn_blocking(move || journal.with_connection(operation))
             .await
-            .map_err(|_| "unknown: action journal worker failed".to_owned())?
+            .map_err(|_| Error::unknown("action journal worker failed"))?
     }
 
     fn with_connection<T>(
         &self,
-        operation: impl FnOnce(&Connection) -> Result<T, String>,
-    ) -> Result<T, String> {
+        operation: impl FnOnce(&Connection) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         let mut connection = self
             .inner
             .connection
             .lock()
-            .map_err(|_| "unknown: action journal is unavailable")?;
+            .map_err(|_| Error::unknown("action journal is unavailable"))?;
         if connection.is_none() {
             let opened = open(self.inner.location.path()?)?;
             *connection = Some(opened);
         }
         let opened = connection
             .as_ref()
-            .ok_or("unknown: action journal is unavailable")?;
+            .ok_or_else(|| Error::unknown("action journal is unavailable"))?;
         validate_existing_journal_files(&opened.path)?;
         operation(&opened.connection)
     }
@@ -152,7 +152,7 @@ impl Default for ActionJournal {
 }
 
 impl JournalLocation {
-    fn path(&self) -> Result<PathBuf, String> {
+    fn path(&self) -> Result<PathBuf, Error> {
         match self {
             Self::Default => default_path(),
             Self::Fixed(path) => Ok(path.clone()),
@@ -160,15 +160,15 @@ impl JournalLocation {
     }
 }
 
-fn open(journal_path: PathBuf) -> Result<OpenedJournal, String> {
+fn open(journal_path: PathBuf) -> Result<OpenedJournal, Error> {
     let directory = journal_path
         .parent()
-        .ok_or("unknown: action journal directory is unavailable")?;
+        .ok_or_else(|| Error::unknown("action journal directory is unavailable"))?;
     crate::infrastructure::windows::path_security::validate_not_reparse(directory)?;
     secure_current_user(directory)?;
     validate_existing_journal_files(&journal_path)?;
-    let connection =
-        Connection::open(&journal_path).map_err(|_| "unknown: action journal is unavailable")?;
+    let connection = Connection::open(&journal_path)
+        .map_err(|_| Error::unknown("action journal is unavailable"))?;
     initialize(&connection)?;
     validate_existing_journal_files(&journal_path)?;
     secure_existing_journal_files(&journal_path)?;
@@ -178,23 +178,23 @@ fn open(journal_path: PathBuf) -> Result<OpenedJournal, String> {
     })
 }
 
-fn validate_existing_journal_files(journal_path: &Path) -> Result<(), String> {
+fn validate_existing_journal_files(journal_path: &Path) -> Result<(), Error> {
     for path in journal_paths(journal_path) {
         match fs::symlink_metadata(&path) {
             Ok(_) => crate::infrastructure::windows::path_security::validate_not_reparse(&path)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err("unknown: action journal is unavailable".into()),
+            Err(_) => return Err(Error::unknown("action journal is unavailable")),
         }
     }
     Ok(())
 }
 
-fn secure_existing_journal_files(journal_path: &Path) -> Result<(), String> {
+fn secure_existing_journal_files(journal_path: &Path) -> Result<(), Error> {
     for path in journal_paths(journal_path) {
         match fs::symlink_metadata(&path) {
             Ok(_) => secure_current_user(&path)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err("unknown: action journal is unavailable".into()),
+            Err(_) => return Err(Error::unknown("action journal is unavailable")),
         }
     }
     Ok(())
@@ -209,18 +209,19 @@ fn journal_paths(path: &Path) -> [PathBuf; 3] {
 }
 
 #[cfg(windows)]
-fn default_path() -> Result<PathBuf, String> {
+fn default_path() -> Result<PathBuf, Error> {
     crate::infrastructure::windows::system_tools::appport_local_data_directory()
         .map(|directory| directory.join("actions.sqlite3"))
-        .map_err(|_| "unknown: action journal directory is unavailable".into())
+        .map_err(|_| Error::unknown("action journal directory is unavailable"))
 }
 
 #[cfg(not(windows))]
-fn default_path() -> Result<PathBuf, String> {
-    let base = std::env::var_os("LOCALAPPDATA").ok_or("unknown: LOCALAPPDATA is unavailable")?;
+fn default_path() -> Result<PathBuf, Error> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .ok_or_else(|| Error::unknown("LOCALAPPDATA is unavailable"))?;
     let directory = PathBuf::from(base).join("Relution").join("Appport");
     fs::create_dir_all(&directory)
-        .map_err(|_| "unknown: action journal directory is unavailable")?;
+        .map_err(|_| Error::unknown("action journal directory is unavailable"))?;
     Ok(directory.join("actions.sqlite3"))
 }
 
@@ -231,34 +232,34 @@ fn now() -> i64 {
         .as_secs() as i64
 }
 
-pub(crate) fn secure_current_user(path: &Path) -> Result<(), String> {
+pub(crate) fn secure_current_user(path: &Path) -> Result<(), Error> {
     crate::infrastructure::windows::path_security::secure_current_user(path)
 }
 
 #[cfg(windows)]
-pub fn qualification_acl_self_check() -> Result<(), String> {
+pub fn qualification_acl_self_check() -> Result<(), Error> {
     let directory = crate::infrastructure::windows::system_tools::appport_local_data_directory()?
         .join(format!("qualification-acl-{}", std::process::id()));
     fs::create_dir_all(&directory)
-        .map_err(|_| "unknown: qualification ACL directory unavailable")?;
+        .map_err(|_| Error::unknown("qualification ACL directory unavailable"))?;
     let result = secure_current_user(&directory).and_then(|_| {
         let probe = directory.join("probe");
         fs::write(&probe, b"appport qualification")
-            .map_err(|_| "unknown: qualification ACL write failed")?;
+            .map_err(|_| Error::unknown("qualification ACL write failed"))?;
         secure_current_user(&probe)?;
         (fs::read(&probe).ok().as_deref() == Some(b"appport qualification"))
             .then_some(())
-            .ok_or_else(|| "unknown: qualification ACL read failed".into())
+            .ok_or_else(|| Error::unknown("qualification ACL read failed"))
     });
     result.and(
         fs::remove_dir_all(&directory)
-            .map_err(|_| "unknown: qualification ACL cleanup failed".to_owned()),
+            .map_err(|_| Error::unknown("qualification ACL cleanup failed")),
     )
 }
 
 #[cfg(not(windows))]
-pub fn qualification_acl_self_check() -> Result<(), String> {
-    Err("unknown: Windows ACLs are unavailable".into())
+pub fn qualification_acl_self_check() -> Result<(), Error> {
+    Err(Error::unknown("Windows ACLs are unavailable"))
 }
 
 struct OwnedReservation {

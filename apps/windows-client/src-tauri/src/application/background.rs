@@ -2,20 +2,21 @@
 
 use crate::{
     application::{catalog::CatalogService, session::SessionCoordinator},
+    error::Error,
     infrastructure::windows::{notifications, platform},
 };
 use std::sync::Arc;
 
 /// Loads the stored session, refreshes its catalog, and publishes only new updates.
-pub(crate) fn run_background_check(catalog: Arc<CatalogService>) -> Result<(), String> {
+pub(crate) fn run_background_check(catalog: Arc<CatalogService>) -> Result<(), Error> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|_| "unknown: background runtime unavailable")?;
+        .map_err(|_| Error::unknown("background runtime unavailable"))?;
     let session = SessionCoordinator::load();
     let credential = session
         .credential_with_generation()
-        .ok_or("session-expired: no stored session")?;
+        .ok_or_else(|| Error::session_expired("no stored session"))?;
     let updates = runtime
         .block_on(async {
             catalog

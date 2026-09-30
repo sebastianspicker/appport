@@ -1,145 +1,168 @@
-const requiredDemoPagePaths = Object.freeze([
-  ".github/workflows/demo-pages.yml",
-  "apps/web-demo/**",
-  "apps/windows-client/src-tauri/tauri.conf.json",
-  "eslint.config.mjs",
-  "jscpd.demo.json",
-  "package.json",
-  "pnpm-lock.yaml",
-  "pnpm-workspace.yaml",
-  "quality-duplication-baseline.json",
-  "scripts/check-duplicates.mjs",
-  "scripts/check-source-size.mjs",
-  "scripts/verify-demo-artifact.mjs",
-  "stylelint.config.mjs",
-]);
+import { parse } from "yaml";
 
-export function verificationWorkflowFailures(workflow, scripts) {
-  const failures = packageScriptFailures(workflow, scripts, "verify workflow");
-  const jobs = mappingBlock(workflow, "jobs", 0);
-  const demo = mappingBlock(jobs, "demo", 2);
+const commitPin = /@[0-9a-f]{40}$/;
+const pagesDeployPermissions = ["contents", "id-token", "pages"];
+const pagesTriggerPaths = [
+  "apps/web-demo/**",
+  ".github/workflows/demo-pages.yml",
+];
+
+export function verificationWorkflowFailures(workflowText, scripts) {
+  const workflow = parse(workflowText);
+  const failures = commonWorkflowFailures(workflow, scripts, "verify workflow");
+  const demo = workflow.jobs?.demo;
   if (!demo) {
     failures.push("verify workflow is missing an independent demo job");
     return failures;
   }
-  if (!/\brun:\s*pnpm demo:verify\s*$/m.test(demo)) {
+  if (!runCommands(demo).includes("pnpm demo:verify")) {
     failures.push("verify demo job must run pnpm demo:verify");
   }
-  if (/^ {4}needs:/m.test(demo)) {
+  if (Object.hasOwn(demo, "needs")) {
     failures.push("verify demo job must remain independent");
   }
   return failures;
 }
 
-export function demoPagesWorkflowFailures(workflow, scripts) {
-  const failures = packageScriptFailures(workflow, scripts, "Pages workflow");
-  const trigger = mappingBlock(workflow, "on", 0);
-  verifyPagesEvents(failures, trigger);
-  verifyPagesPaths(failures, trigger);
-  verifyPagesArtifact(failures, workflow);
+export function demoPagesWorkflowFailures(workflowText, scripts) {
+  const workflow = parse(workflowText);
+  const failures = commonWorkflowFailures(workflow, scripts, "Pages workflow");
+  verifyPagesTriggers(failures, workflow.on);
+  verifyPagesBuild(failures, workflow.jobs?.build);
+  verifyPagesDeploy(failures, workflow.jobs?.deploy);
   return failures;
+}
+
+function commonWorkflowFailures(workflow, scripts, label) {
+  return [
+    ...packageScriptFailures(workflow, scripts, label),
+    ...actionPinFailures(workflow, label),
+    ...permissionFailures(workflow, label),
+  ];
+}
+
+function jobsOf(workflow) {
+  return Object.entries(workflow.jobs ?? {});
+}
+
+function stepsOf(job) {
+  return Array.isArray(job?.steps) ? job.steps : [];
+}
+
+function runCommands(job) {
+  return stepsOf(job)
+    .filter((step) => typeof step.run === "string")
+    .flatMap((step) => step.run.split("\n").map((line) => line.trim()));
 }
 
 function packageScriptFailures(workflow, scripts, label) {
   const failures = [];
-  for (const match of workflow.matchAll(/\bpnpm\s+([a-z][\w:-]*)/g)) {
-    const name = match[1];
-    if (name === "install" || name === "exec") continue;
-    if (!Object.hasOwn(scripts, name)) {
-      failures.push(`${label} invokes missing package script ${name}`);
+  for (const [, job] of jobsOf(workflow)) {
+    for (const command of runCommands(job)) {
+      for (const match of command.matchAll(/\bpnpm\s+([a-z][\w:-]*)/g)) {
+        const name = match[1];
+        if (name === "install" || name === "exec") continue;
+        if (!Object.hasOwn(scripts, name)) {
+          failures.push(`${label} invokes missing package script ${name}`);
+        }
+      }
     }
   }
   return failures;
 }
 
-function verifyPagesEvents(failures, trigger) {
-  const events = mappingKeys(trigger, 2);
-  if (
-    events.length !== 2 ||
-    !events.includes("push") ||
-    !events.includes("workflow_dispatch")
-  ) {
+function actionPinFailures(workflow, label) {
+  const failures = [];
+  for (const [name, job] of jobsOf(workflow)) {
+    for (const step of stepsOf(job)) {
+      const uses = step.uses;
+      if (typeof uses !== "string" || uses.startsWith("./")) continue;
+      if (!commitPin.test(uses)) {
+        failures.push(
+          `${label} job ${name} uses ${uses} without a full commit SHA pin`,
+        );
+      }
+    }
+  }
+  return failures;
+}
+
+function permissionFailures(workflow, label) {
+  const failures = [];
+  if (!isReadOnlyContents(workflow.permissions)) {
+    failures.push(
+      `${label} top-level permissions must be exactly contents: read`,
+    );
+  }
+  for (const [name, job] of jobsOf(workflow)) {
+    if (job.permissions === undefined) continue;
+    const allowed = label === "Pages workflow" && name === "deploy";
+    if (!allowed || !isPagesDeployPermissions(job.permissions)) {
+      failures.push(`${label} job ${name} must not widen permissions`);
+    }
+  }
+  return failures;
+}
+
+function isReadOnlyContents(permissions) {
+  const keys = Object.keys(permissions ?? {});
+  return keys.length === 1 && permissions.contents === "read";
+}
+
+function isPagesDeployPermissions(permissions) {
+  const keys = Object.keys(permissions ?? {}).sort();
+  return (
+    keys.join() === pagesDeployPermissions.join() &&
+    permissions.contents === "read" &&
+    permissions["id-token"] === "write" &&
+    permissions.pages === "write"
+  );
+}
+
+function verifyPagesTriggers(failures, trigger) {
+  const events = Object.keys(trigger ?? {}).sort();
+  if (events.join() !== "push,workflow_dispatch") {
     failures.push(
       "Pages workflow must run only for pushes and manual dispatch",
     );
   }
-  const push = mappingBlock(trigger, "push", 2);
-  if (!/^ {4}branches:\s*\[main\]\s*$/m.test(push)) {
+  const branches = trigger?.push?.branches;
+  if (!Array.isArray(branches) || branches.join() !== "main") {
     failures.push("Pages workflow push trigger must target main only");
   }
+  verifyPagesTriggerPaths(failures, trigger?.push?.paths);
 }
 
-function verifyPagesPaths(failures, trigger) {
-  const push = mappingBlock(trigger, "push", 2);
-  const paths = listValues(mappingBlock(push, "paths", 4), 6);
-  for (const path of requiredDemoPagePaths) {
-    if (!paths.includes(path)) {
-      failures.push(`Pages workflow path trigger is missing ${path}`);
-    }
-  }
-  if (paths.includes("apps/windows-client/src/styles.css")) {
-    failures.push("Pages workflow must not depend on the desktop stylesheet");
+function verifyPagesTriggerPaths(failures, paths) {
+  if (
+    paths !== undefined &&
+    (!Array.isArray(paths) ||
+      !pagesTriggerPaths.every((path) => paths.includes(path)))
+  ) {
+    failures.push(
+      `Pages workflow push paths must include ${pagesTriggerPaths.join(" and ")}`,
+    );
   }
 }
 
-function verifyPagesArtifact(failures, workflow) {
-  const jobs = mappingBlock(workflow, "jobs", 0);
-  const build = mappingBlock(jobs, "build", 2);
-  const deploy = mappingBlock(jobs, "deploy", 2);
-  if (!/\brun:\s*pnpm demo:verify\s*$/m.test(build)) {
+function verifyPagesBuild(failures, build) {
+  if (!runCommands(build).includes("pnpm demo:verify")) {
     failures.push("Pages build job must run pnpm demo:verify");
   }
-  if (
-    !/actions\/upload-pages-artifact@/.test(build) ||
-    !/^ {10}path:\s*apps\/web-demo\/dist\s*$/m.test(build)
-  ) {
+  const uploads = stepsOf(build).filter((step) =>
+    step.uses?.startsWith("actions/upload-pages-artifact@"),
+  );
+  const paths = uploads.map((step) => step.with?.path);
+  if (paths.length !== 1 || paths[0] !== "apps/web-demo/dist") {
     failures.push("Pages build job must upload only the demo dist artifact");
   }
-  if (
-    !/^ {4}needs:\s*build\s*$/m.test(deploy) ||
-    !/actions\/deploy-pages@/.test(deploy)
-  ) {
+}
+
+function verifyPagesDeploy(failures, deploy) {
+  const deploysPages = stepsOf(deploy).some((step) =>
+    step.uses?.startsWith("actions/deploy-pages@"),
+  );
+  if (deploy?.needs !== "build" || !deploysPages) {
     failures.push("Pages deploy job must deploy the existing build artifact");
   }
-}
-
-function mappingBlock(contents, key, indent) {
-  if (!contents) return "";
-  const lines = contents.split("\n");
-  const prefix = `${" ".repeat(indent)}${key}:`;
-  const start = lines.findIndex((line) => line.startsWith(prefix));
-  if (start === -1) return "";
-  let end = lines.length;
-  for (let index = start + 1; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (!line.trim() || line.trimStart().startsWith("#")) continue;
-    const leadingSpaces = line.length - line.trimStart().length;
-    if (leadingSpaces <= indent) {
-      end = index;
-      break;
-    }
-  }
-  return lines.slice(start, end).join("\n");
-}
-
-function mappingKeys(contents, indent) {
-  const prefix = " ".repeat(indent);
-  return contents
-    .split("\n")
-    .filter((line) => line.startsWith(prefix) && !line.startsWith(`${prefix} `))
-    .map((line) => /^\s*([\w-]+):/.exec(line)?.[1])
-    .filter(Boolean);
-}
-
-function listValues(contents, indent) {
-  const prefix = `${" ".repeat(indent)}- `;
-  return contents
-    .split("\n")
-    .filter((line) => line.startsWith(prefix))
-    .map((line) =>
-      line
-        .slice(prefix.length)
-        .trim()
-        .replace(/^["']|["']$/g, ""),
-    );
 }

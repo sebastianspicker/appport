@@ -1,19 +1,17 @@
 //! Bounded catalog permission and recursive-group evaluation.
 
-use super::{catalog_entry, installed_app, join2, join3, reads::join4};
+use super::{join2, join3, reads::join4};
 use crate::{
     application::catalog_cache::AuthorizedCatalog,
     domain::{
         catalog::{
-            app_from, classify_catalog_inventory, AvailableApp, CatalogInventoryClassification,
-            DeviceSummary,
+            app_from, classify_catalog_inventory, AppPermission, AvailableApp, CatalogEntry,
+            CatalogInventoryClassification, DeviceSummary,
         },
         device::same_uuid,
     },
-    infrastructure::{
-        local::uuid_key,
-        relution::{dto, RelutionClient},
-    },
+    error::Error,
+    infrastructure::{local::uuid_key, relution::RelutionClient},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -23,17 +21,12 @@ pub(super) async fn authorize_catalog_inputs(
     user_uuid: &str,
     device: DeviceSummary,
     _locale: &str,
-    entries: Vec<dto::Catalog>,
-    groups: dto::Groups,
-) -> Result<AuthorizedCatalog, String> {
+    entries: Vec<CatalogEntry>,
+    direct_groups: Vec<String>,
+) -> Result<AuthorizedCatalog, Error> {
     let candidates = entries
         .into_iter()
-        .filter_map(|entry| app_from(catalog_entry(entry), client.native_app_uuid()))
-        .collect::<Vec<_>>();
-    let direct_groups = groups
-        .groups
-        .into_iter()
-        .map(|group| group.uuid)
+        .filter_map(|entry| app_from(entry, client.native_app_uuid()))
         .collect::<Vec<_>>();
     let (permissions, inventory) = join2(
         app_permissions_bounded(client, token, &candidates),
@@ -41,7 +34,7 @@ pub(super) async fn authorize_catalog_inputs(
     )
     .await;
     let permissions = permissions?;
-    let inventory = inventory?.iter().map(installed_app).collect::<Vec<_>>();
+    let inventory = inventory?;
     let access =
         evaluate_permissions(client, token, user_uuid, &direct_groups, &permissions).await?;
     let mut rows = Vec::new();
@@ -77,20 +70,15 @@ pub(super) async fn allowed(
     user_uuid: &str,
     group_ids: &[String],
     app_id: &str,
-) -> Result<bool, String> {
+) -> Result<bool, Error> {
     let permissions = client.app_permissions(token, app_id).await?;
-    for permission in permissions.results {
-        if directly_authorized(&permission, user_uuid, group_ids) {
+    for permission in permissions {
+        if permission.grants_directly(user_uuid, group_ids) {
             return Ok(true);
         }
-        if permission.read && permission.subject.kind.eq_ignore_ascii_case("GROUP") {
-            let members = client
-                .group_members(token, &permission.subject.uuid)
-                .await?;
-            if members
-                .into_iter()
-                .any(|member| same_uuid(&member.uuid, user_uuid))
-            {
+        if let Some(group) = permission.readable_group() {
+            let members = client.group_members(token, group).await?;
+            if members.iter().any(|member| same_uuid(member, user_uuid)) {
                 return Ok(true);
             }
         }
@@ -102,7 +90,7 @@ async fn app_permissions_bounded(
     client: &RelutionClient,
     token: &str,
     apps: &[AvailableApp],
-) -> Result<Vec<Vec<dto::Permission>>, String> {
+) -> Result<Vec<Vec<AppPermission>>, Error> {
     let mut permissions = Vec::with_capacity(apps.len());
     for chunk in apps.chunks(4) {
         let pages = match chunk {
@@ -136,7 +124,7 @@ async fn app_permissions_bounded(
             }
             _ => unreachable!("chunks are bounded to four"),
         };
-        permissions.extend(pages.into_iter().map(|page| page.results));
+        permissions.extend(pages);
     }
     Ok(permissions)
 }
@@ -146,14 +134,14 @@ async fn evaluate_permissions(
     token: &str,
     user_uuid: &str,
     direct_groups: &[String],
-    permissions: &[Vec<dto::Permission>],
-) -> Result<Vec<bool>, String> {
+    permissions: &[Vec<AppPermission>],
+) -> Result<Vec<bool>, Error> {
     let direct = permissions
         .iter()
         .map(|permissions| {
             permissions
                 .iter()
-                .any(|permission| directly_authorized(permission, user_uuid, direct_groups))
+                .any(|permission| permission.grants_directly(user_uuid, direct_groups))
         })
         .collect::<Vec<_>>();
     let direct_group_keys = direct_groups
@@ -166,13 +154,13 @@ async fn evaluate_permissions(
         if *already_allowed {
             continue;
         }
-        for permission in app_permissions.iter().filter(|permission| permission.read) {
-            let key = permission.subject.uuid.to_ascii_lowercase();
-            if permission.subject.kind.eq_ignore_ascii_case("GROUP")
-                && !direct_group_keys.contains(&key)
-                && seen.insert(key)
-            {
-                recursive.push(permission.subject.uuid.clone());
+        for group in app_permissions
+            .iter()
+            .filter_map(AppPermission::readable_group)
+        {
+            let key = group.to_ascii_lowercase();
+            if !direct_group_keys.contains(&key) && seen.insert(key) {
+                recursive.push(group.to_owned());
             }
         }
     }
@@ -182,30 +170,17 @@ async fn evaluate_permissions(
         .zip(permissions)
         .map(|(direct, permissions)| {
             direct
-                || permissions.iter().any(|permission| {
-                    permission.read
-                        && permission.subject.kind.eq_ignore_ascii_case("GROUP")
-                        && recursive_access
-                            .get(&permission.subject.uuid.to_ascii_lowercase())
+                || permissions
+                    .iter()
+                    .filter_map(AppPermission::readable_group)
+                    .any(|group| {
+                        recursive_access
+                            .get(&group.to_ascii_lowercase())
                             .copied()
                             .unwrap_or(false)
-                })
+                    })
         })
         .collect())
-}
-
-fn directly_authorized(
-    permission: &dto::Permission,
-    user_uuid: &str,
-    direct_groups: &[String],
-) -> bool {
-    permission.read
-        && ((permission.subject.kind.eq_ignore_ascii_case("USER")
-            && same_uuid(&permission.subject.uuid, user_uuid))
-            || (permission.subject.kind.eq_ignore_ascii_case("GROUP")
-                && direct_groups
-                    .iter()
-                    .any(|group| same_uuid(group, &permission.subject.uuid))))
 }
 
 async fn group_access_bounded(
@@ -213,7 +188,7 @@ async fn group_access_bounded(
     token: &str,
     user_uuid: &str,
     groups: &[String],
-) -> Result<HashMap<String, bool>, String> {
+) -> Result<HashMap<String, bool>, Error> {
     let mut access = HashMap::new();
     for chunk in groups.chunks(4) {
         let results = match chunk {
@@ -250,9 +225,7 @@ async fn group_access_bounded(
         for (group, members) in chunk.iter().zip(results) {
             access.insert(
                 group.to_ascii_lowercase(),
-                members
-                    .iter()
-                    .any(|member| same_uuid(&member.uuid, user_uuid)),
+                members.iter().any(|member| same_uuid(member, user_uuid)),
             );
         }
     }

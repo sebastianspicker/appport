@@ -1,65 +1,25 @@
-use super::{dto, has_blocking_remote_action, Action, ActionService, AvailableApp, RelutionClient};
+use super::{has_blocking_remote_action, Action, ActionService, AvailableApp, RelutionClient};
+use crate::error::Error;
 use crate::{
     application::{
-        action_test_support::{catalog_response, DIRECT_PERMISSION, EMPTY_INVENTORY},
+        action_test_support::{
+            catalog_response, journal_environment, JournalSandbox, DIRECT_PERMISSION,
+            EMPTY_INVENTORY,
+        },
         catalog::CatalogService,
         test_support::{client, run, server as requests_server, Response},
     },
     domain::{
-        action::{Reservation, State},
+        action::{RemoteAction, RemoteActionDetails, Reservation, State},
         catalog::{AppInstallState, AppSource},
         device::DeviceEvidence,
     },
     infrastructure::journal,
 };
-use std::{
-    ffi::OsString,
-    path::PathBuf,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
-    },
-    time::{SystemTime, UNIX_EPOCH},
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
 };
-
-static JOURNAL_ENVIRONMENT: Mutex<()> = Mutex::new(());
-
-fn journal_environment() -> std::sync::MutexGuard<'static, ()> {
-    JOURNAL_ENVIRONMENT
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-struct JournalSandbox {
-    previous: Option<OsString>,
-    directory: PathBuf,
-}
-
-impl JournalSandbox {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let directory = std::env::temp_dir().join(format!("appport-actions-{nonce}"));
-        let previous = std::env::var_os("LOCALAPPDATA");
-        std::env::set_var("LOCALAPPDATA", &directory);
-        Self {
-            previous,
-            directory,
-        }
-    }
-}
-
-impl Drop for JournalSandbox {
-    fn drop(&mut self) {
-        match self.previous.as_ref() {
-            Some(value) => std::env::set_var("LOCALAPPDATA", value),
-            None => std::env::remove_var("LOCALAPPDATA"),
-        }
-        let _ = std::fs::remove_dir_all(&self.directory);
-    }
-}
 
 fn app() -> AvailableApp {
     AvailableApp {
@@ -111,14 +71,14 @@ fn one_request_server(
 
 #[test]
 fn active_and_unmapped_remote_actions_block_a_new_reservation() {
-    let action = |id: &str, state: &str| dto::DeviceAction {
-        uuid: id.into(),
+    let action = |id: &str, state: &str| RemoteAction {
+        id: id.into(),
         state: state.into(),
-        creation_date: 1,
-        details: Some(dto::ActionDetails {
-            app_uuid: Some("app".into()),
-            version_uuid: Some("version".into()),
-            package: Some("app.package".into()),
+        created_at: 1,
+        details: Some(RemoteActionDetails {
+            app_id: Some("app".into()),
+            version_id: Some("version".into()),
+            package_id: Some("app.package".into()),
         }),
     };
 
@@ -353,7 +313,7 @@ fn request_action_denies_unauthorized_apps_before_reservation_or_deployment() {
 
     assert!(matches!(
         run(service.request_action("token", "user", "app", "en-US")),
-        Err(error) if error == "server: application is not permitted"
+        Err(error) if error == Error::server("application is not permitted")
     ));
 
     handle.join().expect("mock server");
@@ -387,7 +347,7 @@ fn request_action_blocks_matching_remote_actions_before_reservation_or_deploymen
 
     assert!(matches!(
         run(service.request_action("token", "user", "app", "en-US")),
-        Err(error) if error == "server: a matching Relution action is already active"
+        Err(error) if error == Error::server("a matching Relution action is already active")
     ));
 
     handle.join().expect("mock server");

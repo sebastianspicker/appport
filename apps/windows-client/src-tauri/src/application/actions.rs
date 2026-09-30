@@ -1,20 +1,21 @@
 //! Action application workflow: uncached authorization, durable reservation, and reconciliation.
 
 use crate::{
-    application::catalog::{installed_app, CatalogService},
+    application::catalog::CatalogService,
     domain::{
         action::{
             action_details_match, baseline, correlation_candidates, inventory_matches,
             remote_action_blocks_request, remote_state, request_intent, select_correlation,
-            to_action, Action, ActionRequest, AppAction, RemoteAction, RemoteActionDetails,
+            to_action, Action, ActionRequest, AppAction, DeploymentResponse, RemoteAction,
             Reservation, State, Transition,
         },
         catalog::AvailableApp,
     },
+    error::{Error, ErrorKind},
     infrastructure::{
         journal::ActionJournal,
         local::{epoch, uuid_key},
-        relution::{dto, RelutionClient},
+        relution::RelutionClient,
     },
 };
 use std::sync::Arc;
@@ -43,7 +44,7 @@ impl ActionService {
         user_uuid: &str,
         app_id: &str,
         locale: &str,
-    ) -> Result<AppAction, String> {
+    ) -> Result<AppAction, Error> {
         let prepared = self
             .prepare_action(token, user_uuid, app_id, locale)
             .await?;
@@ -56,9 +57,9 @@ impl ActionService {
         user_uuid: &str,
         app_id: &str,
         locale: &str,
-    ) -> Result<PreparedAction, String> {
+    ) -> Result<PreparedAction, Error> {
         if !self.client.writes_enabled() {
-            return Err("server: Relution writes are disabled for this build".into());
+            return Err(Error::server("Relution writes are disabled for this build"));
         }
         // A mutation selects its target from a fresh catalog and evaluates only
         // that app's current permission and inventory state.
@@ -69,11 +70,13 @@ impl ActionService {
         let intent = request_intent(&app)?;
         let remote_actions = self.client.device_actions(token, &device.id).await?;
         if has_blocking_remote_action(&remote_actions, &app) {
-            return Err("server: a matching Relution action is already active".into());
+            return Err(Error::server(
+                "a matching Relution action is already active",
+            ));
         }
         let baseline = remote_actions
             .iter()
-            .map(|action| action.uuid.as_str())
+            .map(|action| action.id.as_str())
             .collect::<Vec<_>>()
             .join(",");
         Ok(PreparedAction(ActionRequest {
@@ -91,7 +94,7 @@ impl ActionService {
         &self,
         token: &str,
         prepared: PreparedAction,
-    ) -> Result<AppAction, String> {
+    ) -> Result<AppAction, Error> {
         let ActionRequest {
             id,
             device_id,
@@ -127,14 +130,14 @@ impl ActionService {
         user_uuid: &str,
         action_id: &str,
         generation: u64,
-    ) -> Result<AppAction, String> {
+    ) -> Result<AppAction, Error> {
         let action = self.saved_journal_action(action_id).await?;
         let device = self
             .catalog
             .current_device_uncached(token, user_uuid)
             .await?;
         if device.id != action.device_id {
-            return Err("device_match_failed: device not assigned".into());
+            return Err(Error::device_match_failed("device not assigned"));
         }
         if action.state.terminal() {
             return Ok(to_action(action));
@@ -146,50 +149,51 @@ impl ActionService {
         self.saved_action(action_id).await
     }
 
-    pub(crate) async fn has_remote_attribution(&self, id: &str) -> Result<bool, String> {
+    pub(crate) async fn has_remote_attribution(&self, id: &str) -> Result<bool, Error> {
         Ok(self.saved_journal_action(id).await?.correlation.is_some())
     }
 
-    async fn saved_action(&self, id: &str) -> Result<AppAction, String> {
+    async fn saved_action(&self, id: &str) -> Result<AppAction, Error> {
         self.saved_journal_action(id).await.map(to_action)
     }
-    async fn saved_journal_action(&self, id: &str) -> Result<Action, String> {
+    async fn saved_journal_action(&self, id: &str) -> Result<Action, Error> {
         self.journal
             .action(id)
             .await?
-            .ok_or("server: application action was not found".into())
+            .ok_or_else(|| Error::server("application action was not found"))
     }
     async fn record_submission(
         &self,
         id: &str,
-        response: Result<dto::Page<dto::Deployment>, String>,
-    ) -> Result<(), String> {
+        response: Result<DeploymentResponse, Error>,
+    ) -> Result<(), Error> {
         match response {
-            Ok(response) if response.results.len() == 1 && response.results[0].successful => {
+            Ok(DeploymentResponse::Accepted) => {
                 self.journal
                     .transition(id, State::Reserved, Transition::SubmissionAccepted)
                     .await
             }
-            Ok(_) => {
+            Ok(DeploymentResponse::NotAccepted) => {
                 self.journal
                     .transition(id, State::Reserved, Transition::SubmissionRejected)
                     .await?;
-                Err("server: Relution did not accept the deployment".into())
+                Err(Error::server("Relution did not accept the deployment"))
             }
-            Err(error)
-                if error.starts_with("session-expired:")
-                    || error.starts_with("device_match_failed:") =>
-            {
-                self.journal
-                    .transition(id, State::Reserved, Transition::SubmissionRejected)
-                    .await?;
-                Err(error)
-            }
-            Err(_) => {
-                self.journal
-                    .transition(id, State::Reserved, Transition::SubmissionUncertain)
-                    .await
-            }
+            // Only a refusal that proves the POST did not land is a rejection. Every
+            // other kind, including kinds added later, stays uncertain.
+            Err(error) => match error.kind() {
+                ErrorKind::SessionExpired | ErrorKind::DeviceMatchFailed => {
+                    self.journal
+                        .transition(id, State::Reserved, Transition::SubmissionRejected)
+                        .await?;
+                    Err(error)
+                }
+                _ => {
+                    self.journal
+                        .transition(id, State::Reserved, Transition::SubmissionUncertain)
+                        .await
+                }
+            },
         }
     }
     async fn reconcile_action(
@@ -197,14 +201,8 @@ impl ActionService {
         token: &str,
         id: &str,
         action: &Action,
-    ) -> Result<bool, String> {
-        let remote_actions = self
-            .client
-            .device_actions(token, &action.device_id)
-            .await?
-            .into_iter()
-            .map(remote_action)
-            .collect();
+    ) -> Result<bool, Error> {
+        let remote_actions = self.client.device_actions(token, &action.device_id).await?;
         let candidates = correlation_candidates(remote_actions, &baseline(action), action);
         let Some(remote) = select_correlation(action, candidates) else {
             return self.mark_missing_action(id, action).await.map(|_| false);
@@ -229,18 +227,18 @@ impl ActionService {
         }
         Ok(false)
     }
-    async fn target_installed(&self, token: &str, action: &Action) -> Result<bool, String> {
+    async fn target_installed(&self, token: &str, action: &Action) -> Result<bool, Error> {
         let items = self.client.installed_apps(token, &action.device_id).await?;
-        Ok(items.iter().map(installed_app).any(|item| {
+        Ok(items.iter().any(|item| {
             inventory_matches(
-                &item,
+                item,
                 &action.app_id,
                 &action.version_id,
                 action.package_id.as_deref(),
             )
         }))
     }
-    async fn mark_missing_action(&self, id: &str, action: &Action) -> Result<(), String> {
+    async fn mark_missing_action(&self, id: &str, action: &Action) -> Result<(), Error> {
         if action.created_at + 300 >= epoch() {
             return Ok(());
         }
@@ -254,7 +252,7 @@ impl ActionService {
             )
             .await
     }
-    async fn expire_verification(&self, id: &str) -> Result<(), String> {
+    async fn expire_verification(&self, id: &str) -> Result<(), Error> {
         let action = self.saved_journal_action(id).await?;
         if action.state == State::Verifying && action.created_at + 900 < epoch() {
             self.journal
@@ -265,36 +263,21 @@ impl ActionService {
     }
 }
 
-fn remote_action(value: dto::DeviceAction) -> RemoteAction {
-    RemoteAction {
-        id: value.uuid,
-        state: value.state,
-        created_at: value.creation_date,
-        details: value.details.map(|details| RemoteActionDetails {
-            app_id: details.app_uuid,
-            version_id: details.version_uuid,
-            package_id: details.package,
-        }),
-    }
-}
-fn has_blocking_remote_action(actions: &[dto::DeviceAction], app: &AvailableApp) -> bool {
+fn has_blocking_remote_action(actions: &[RemoteAction], app: &AvailableApp) -> bool {
     actions.iter().any(|action| {
         action_details_match(
-            action.details.as_ref().map(remote_details).as_ref(),
+            action.details.as_ref(),
             &app.id,
             &app.released_version_id,
             app.package_identifier.as_deref(),
         ) && remote_action_blocks_request(remote_state(&action.state))
     })
 }
-fn remote_details(details: &dto::ActionDetails) -> RemoteActionDetails {
-    RemoteActionDetails {
-        app_id: details.app_uuid.clone(),
-        version_id: details.version_uuid.clone(),
-        package_id: details.package.clone(),
-    }
-}
 
 #[cfg(test)]
 #[path = "actions_tests.rs"]
 mod actions_tests;
+
+#[cfg(test)]
+#[path = "actions_submission_tests.rs"]
+mod submission_tests;

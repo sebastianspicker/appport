@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
-import type { Locale } from "../i18n/copy";
 import type { AvailableApp, NativeBootstrap } from "../native-bridge/types";
 import { native } from "../native-bridge/native";
 import { setIconCatalogRevision } from "./iconPool";
 import { problemFor } from "../native-bridge/problem";
-import {
-  type CatalogPhase,
-  type CatalogSetters,
-  type SourceFilter,
-  type View,
-} from "./types";
+import type { CatalogPhase, View } from "./model";
+
+type CatalogLoadingOptions = {
+  generation: MutableRefObject<number>;
+  mounted: MutableRefObject<boolean>;
+  resolveView: () => Promise<View>;
+  view: View | undefined;
+};
 
 function isCurrentRequest(
   mounted: MutableRefObject<boolean>,
@@ -26,42 +27,24 @@ function isCurrentRequest(
   );
 }
 
-function applyCatalog(
-  setters: CatalogSetters,
-  bootstrap: NativeBootstrap,
-  apps: AvailableApp[],
-) {
-  setters.setBootstrap(bootstrap);
-  setters.setApps(apps);
-  setters.setPhase(apps.length ? "ready" : "empty");
-}
-
-export function useBootstrapState() {
-  return useState<NativeBootstrap>();
-}
-
-export function useAppsState() {
-  return useState<AvailableApp[]>([]);
-}
-
-export function usePhaseState() {
-  return useState<CatalogPhase>("loading");
-}
-
-export function useCatalogLoading(
-  view: View | undefined,
-  resolveView: () => Promise<View>,
-  mounted: MutableRefObject<boolean>,
-  generation: MutableRefObject<number>,
-  setters: CatalogSetters,
-) {
+/** Owns the loaded catalog snapshot and fences each request by session and request id. */
+export function useCatalogLoading({
+  generation,
+  mounted,
+  resolveView,
+  view,
+}: CatalogLoadingOptions) {
+  const [bootstrap, setBootstrap] = useState<NativeBootstrap>();
+  const [apps, setApps] = useState<AvailableApp[]>([]);
+  const [phase, setPhase] = useState<CatalogPhase>("loading");
+  const [catalogRevision, setCatalogRevision] = useState("");
   const requestId = useRef(0);
   const requestedView = useRef<View | undefined>(undefined);
   const load = useCallback(
     async (activeView?: View, showLoading = true, forceRefresh = false) => {
       const currentRequest = ++requestId.current;
       const currentGeneration = generation.current;
-      if (showLoading) setters.setPhase("loading");
+      if (showLoading) setPhase("loading");
       const selectedView = activeView ?? (await resolveView());
       if (
         !isCurrentRequest(
@@ -75,7 +58,7 @@ export function useCatalogLoading(
         return;
       requestedView.current = selectedView;
       try {
-        const { bootstrap, apps, catalogRevision } = await native.loadCatalog({
+        const snapshot = await native.loadCatalog({
           view: selectedView,
           forceRefresh,
         });
@@ -89,9 +72,11 @@ export function useCatalogLoading(
           )
         )
           return;
-        setIconCatalogRevision(catalogRevision);
-        setters.setCatalogRevision(catalogRevision);
-        applyCatalog(setters, bootstrap, apps);
+        setIconCatalogRevision(snapshot.catalogRevision);
+        setCatalogRevision(snapshot.catalogRevision);
+        setBootstrap(snapshot.bootstrap);
+        setApps(snapshot.apps);
+        setPhase(snapshot.apps.length ? "ready" : "empty");
       } catch (error) {
         if (
           isCurrentRequest(
@@ -102,38 +87,18 @@ export function useCatalogLoading(
             currentRequest,
           )
         )
-          setters.setPhase(problemFor(error));
+          setPhase(problemFor(error));
       }
     },
-    [generation, mounted, resolveView, setters],
+    [generation, mounted, resolveView],
   );
   useEffect(() => {
     if (view && requestedView.current !== view) void load(view, false);
   }, [view, load]);
-  return load;
-}
-
-function filterCatalog(
-  entries: AvailableApp[],
-  query: string,
-  sourceFilter: SourceFilter,
-  locale: Locale,
-) {
-  const normalizedQuery = query.trim().toLocaleLowerCase(locale);
-  return entries.filter(
-    (application) =>
-      (!normalizedQuery ||
-        application.name.toLocaleLowerCase(locale).includes(normalizedQuery)) &&
-      (sourceFilter === "all" || application.source === sourceFilter),
-  );
-}
-
-export function useCatalogFilters(apps: AvailableApp[], locale: Locale) {
-  const [query, setQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
-  const rows = useMemo(
-    () => filterCatalog(apps, query, sourceFilter, locale),
-    [apps, query, sourceFilter, locale],
-  );
-  return { query, rows, setQuery, setSourceFilter, sourceFilter };
+  const clear = useCallback((next: CatalogPhase) => {
+    setBootstrap(undefined);
+    setApps([]);
+    setPhase(next);
+  }, []);
+  return { apps, bootstrap, catalogRevision, clear, load, phase, setPhase };
 }

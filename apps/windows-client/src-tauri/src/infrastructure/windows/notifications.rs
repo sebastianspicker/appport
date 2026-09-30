@@ -1,8 +1,9 @@
 //! Windows registry-backed, add-only update notifications.
 
+use crate::error::Error;
 use std::collections::BTreeSet;
 
-pub fn notify_updates(keys: &[String]) -> Result<(), String> {
+pub fn notify_updates(keys: &[String]) -> Result<(), Error> {
     let current = normalized_update_keys(keys);
     let previous = read_notification_keys().unwrap_or_default();
     persist_notification_keys(&current)?;
@@ -12,7 +13,7 @@ pub fn notify_updates(keys: &[String]) -> Result<(), String> {
     show_update_toast(current.len() as u32)
 }
 
-pub fn clear_state() -> Result<(), String> {
+pub fn clear_state() -> Result<(), Error> {
     clear_notification_state()
 }
 
@@ -28,7 +29,7 @@ fn newly_added_update_keys(
 }
 
 #[cfg(windows)]
-fn show_update_toast(count: u32) -> Result<(), String> {
+fn show_update_toast(count: u32) -> Result<(), Error> {
     use windows::{
         core::HSTRING,
         Data::Xml::Dom::XmlDocument,
@@ -53,23 +54,23 @@ fn show_update_toast(count: u32) -> Result<(), String> {
     let xml = format!(
         r#"<toast launch="relution-appport://updates" activationType="protocol"><visual><binding template="ToastGeneric"><text>{title}</text><text>{detail}</text></binding></visual><actions><action content="{action}" arguments="relution-appport://updates" activationType="protocol"/></actions></toast>"#
     );
-    let document = XmlDocument::new().map_err(|_| "unknown: toast document unavailable")?;
+    let document = XmlDocument::new().map_err(|_| Error::unknown("toast document unavailable"))?;
     document
         .LoadXml(&HSTRING::from(xml))
-        .map_err(|_| "unknown: toast content is invalid")?;
+        .map_err(|_| Error::unknown("toast content is invalid"))?;
     let toast = ToastNotification::CreateToastNotification(&document)
-        .map_err(|_| "unknown: toast could not be created")?;
+        .map_err(|_| Error::unknown("toast could not be created"))?;
     let notifier =
         ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from("com.relution.appport"))
-            .map_err(|_| "unknown: toast notifier unavailable")?;
+            .map_err(|_| Error::unknown("toast notifier unavailable"))?;
     notifier
         .Show(&toast)
-        .map_err(|_| "unknown: toast could not be displayed".to_owned())
+        .map_err(|_| Error::unknown("toast could not be displayed"))
 }
 
 #[cfg(not(windows))]
-fn show_update_toast(count: u32) -> Result<(), String> {
-    crate::infrastructure::logging::write(&format!(
+fn show_update_toast(count: u32) -> Result<(), Error> {
+    crate::infrastructure::logging::write(format!(
         "toast suppressed on unsupported platform: {count}"
     ));
     Ok(())
@@ -112,11 +113,11 @@ fn read_notification_keys() -> Option<BTreeSet<String>> {
 }
 
 #[cfg(windows)]
-fn persist_notification_keys(keys: &BTreeSet<String>) -> Result<(), String> {
+fn persist_notification_keys(keys: &BTreeSet<String>) -> Result<(), Error> {
     let value = serde_json::to_string(&keys.iter().collect::<Vec<_>>())
-        .map_err(|_| "unknown: notification state could not be saved")?;
+        .map_err(|_| Error::unknown("notification state could not be saved"))?;
     let status = crate::infrastructure::windows::system_tools::command("reg.exe")
-        .map_err(|_| "unknown: notification state registry unavailable")?
+        .map_err(|_| Error::unknown("notification state registry unavailable"))?
         .args([
             "add",
             r"HKCU\Software\Relution\Appport",
@@ -129,23 +130,23 @@ fn persist_notification_keys(keys: &BTreeSet<String>) -> Result<(), String> {
         .arg(value)
         .arg("/f")
         .status()
-        .map_err(|_| "unknown: notification state registry unavailable")?;
+        .map_err(|_| Error::unknown("notification state registry unavailable"))?;
     if status.success() {
         Ok(())
     } else {
-        Err("unknown: notification state could not be saved".into())
+        Err(Error::unknown("notification state could not be saved"))
     }
 }
 
 #[cfg(not(windows))]
-fn persist_notification_keys(_: &BTreeSet<String>) -> Result<(), String> {
+fn persist_notification_keys(_: &BTreeSet<String>) -> Result<(), Error> {
     Ok(())
 }
 
 #[cfg(windows)]
-fn clear_notification_state() -> Result<(), String> {
+fn clear_notification_state() -> Result<(), Error> {
     let status = crate::infrastructure::windows::system_tools::command("reg.exe")
-        .map_err(|_| "unknown: notification state registry unavailable")?
+        .map_err(|_| Error::unknown("notification state registry unavailable"))?
         .args([
             "delete",
             r"HKCU\Software\Relution\Appport",
@@ -154,27 +155,27 @@ fn clear_notification_state() -> Result<(), String> {
             "/f",
         ])
         .status()
-        .map_err(|_| "unknown: notification state registry unavailable")?;
+        .map_err(|_| Error::unknown("notification state registry unavailable"))?;
     if status.success() {
         Ok(())
     } else {
-        Err("unknown: notification state could not be cleared".into())
+        Err(Error::unknown("notification state could not be cleared"))
     }
 }
 
 #[cfg(not(windows))]
-fn clear_notification_state() -> Result<(), String> {
+fn clear_notification_state() -> Result<(), Error> {
     Ok(())
 }
 
 #[cfg(windows)]
-pub fn qualification_notification_self_check() -> Result<(), String> {
+pub fn qualification_notification_self_check() -> Result<(), Error> {
     let key = format!(
         r"HKCU\Software\Relution\AppportQualificationSelfCheck-{}",
         std::process::id()
     );
     let value = serde_json::to_string(&["qualification@1"])
-        .map_err(|_| "unknown: qualification notification value invalid")?;
+        .map_err(|_| Error::unknown("qualification notification value invalid"))?;
     let result = write_qualification_notification(&key, value)
         .and_then(|_| query_qualification_notification(&key));
     let cleanup = cleanup_qualification_notification(&key);
@@ -183,9 +184,9 @@ pub fn qualification_notification_self_check() -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn write_qualification_notification(key: &str, value: String) -> Result<(), String> {
+fn write_qualification_notification(key: &str, value: String) -> Result<(), Error> {
     let status = crate::infrastructure::windows::system_tools::command("reg.exe")
-        .map_err(|_| "unknown: qualification notification registry unavailable".to_owned())?
+        .map_err(|_| Error::unknown("qualification notification registry unavailable"))?
         .args([
             "add",
             &key,
@@ -200,42 +201,42 @@ fn write_qualification_notification(key: &str, value: String) -> Result<(), Stri
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map_err(|_| "unknown: qualification notification registry unavailable".to_owned())?;
+        .map_err(|_| Error::unknown("qualification notification registry unavailable"))?;
     status
         .success()
         .then_some(())
-        .ok_or_else(|| "unknown: qualification notification write failed".to_owned())
+        .ok_or_else(|| Error::unknown("qualification notification write failed"))
 }
 
 #[cfg(windows)]
-fn query_qualification_notification(key: &str) -> Result<(), String> {
+fn query_qualification_notification(key: &str) -> Result<(), Error> {
     let output = crate::infrastructure::windows::system_tools::command("reg.exe")
-        .map_err(|_| "unknown: qualification notification query failed".to_owned())?
+        .map_err(|_| Error::unknown("qualification notification query failed"))?
         .args(["query", key, "/v", "UpdateNotificationKeys"])
         .output()
-        .map_err(|_| "unknown: qualification notification query failed".to_owned())?;
+        .map_err(|_| Error::unknown("qualification notification query failed"))?;
     (output.status.success() && String::from_utf8_lossy(&output.stdout).contains("qualification@1"))
         .then_some(())
-        .ok_or_else(|| "unknown: qualification notification state missing".to_owned())
+        .ok_or_else(|| Error::unknown("qualification notification state missing"))
 }
 
 #[cfg(windows)]
-fn cleanup_qualification_notification(key: &str) -> Result<(), String> {
+fn cleanup_qualification_notification(key: &str) -> Result<(), Error> {
     let status = crate::infrastructure::windows::system_tools::command("reg.exe")
-        .map_err(|_| "unknown: qualification notification cleanup failed".to_owned())?
+        .map_err(|_| Error::unknown("qualification notification cleanup failed"))?
         .args(["delete", key, "/f"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map_err(|_| "unknown: qualification notification cleanup failed".to_owned())?;
+        .map_err(|_| Error::unknown("qualification notification cleanup failed"))?;
     status
         .success()
         .then_some(())
-        .ok_or_else(|| "unknown: qualification notification cleanup failed".to_owned())
+        .ok_or_else(|| Error::unknown("qualification notification cleanup failed"))
 }
 
 #[cfg(windows)]
-fn qualification_notification_absent(key: &str) -> Result<(), String> {
+fn qualification_notification_absent(key: &str) -> Result<(), Error> {
     crate::infrastructure::windows::system_tools::command("reg.exe")
         .and_then(|mut command| {
             command
@@ -243,17 +244,19 @@ fn qualification_notification_absent(key: &str) -> Result<(), String> {
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .status()
-                .map_err(|_| "unknown: qualification notification query failed".into())
+                .map_err(|_| Error::unknown("qualification notification query failed"))
         })
         .map(|status| !status.success())
         .unwrap_or(false)
         .then_some(())
-        .ok_or_else(|| "unknown: qualification notification key remains".into())
+        .ok_or_else(|| Error::unknown("qualification notification key remains"))
 }
 
 #[cfg(not(windows))]
-pub fn qualification_notification_self_check() -> Result<(), String> {
-    Err("unknown: Windows notification registry is unavailable".into())
+pub fn qualification_notification_self_check() -> Result<(), Error> {
+    Err(Error::unknown(
+        "Windows notification registry is unavailable",
+    ))
 }
 
 #[cfg(test)]

@@ -26,7 +26,7 @@ pnpm verify:source
 This checks the pinned toolchain, formatting, documentation, architecture, repository
 tools, qualification tools, React application, Rust crate, source-file size, and
 duplication. It compiles with a non-routable test origin and cannot reach a Relution
-tenant. `pnpm verify` is an alias for the same command.
+tenant.
 
 Use the smaller commands while working:
 
@@ -49,18 +49,27 @@ Markdown is checked by `pnpm docs:verify`; Rust formatting is checked by
 
 React feature code belongs in `src/catalog`, `src/session`, or `src/support`, with
 screen composition in `src/app`. Only `src/native-bridge` may import Tauri APIs.
-Small visual concepts and translated text belong in `src/ui` and `src/i18n`.
+Small visual concepts and translated text belong in `src/ui` and `src/i18n`; all
+copy lives in `i18n/copy.ts`. Catalog state (view, loading, filters, the action
+workflow, polling, and generation fencing) belongs to `useCatalog` in `src/catalog`.
+`src/session/useSession.ts` declares the `CatalogControl` that sign-in and sign-out
+need, and `src/app/App.tsx` wires the two. Feature folders do not import each other.
 
 On the Rust side, place side-effect-free policy in `domain`, workflows in
 `application`, external integrations in `infrastructure`, and command serialization
-in `interface`. See [Architecture](ARCHITECTURE.md) for the dependency rules.
+in `interface`. Signed-in session workflows belong in `application/desktop.rs`, not
+in `interface`. Return a typed `Error` with the right `ErrorKind` from the producer;
+decisions and wire codes follow the kind, never the message text. See [Architecture](ARCHITECTURE.md) for the dependency rules.
 
-When a native command changes, update all four parts of its contract:
+When a native command changes, update every part of its contract:
 
-1. the Rust command handler;
+1. the Rust command handler and its entry in `native_commands!` in
+   `interface/commands.rs`, which generates both `invoke_handler()` and
+   `COMMAND_NAMES`;
 2. `apps/windows-client/native-contract.json`;
-3. the TypeScript bridge; and
-4. the contract tests.
+3. the TypeScript bridge;
+4. `apps/windows-client/wire-fixtures.json`, when a payload shape changes; and
+5. the contract tests.
 
 Keep React tests beside the feature under test and shared setup in `src/test`. Rust
 unit tests stay with their modules; integration tests go in
@@ -85,8 +94,26 @@ using a minimum match of 10 lines and 50 tokens. Entries in
 localized text or explicit domain-to-wire models. New entries should identify an
 equally specific copy rather than exclude a directory or file pattern.
 
+`pnpm architecture:check` mechanically enforces the structure: the layer directories
+and both contract files exist; `domain` references no outer layer and none of
+`tauri`, `reqwest`, `windows`, `rusqlite`, `tokio`, `std::fs`, `std::net`,
+`std::process`, or `std::time::SystemTime`; `application` and `qualification` never
+reference Relution DTOs; `application` and `domain` never reference
+`crate::interface`; `infrastructure` never references `application` or `interface`;
+`interface` never references `infrastructure`; the Relution adapter stays
+independent; no Rust code classifies errors by message prefix (such as
+`.starts_with("offline:")`); glob imports are rejected; only
+`native-bridge` imports `@tauri-apps/api`; feature folders stay independent; and
+workflows keep their safety invariants (invoked pnpm scripts exist, actions are
+SHA-pinned, permissions are `contents: read` except the Pages deploy, the demo job
+is independent, Pages deploys only `apps/web-demo/dist` from `main`, and any Pages
+path filter includes `apps/web-demo/**` and its own workflow file). Layer rules read
+the crate paths a file references, including every member of grouped
+`use crate::{...}` imports, and ignore comments and string literals.
+
 `pnpm tooling:test` exercises the source-size check, architecture rules,
-documentation links, demo isolation, workflow inputs, and command composition.
+documentation links, demo isolation, workflow safety invariants, and command
+composition.
 GitHub Actions runs the desktop and demo checks as separate jobs for pull requests
 and pushes to `main`.
 

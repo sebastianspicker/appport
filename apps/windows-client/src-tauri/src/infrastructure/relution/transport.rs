@@ -1,6 +1,11 @@
 //! Fixed-origin Relution transport with bounded response reads.
 
 use super::{dto, response, RelutionClient, MAX_PAGES, PAGE_SIZE};
+use crate::domain::{
+    catalog::{AppPermission, CatalogEntry, InstalledApp},
+    device::AssignedDevice,
+};
+use crate::error::Error;
 use reqwest::{header, Method};
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -11,87 +16,111 @@ impl RelutionClient {
         &self,
         token: &str,
         user_uuid: &str,
-    ) -> Result<Vec<dto::Device>, String> {
-        self.post_pages("/api/management/v2/devices/baseInfo/query", token, json!({"filter":{"type":"logOp","operation":"AND","filters":[{"type":"string","fieldName":"userUuid","value":user_uuid},{"type":"stringEnum","fieldName":"platform","values":["WINDOWS"]}]},"getItems":true,"getNonpagedCount":true})).await
+    ) -> Result<Vec<AssignedDevice>, Error> {
+        let devices: Vec<dto::Device> = self.post_pages("/api/management/v2/devices/baseInfo/query", token, json!({"filter":{"type":"logOp","operation":"AND","filters":[{"type":"string","fieldName":"userUuid","value":user_uuid},{"type":"stringEnum","fieldName":"platform","values":["WINDOWS"]}]},"getItems":true,"getNonpagedCount":true})).await?;
+        Ok(devices
+            .into_iter()
+            .map(dto::Device::into_assigned_device)
+            .collect())
     }
     pub(crate) async fn catalog(
         &self,
         token: &str,
         locale: &str,
-    ) -> Result<Vec<dto::Catalog>, String> {
-        self.get_pages(
-            "/api/management/v1/content/apps/baseInfo",
-            token,
-            vec![("locale", locale)],
-        )
-        .await
+    ) -> Result<Vec<CatalogEntry>, Error> {
+        let entries: Vec<dto::Catalog> = self
+            .get_pages(
+                "/api/management/v1/content/apps/baseInfo",
+                token,
+                vec![("locale", locale)],
+            )
+            .await?;
+        Ok(entries
+            .into_iter()
+            .map(dto::Catalog::into_catalog_entry)
+            .collect())
     }
     pub(crate) async fn user_groups(
         &self,
         token: &str,
         user_uuid: &str,
-    ) -> Result<dto::Groups, String> {
-        self.get(
-            format!(
-                "/api/management/v1/security/users/{}/groups",
-                encode(user_uuid)
-            ),
-            token,
-            vec![],
-        )
-        .await
+    ) -> Result<Vec<String>, Error> {
+        let groups: dto::Groups = self
+            .get(
+                format!(
+                    "/api/management/v1/security/users/{}/groups",
+                    encode(user_uuid)
+                ),
+                token,
+                vec![],
+            )
+            .await?;
+        Ok(groups.groups.into_iter().map(|group| group.uuid).collect())
     }
     pub(crate) async fn installed_apps(
         &self,
         token: &str,
         device_id: &str,
-    ) -> Result<Vec<dto::Inventory>, String> {
-        self.post_pages(
-            &format!(
-                "/api/management/v2/devices/{}/installedApps/baseInfo/query",
-                encode(device_id)
-            ),
-            token,
-            json!({"getItems":true,"getNonpagedCount":true}),
-        )
-        .await
+    ) -> Result<Vec<InstalledApp>, Error> {
+        let items: Vec<dto::Inventory> = self
+            .post_pages(
+                &format!(
+                    "/api/management/v2/devices/{}/installedApps/baseInfo/query",
+                    encode(device_id)
+                ),
+                token,
+                json!({"getItems":true,"getNonpagedCount":true}),
+            )
+            .await?;
+        Ok(items
+            .into_iter()
+            .map(dto::Inventory::into_installed_app)
+            .collect())
     }
     pub(crate) async fn app_permissions(
         &self,
         token: &str,
         app_id: &str,
-    ) -> Result<dto::Page<dto::Permission>, String> {
-        self.get(
-            &format!(
-                "/api/management/v1/content/apps/{}/permissions/RELEASE",
-                encode(app_id)
-            ),
-            token,
-            vec![],
-        )
-        .await
+    ) -> Result<Vec<AppPermission>, Error> {
+        let page: dto::Page<dto::Permission> = self
+            .get(
+                &format!(
+                    "/api/management/v1/content/apps/{}/permissions/RELEASE",
+                    encode(app_id)
+                ),
+                token,
+                vec![],
+            )
+            .await?;
+        Ok(page
+            .results
+            .into_iter()
+            .map(dto::Permission::into_app_permission)
+            .collect())
     }
     pub(crate) async fn group_members(
         &self,
         token: &str,
         group_id: &str,
-    ) -> Result<Vec<dto::Group>, String> {
-        self.get_pages(
-            &format!(
-                "/api/management/v1/security/groups/{}/members",
-                encode(group_id)
-            ),
-            token,
-            vec![("recursive", "true")],
-        )
-        .await
+    ) -> Result<Vec<String>, Error> {
+        let members: Vec<dto::Group> = self
+            .get_pages(
+                &format!(
+                    "/api/management/v1/security/groups/{}/members",
+                    encode(group_id)
+                ),
+                token,
+                vec![("recursive", "true")],
+            )
+            .await?;
+        Ok(members.into_iter().map(|member| member.uuid).collect())
     }
     pub(super) async fn get_pages<T: DeserializeOwned>(
         &self,
         p: &str,
         t: &str,
         q: Vec<(&str, &str)>,
-    ) -> Result<Vec<T>, String> {
+    ) -> Result<Vec<T>, Error> {
         let mut out = vec![];
         for n in 0..MAX_PAGES {
             let mut x = q.clone();
@@ -112,14 +141,16 @@ impl RelutionClient {
                 return Ok(out);
             }
         }
-        Err("server: Relution pagination exceeded the configured limit".into())
+        Err(Error::server(
+            "Relution pagination exceeded the configured limit",
+        ))
     }
     pub(super) async fn post_pages<T: DeserializeOwned>(
         &self,
         p: &str,
         t: &str,
         b: serde_json::Value,
-    ) -> Result<Vec<T>, String> {
+    ) -> Result<Vec<T>, Error> {
         let mut out = vec![];
         for n in 0..MAX_PAGES {
             let mut b = b.clone();
@@ -130,14 +161,16 @@ impl RelutionClient {
                 return Ok(out);
             }
         }
-        Err("server: Relution pagination exceeded the configured limit".into())
+        Err(Error::server(
+            "Relution pagination exceeded the configured limit",
+        ))
     }
     pub(super) async fn get<T: DeserializeOwned>(
         &self,
         p: impl AsRef<str>,
         t: &str,
         q: Vec<(&str, &str)>,
-    ) -> Result<T, String> {
+    ) -> Result<T, Error> {
         self.request(Method::GET, p.as_ref(), t, None, q).await
     }
     pub(super) async fn post_once<T: DeserializeOwned>(
@@ -145,7 +178,7 @@ impl RelutionClient {
         p: &str,
         t: &str,
         b: serde_json::Value,
-    ) -> Result<T, String> {
+    ) -> Result<T, Error> {
         self.request(Method::POST, p, t, Some(b), vec![]).await
     }
     async fn request<T: DeserializeOwned>(
@@ -155,7 +188,7 @@ impl RelutionClient {
         t: &str,
         b: Option<serde_json::Value>,
         q: Vec<(&str, &str)>,
-    ) -> Result<T, String> {
+    ) -> Result<T, Error> {
         let read = m == Method::GET;
         for attempt in 0..response::request_attempts(read) {
             match self
@@ -176,7 +209,7 @@ impl RelutionClient {
                 response::RequestAttempt::Retry => response::retry_after(attempt).await,
             }
         }
-        Err("offline: Relution is unreachable".into())
+        Err(Error::offline("Relution is unreachable"))
     }
 
     async fn request_attempt<T: DeserializeOwned>(
@@ -212,17 +245,17 @@ impl RelutionClient {
         }
         request.send().await.map_err(SendFailure::Network)
     }
-    pub(super) fn url(&self, p: &str) -> Result<Url, String> {
+    pub(super) fn url(&self, p: &str) -> Result<Url, Error> {
         if !p.starts_with("/api/") {
-            return Err("server: invalid Relution API path".into());
+            return Err(Error::server("invalid Relution API path"));
         }
         let u = self
             .config
             .base
             .join(p)
-            .map_err(|_| "server: invalid Relution API path")?;
+            .map_err(|_| Error::server("invalid Relution API path"))?;
         if u.origin() != self.config.base.origin() {
-            return Err("server: Relution origin changed".into());
+            return Err(Error::server("Relution origin changed"));
         }
         Ok(u)
     }
@@ -239,19 +272,19 @@ pub(super) fn encode(value: &str) -> String {
     url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
 
-pub(super) fn network(error: reqwest::Error) -> String {
+pub(super) fn network(error: reqwest::Error) -> Error {
     if error.is_connect() || error.is_timeout() {
-        "offline: Relution is unreachable".into()
+        Error::offline("Relution is unreachable")
     } else {
-        "server: Relution request failed".into()
+        Error::server("Relution request failed")
     }
 }
 
-pub(super) fn status(status: reqwest::StatusCode) -> String {
+pub(super) fn status(status: reqwest::StatusCode) -> Error {
     match status.as_u16() {
-        401 => "session-expired: authorization required".into(),
-        403 => "authorization: account or token lacks required Relution access".into(),
-        _ => "server: Relution request failed after submission may have occurred".into(),
+        401 => Error::session_expired("authorization required"),
+        403 => Error::authorization("account or token lacks required Relution access"),
+        _ => Error::server("Relution request failed after submission may have occurred"),
     }
 }
 
@@ -265,7 +298,7 @@ struct RequestInput<'a> {
 
 enum SendFailure {
     Network(reqwest::Error),
-    Path(String),
+    Path(Error),
 }
 
 fn append_query(url: &mut Url, query: &[(&str, &str)], tenant: &str) {

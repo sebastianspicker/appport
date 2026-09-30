@@ -1,3 +1,4 @@
+use crate::error::Error;
 use serde::{Deserialize, Serialize};
 
 pub(super) fn add_not_run_write_checks(checks: &mut Vec<QualificationCheck>) {
@@ -15,10 +16,7 @@ pub(super) fn add_not_run_write_checks(checks: &mut Vec<QualificationCheck>) {
     }
 }
 
-pub(super) fn result_check<T>(
-    name: &'static str,
-    result: &Result<T, String>,
-) -> QualificationCheck {
+pub(super) fn result_check<T>(name: &'static str, result: &Result<T, Error>) -> QualificationCheck {
     if result.is_ok() {
         passed(name, "production native client request completed")
     } else {

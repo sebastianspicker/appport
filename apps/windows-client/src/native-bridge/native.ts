@@ -2,10 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppAction,
   CatalogSnapshot,
-  AvailableApp,
   ConnectRequest,
   ConnectOutcome,
-  NativeBootstrap,
   SignOutOutcome,
   SupportBundleResult,
   SupportDetails,
@@ -15,9 +13,6 @@ export const native = {
   initialView: () => invoke<"apps" | "updates">("initial_view"),
   connect: (request: ConnectRequest) =>
     invoke<ConnectOutcome>("connect", { request }),
-  bootstrap: () => invoke<NativeBootstrap>("bootstrap"),
-  apps: (view: "apps" | "updates") =>
-    invoke<AvailableApp[]>("list_apps", { view }),
   loadCatalog: (request: { view: "apps" | "updates"; forceRefresh: boolean }) =>
     invoke<CatalogSnapshot>("load_catalog", { request }),
   act: (appId: string) => invoke<AppAction>("request_action", { appId }),

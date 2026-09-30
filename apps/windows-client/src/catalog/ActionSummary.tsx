@@ -2,7 +2,7 @@ import { copyFor, type Locale } from "../i18n/copy";
 import type { AppAction, AvailableApp } from "../native-bridge/types";
 import { Icon } from "../ui/Icon";
 import { ActionStatus } from "./ActionStatus";
-import type { PollingState } from "./types";
+import type { PollingState } from "./model";
 import { UnknownAction } from "./UnknownAction";
 
 type ActionSummaryProps = {

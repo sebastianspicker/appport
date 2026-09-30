@@ -1,6 +1,7 @@
 //! Monotonic, generation-fenced catalog and icon caches.
 
 use crate::domain::catalog::{AvailableApp, DeviceSummary};
+use crate::error::Error;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::{Mutex, MutexGuard},
@@ -28,7 +29,7 @@ struct CachedCatalog {
 
 struct RefreshAttempt {
     marker: u64,
-    error: Option<String>,
+    error: Option<Error>,
 }
 
 struct CachedIcon {
@@ -70,7 +71,7 @@ pub(super) struct CatalogCache {
 }
 
 impl CatalogCache {
-    pub(super) fn context(&self, generation: u64, locale: &str) -> Result<RefreshContext, String> {
+    pub(super) fn context(&self, generation: u64, locale: &str) -> Result<RefreshContext, Error> {
         let cache = &mut *self.for_generation(generation)?;
         let locale = normalize_locale(locale);
         Ok(RefreshContext {
@@ -89,7 +90,7 @@ impl CatalogCache {
         generation: u64,
         locale: &str,
         ttl: Duration,
-    ) -> Result<Option<AuthorizedCatalog>, String> {
+    ) -> Result<Option<AuthorizedCatalog>, Error> {
         let cache = &mut *self.for_generation(generation)?;
         Ok(cache
             .catalogs
@@ -102,7 +103,7 @@ impl CatalogCache {
         &self,
         context: &RefreshContext,
         ttl: Duration,
-    ) -> Result<Option<AuthorizedCatalog>, String> {
+    ) -> Result<Option<AuthorizedCatalog>, Error> {
         let cache = &mut *self.for_refresh(context)?;
         let Some(attempt) = cache.attempts.get(&context.locale) else {
             return Ok(None);
@@ -124,7 +125,7 @@ impl CatalogCache {
         &self,
         context: &RefreshContext,
         catalog: AuthorizedCatalog,
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         let cache = &mut *self.for_refresh(context)?;
         record_attempt(cache, context, None);
         let authorized_ids = catalog
@@ -150,7 +151,7 @@ impl CatalogCache {
         generation: u64,
         locale: &str,
         revision: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         let cache = self.for_generation(generation)?;
         if cache
             .catalogs
@@ -159,15 +160,15 @@ impl CatalogCache {
         {
             Ok(())
         } else {
-            Err("server: catalog revision is no longer current".into())
+            Err(Error::server("catalog revision is no longer current"))
         }
     }
 
     pub(super) fn record_failure(
         &self,
         context: &RefreshContext,
-        error: String,
-    ) -> Result<(), String> {
+        error: Error,
+    ) -> Result<(), Error> {
         let cache = &mut *self.for_refresh(context)?;
         record_attempt(cache, context, Some(error));
         cache.catalogs.remove(&context.locale);
@@ -183,7 +184,7 @@ impl CatalogCache {
         revision: Option<&str>,
         app_id: &str,
         ttl: Duration,
-    ) -> Result<Option<IconAuthorization>, String> {
+    ) -> Result<Option<IconAuthorization>, Error> {
         let cache = &mut *self.for_generation(generation)?;
         let Some(catalog) = cache.catalogs.get(&normalize_locale(locale)) else {
             return Ok(None);
@@ -192,13 +193,13 @@ impl CatalogCache {
             return Ok(None);
         }
         if revision.is_some_and(|revision| revision != catalog.value.revision) {
-            return Err("server: catalog revision is no longer current".into());
+            return Err(Error::server("catalog revision is no longer current"));
         }
         if !catalog
             .authorized_ids
             .contains(&app_id.to_ascii_lowercase())
         {
-            return Err("server: application is not permitted".into());
+            return Err(Error::server("application is not permitted"));
         }
         Ok(Some(IconAuthorization {
             revision: catalog.value.revision.clone(),
@@ -210,7 +211,7 @@ impl CatalogCache {
         generation: u64,
         revision: &str,
         app_id: &str,
-    ) -> Result<Option<Option<String>>, String> {
+    ) -> Result<Option<Option<String>>, Error> {
         let cache = &mut *self.for_generation(generation)?;
         let Some(index) = cache
             .icons
@@ -231,7 +232,7 @@ impl CatalogCache {
         revision: &str,
         app_id: &str,
         value: Option<String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         let cache = &mut *self.for_generation(generation)?;
         if !cache.catalogs.values().any(|catalog| {
             catalog.value.revision == revision
@@ -239,7 +240,7 @@ impl CatalogCache {
                     .authorized_ids
                     .contains(&app_id.to_ascii_lowercase())
         }) {
-            return Err("server: catalog revision is no longer current".into());
+            return Err(Error::server("catalog revision is no longer current"));
         }
 
         if let Some(index) = cache
@@ -269,7 +270,7 @@ impl CatalogCache {
         Ok(())
     }
 
-    pub(super) fn invalidate_apps(&self, generation: u64) -> Result<(), String> {
+    pub(super) fn invalidate_apps(&self, generation: u64) -> Result<(), Error> {
         let cache = &mut *self.state()?;
         if cache.generation == Some(generation) {
             invalidate(cache);
@@ -277,10 +278,10 @@ impl CatalogCache {
         Ok(())
     }
 
-    pub(super) fn invalidate_session(&self, generation: u64) -> Result<(), String> {
+    pub(super) fn invalidate_session(&self, generation: u64) -> Result<(), Error> {
         let cache = &mut *self.state()?;
         if cache.generation.is_some_and(|cached| generation < cached) {
-            return Err("session-expired: stale cache generation".into());
+            return Err(Error::session_expired("stale cache generation"));
         }
         cache.generation = Some(generation);
         invalidate(cache);
@@ -290,18 +291,18 @@ impl CatalogCache {
     fn for_refresh(
         &self,
         context: &RefreshContext,
-    ) -> Result<MutexGuard<'_, CredentialCache>, String> {
+    ) -> Result<MutexGuard<'_, CredentialCache>, Error> {
         let cache = self.for_generation(context.generation)?;
         if cache.invalidation != context.invalidation {
-            return Err("session-expired: catalog refresh was invalidated".into());
+            return Err(Error::session_expired("catalog refresh was invalidated"));
         }
         Ok(cache)
     }
 
-    fn for_generation(&self, generation: u64) -> Result<MutexGuard<'_, CredentialCache>, String> {
+    fn for_generation(&self, generation: u64) -> Result<MutexGuard<'_, CredentialCache>, Error> {
         let mut cache = self.state()?;
         if cache.generation.is_some_and(|cached| generation < cached) {
-            return Err("session-expired: stale cache generation".into());
+            return Err(Error::session_expired("stale cache generation"));
         }
         if cache.generation != Some(generation) {
             cache.generation = Some(generation);
@@ -310,14 +311,14 @@ impl CatalogCache {
         Ok(cache)
     }
 
-    fn state(&self) -> Result<MutexGuard<'_, CredentialCache>, String> {
+    fn state(&self) -> Result<MutexGuard<'_, CredentialCache>, Error> {
         self.state
             .lock()
-            .map_err(|_| "unknown: native cache is unavailable".into())
+            .map_err(|_| Error::unknown("native cache is unavailable"))
     }
 }
 
-fn record_attempt(cache: &mut CredentialCache, context: &RefreshContext, error: Option<String>) {
+fn record_attempt(cache: &mut CredentialCache, context: &RefreshContext, error: Option<Error>) {
     cache.next_marker = cache.next_marker.wrapping_add(1).max(1);
     cache.attempts.insert(
         context.locale.clone(),

@@ -1,7 +1,10 @@
 use super::{catalog, client, concurrent_server, device, run, CatalogService, Response};
+use crate::error::Error;
 use crate::{
     domain::{
-        catalog::{app_from, classify_catalog_inventory, CatalogInventoryClassification},
+        catalog::{
+            app_from, classify_catalog_inventory, CatalogInventoryClassification, PermissionSubject,
+        },
         device::same_uuid,
     },
     infrastructure::relution::RelutionClient,
@@ -207,34 +210,25 @@ fn catalog_body(app_count: usize) -> String {
     )
 }
 
-async fn serial_reference(client: &RelutionClient) -> Result<Vec<String>, String> {
+async fn serial_reference(client: &RelutionClient) -> Result<Vec<String>, Error> {
     let entries = client.catalog("token", "en-US").await?;
-    let groups = client.user_groups("token", "user").await?;
+    let group_ids = client.user_groups("token", "user").await?;
     let inventory = client.installed_apps("token", &device().id).await?;
-    let group_ids = groups
-        .groups
-        .into_iter()
-        .map(|group| group.uuid)
-        .collect::<Vec<_>>();
-    let inventory = inventory
-        .iter()
-        .map(super::super::installed_app)
-        .collect::<Vec<_>>();
     let mut rows = Vec::new();
     for entry in entries {
-        let Some(app) = app_from(super::super::catalog_entry(entry), client.native_app_uuid())
-        else {
+        let Some(app) = app_from(entry, client.native_app_uuid()) else {
             continue;
         };
         let permissions = client.app_permissions("token", &app.id).await?;
-        let allowed = permissions.results.iter().any(|permission| {
+        let allowed = permissions.iter().any(|permission| {
             permission.read
-                && ((permission.subject.kind.eq_ignore_ascii_case("USER")
-                    && same_uuid(&permission.subject.uuid, "user"))
-                    || (permission.subject.kind.eq_ignore_ascii_case("GROUP")
-                        && group_ids
-                            .iter()
-                            .any(|group| same_uuid(group, &permission.subject.uuid))))
+                && match &permission.subject {
+                    PermissionSubject::User(id) => same_uuid(id, "user"),
+                    PermissionSubject::Group(id) => {
+                        group_ids.iter().any(|group| same_uuid(group, id))
+                    }
+                    PermissionSubject::Other => false,
+                }
         });
         if !allowed {
             continue;

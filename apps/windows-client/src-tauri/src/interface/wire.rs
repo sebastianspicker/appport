@@ -2,10 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    domain::{action, catalog},
-    infrastructure::windows::support,
-};
+use crate::domain::{action, catalog, support};
 
 #[derive(Deserialize)]
 #[serde(tag = "authMethod", rename_all = "snake_case", deny_unknown_fields)]

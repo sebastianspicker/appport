@@ -9,6 +9,7 @@ use crate::{
         action::{ActionState, AppAction, Intent},
         catalog::{AppInstallState, AvailableApp, CatalogView},
     },
+    error::{Error, ErrorKind},
     infrastructure::relution::RelutionClient,
     infrastructure::windows::platform,
 };
@@ -159,7 +160,7 @@ async fn write_catalog(
 }
 
 fn catalog_result<T>(
-    result: Result<T, String>,
+    result: Result<T, Error>,
     failure: WriteCatalogFailure,
 ) -> Result<T, WriteCatalogFailure> {
     result.map_err(|_| failure)
@@ -259,8 +260,8 @@ async fn cross_user_action_is_denied(
     denied
 }
 
-fn cross_user_action_check(result: Result<AppAction, String>) -> QualificationCheck {
-    if matches!(result, Err(error) if error.starts_with("device_match_failed:")) {
+fn cross_user_action_check(result: Result<AppAction, Error>) -> QualificationCheck {
+    if matches!(result, Err(error) if error.kind() == ErrorKind::DeviceMatchFailed) {
         passed(
             "cross_user_action",
             "production action path denied unassigned ordinary user A before dispatch",
@@ -397,12 +398,15 @@ fn fixture_visible(
 
 #[cfg(test)]
 mod tests {
-    use super::{catalog_result, cross_user_action_check, successful_action, WriteCatalogFailure};
+    use super::{
+        catalog_result, cross_user_action_check, successful_action, Error, WriteCatalogFailure,
+    };
 
     #[test]
     fn apps_lookup_failure_is_redacted_and_blocks_catalog_use() {
-        let result: Result<(), String> =
-            Err("server: invalid Relution response Bearer sentinel-apps-token".into());
+        let result: Result<(), Error> = Err(Error::server(
+            "invalid Relution response Bearer sentinel-apps-token",
+        ));
 
         let failure = catalog_result(result, WriteCatalogFailure::Apps).unwrap_err();
         let check = failure.check();
@@ -416,8 +420,9 @@ mod tests {
 
     #[test]
     fn updates_lookup_failure_is_redacted_and_blocks_catalog_use() {
-        let result: Result<(), String> =
-            Err("server: invalid Relution response Bearer sentinel-updates-token".into());
+        let result: Result<(), Error> = Err(Error::server(
+            "invalid Relution response Bearer sentinel-updates-token",
+        ));
 
         let failure = catalog_result(result, WriteCatalogFailure::Updates).unwrap_err();
         let check = failure.check();
@@ -432,13 +437,13 @@ mod tests {
     #[test]
     fn cross_user_action_passes_only_for_the_observed_device_denial() {
         let passed_check =
-            cross_user_action_check(Err("device_match_failed: device not assigned".into()));
+            cross_user_action_check(Err(Error::device_match_failed("device not assigned")));
         assert_eq!(passed_check.status, super::super::CheckStatus::Passed);
 
         for result in [
             Ok(successful_action()),
-            Err("server: action submission failed".into()),
-            Err("session-expired: user A session expired".into()),
+            Err(Error::server("action submission failed")),
+            Err(Error::session_expired("user A session expired")),
         ] {
             assert_eq!(
                 cross_user_action_check(result).status,

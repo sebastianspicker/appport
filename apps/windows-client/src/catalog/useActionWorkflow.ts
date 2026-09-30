@@ -1,56 +1,72 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { useActionHydrator, type HydrationContext } from "./useActionHydrator";
+import { useActionHydrator } from "./useActionHydrator";
 import { copyFor, type Locale } from "../i18n/copy";
 import type { AppAction, AvailableApp } from "../native-bridge/types";
 import { native } from "../native-bridge/native";
 import { problemFor } from "../native-bridge/problem";
 import {
+  completeTerminalAction,
+  isTerminalActionState,
+  saveAction,
   withoutKey,
-  type ActionGenerationContext,
-  type ActionPollingContext,
-  type ActionStartContext,
-  type PollingState,
-  type PollTimerRegistry,
-} from "./types";
+} from "./actionState";
+import type { PollingState } from "./model";
+import type { PollTimerRegistry } from "./usePollTimerRegistry";
 
-const terminalStates = new Set(["succeeded", "failed", "cancelled", "unknown"]);
 const maxPollAttempts = 150;
 
-type ActivePollContext = {
-  isCurrent: (
-    appId: string,
-    actionGeneration: number,
-    sessionGeneration: number,
-  ) => boolean;
-  load: () => Promise<void>;
-  pollTimers: PollTimerRegistry;
+type IsCurrentAction = (
+  appId: string,
+  actionGeneration: number,
+  sessionGeneration: number,
+) => boolean;
+
+type ActionGenerations = {
+  actionGenerations: MutableRefObject<Map<string, number>>;
+  generation: MutableRefObject<number>;
+};
+
+type ActionStateSetters = {
   setActions: Dispatch<SetStateAction<Map<string, AppAction>>>;
   setPolling: Dispatch<SetStateAction<Map<string, PollingState>>>;
 };
 
-type PerAppActionStartContext = Omit<ActionStartContext, "setBusy"> & {
-  pendingStarts: MutableRefObject<Map<string, symbol>>;
-  setBusyApps: Dispatch<SetStateAction<Set<string>>>;
+type ActivePollContext = ActionStateSetters & {
+  isCurrent: IsCurrentAction;
+  load: () => Promise<void>;
+  pollTimers: PollTimerRegistry;
 };
 
-function saveAction(
-  action: AppAction,
-  setActions: Dispatch<SetStateAction<Map<string, AppAction>>>,
-) {
-  setActions((existing) => new Map(existing).set(action.appId, action));
-}
+type ActionPollerContext = ActionGenerations &
+  ActionStateSetters & {
+    load: () => Promise<void>;
+    mounted: MutableRefObject<boolean>;
+    pollTimers: PollTimerRegistry;
+  };
 
-async function completeTerminalAction(
-  action: AppAction,
-  pollTimers: PollTimerRegistry,
-  setPolling: Dispatch<SetStateAction<Map<string, PollingState>>>,
-  load: () => Promise<void>,
-) {
-  pollTimers.clear(action.appId);
-  setPolling((existing) => withoutKey(existing, action.appId));
-  if (action.state === "succeeded") await load();
-}
+type ActionStartContext = ActionGenerations &
+  ActionStateSetters & {
+    isCurrent: IsCurrentAction;
+    locale: Locale;
+    pendingStarts: MutableRefObject<Map<string, symbol>>;
+    poll: (
+      action: AppAction,
+      actionGeneration: number,
+      sessionGeneration: number,
+    ) => Promise<void>;
+    pollTimers: PollTimerRegistry;
+    setActionFailures: Dispatch<SetStateAction<Map<string, string>>>;
+    setBusyApps: Dispatch<SetStateAction<Set<string>>>;
+  };
+
+type ActionWorkflowOptions = {
+  generation: MutableRefObject<number>;
+  load: () => Promise<void>;
+  locale: Locale;
+  mounted: MutableRefObject<boolean>;
+  pollTimers: PollTimerRegistry;
+};
 
 function pauseIfCurrent(
   action: AppAction,
@@ -63,7 +79,7 @@ function pauseIfCurrent(
 
 function nextActionGeneration(
   appId: string,
-  { actionGenerations, generation }: ActionGenerationContext,
+  { actionGenerations, generation }: ActionGenerations,
 ) {
   const actionGeneration = (actionGenerations.current.get(appId) ?? 0) + 1;
   actionGenerations.current.set(appId, actionGeneration);
@@ -117,7 +133,7 @@ async function pollAction(
   for (let attempt = 0; attempt < maxPollAttempts; attempt += 1) {
     if (!context.isCurrent(action.appId, actionGeneration, sessionGeneration))
       return;
-    if (terminalStates.has(current.state)) {
+    if (isTerminalActionState(current.state)) {
       await completeTerminalAction(
         current,
         context.pollTimers,
@@ -151,7 +167,7 @@ function useActionPoller({
   pollTimers,
   setActions,
   setPolling,
-}: ActionPollingContext) {
+}: ActionPollerContext) {
   const isCurrent = useCallback(
     (appId: string, actionGeneration: number, sessionGeneration: number) =>
       mounted.current &&
@@ -203,7 +219,7 @@ function useActionStarter({
   setActions,
   setBusyApps,
   setPolling,
-}: PerAppActionStartContext) {
+}: ActionStartContext) {
   return useCallback(
     async (application: AvailableApp) => {
       if (pendingStarts.current.has(application.id)) return;
@@ -266,37 +282,21 @@ function useResumeAction(
   return useCallback(
     (appId: string) => {
       const action = actions.get(appId);
-      if (!action || terminalStates.has(action.state)) return;
+      if (!action || isTerminalActionState(action.state)) return;
       beginPolling(action);
     },
     [actions, beginPolling],
   );
 }
 
-async function applyHydratedAction(
-  context: HydrationContext,
-  action: AppAction,
-) {
-  saveAction(action, context.setActions);
-  if (!terminalStates.has(action.state)) {
-    context.beginPolling(action);
-    return;
-  }
-  await completeTerminalAction(
-    action,
-    context.pollTimers,
-    context.setPolling,
-    context.load,
-  );
-}
-
-export function useActionWorkflow(
-  locale: Locale,
-  mounted: MutableRefObject<boolean>,
-  generation: MutableRefObject<number>,
-  load: () => Promise<void>,
-  pollTimers: PollTimerRegistry,
-) {
+/** Owns per-application action state, starts, polling, and hydration of restarted actions. */
+export function useActionWorkflow({
+  generation,
+  load,
+  locale,
+  mounted,
+  pollTimers,
+}: ActionWorkflowOptions) {
   const [actions, setActions] = useState<Map<string, AppAction>>(
     () => new Map(),
   );
@@ -342,10 +342,8 @@ export function useActionWorkflow(
       setPolling,
     ],
   );
-  const { hydrateActions, resetHydration } = useActionHydrator(
-    hydrationContext,
-    applyHydratedAction,
-  );
+  const { hydrateActions, resetHydration } =
+    useActionHydrator(hydrationContext);
   const startAction = useActionStarter({
     actionGenerations,
     generation,
@@ -372,24 +370,14 @@ export function useActionWorkflow(
     setPolling(new Map());
   }, [actionGenerations, pendingStarts, pollTimers, resetHydration]);
 
-  const busy = busyApps.values().next().value;
-
   return {
     actionFailures,
     actions,
-    busy,
     busyApps,
     hydrateActions,
     polling,
     resetActions,
     resumeAction,
-    setActions,
     startAction,
   };
-}
-
-export type ResumeAction = ReturnType<typeof useActionWorkflow>["resumeAction"];
-
-export function isTerminalActionState(state: string) {
-  return terminalStates.has(state);
 }

@@ -1,7 +1,6 @@
 import { copyFor, type Locale } from "../i18n/copy";
 import { Icon } from "../ui/Icon";
-import type { Catalog } from "./model";
-import type { SourceFilter } from "./types";
+import type { Catalog, SourceFilter } from "./model";
 
 export function CatalogToolbar({
   catalog,

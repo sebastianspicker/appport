@@ -1,6 +1,11 @@
-//! Forward-compatible Relution response DTOs. Every HTTP boundary deserializes one of these.
+//! Forward-compatible Relution response DTOs. Every HTTP boundary deserializes one of these,
+//! and each DTO converts into the domain value that application policy consumes.
 
-use crate::domain::device::AssignedDevice;
+use crate::domain::{
+    action::{DeploymentResponse, RemoteAction, RemoteActionDetails},
+    catalog::{AppPermission, CatalogEntry, InstalledApp, PermissionSubject},
+    device::AssignedDevice,
+};
 use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct Page<T> {
@@ -64,6 +69,27 @@ pub struct Catalog {
     #[serde(rename = "internalName")]
     pub internal_name: Option<String>,
 }
+
+impl Catalog {
+    pub(crate) fn into_catalog_entry(self) -> CatalogEntry {
+        let release = self.versions.release;
+        let developer = self.developer;
+        CatalogEntry {
+            id: self.uuid,
+            name: self.name,
+            default_name: self.default_name,
+            description: self.description,
+            developer_name: developer.as_ref().and_then(|value| value.name.clone()),
+            developer_company_name: developer.and_then(|value| value.company_name),
+            subtype: self.subtype,
+            platforms: self.platforms,
+            release_id: release.as_ref().map(|value| value.uuid.clone()),
+            release_label: release.and_then(|value| value.version_name),
+            has_icon: self.icon.is_some(),
+            package_identifier: self.internal_name,
+        }
+    }
+}
 #[derive(Deserialize)]
 pub struct Developer {
     pub name: Option<String>,
@@ -101,9 +127,35 @@ pub struct Subject {
     #[serde(rename = "type")]
     pub kind: String,
 }
+
+impl Permission {
+    pub(crate) fn into_app_permission(self) -> AppPermission {
+        let Subject { uuid, kind } = self.subject;
+        AppPermission {
+            read: self.read,
+            subject: if kind.eq_ignore_ascii_case("USER") {
+                PermissionSubject::User(uuid)
+            } else if kind.eq_ignore_ascii_case("GROUP") {
+                PermissionSubject::Group(uuid)
+            } else {
+                PermissionSubject::Other
+            },
+        }
+    }
+}
 #[derive(Deserialize)]
 pub struct Deployment {
     pub successful: bool,
+}
+
+impl Page<Deployment> {
+    pub(crate) fn into_deployment_response(self) -> DeploymentResponse {
+        if self.results.len() == 1 && self.results[0].successful {
+            DeploymentResponse::Accepted
+        } else {
+            DeploymentResponse::NotAccepted
+        }
+    }
 }
 #[derive(Deserialize)]
 pub struct Inventory {
@@ -120,6 +172,18 @@ pub struct Inventory {
     pub version_name: Option<String>,
     #[serde(rename = "hasUpdateAvailable")]
     pub update: Option<bool>,
+}
+
+impl Inventory {
+    pub(crate) fn into_installed_app(self) -> InstalledApp {
+        InstalledApp {
+            identifier: self.identifier,
+            app_id: self.app_uuid,
+            version_id: self.version_uuid,
+            version_label: self.version_to_show.or(self.version_name),
+            has_update: self.update,
+        }
+    }
 }
 #[derive(Deserialize)]
 pub struct DeviceAction {
@@ -139,9 +203,30 @@ pub struct ActionDetails {
     #[serde(rename = "appInternalName")]
     pub package: Option<String>,
 }
+
+impl DeviceAction {
+    pub(crate) fn into_remote_action(self) -> RemoteAction {
+        RemoteAction {
+            id: self.uuid,
+            state: self.state,
+            created_at: self.creation_date,
+            details: self.details.map(|details| RemoteActionDetails {
+                app_id: details.app_uuid,
+                version_id: details.version_uuid,
+                package_id: details.package,
+            }),
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
-    use super::{Device, Group, Page, User};
+    use super::{
+        Catalog, Deployment, Device, DeviceAction, Group, Inventory, Page, Permission, User,
+    };
+    use crate::domain::{
+        action::{DeploymentResponse, RemoteAction, RemoteActionDetails},
+        catalog::{AppPermission, CatalogEntry, InstalledApp, PermissionSubject},
+    };
     #[test]
     fn accepts_server_extensions_but_rejects_missing_or_wrong_required_identity_fields() {
         let user = r#"{"uuid":"u","name":"n","organizationUuid":"o","activated":true,"email":"n@example.test","status":"ACTIVE","message":"ok"}"#;
@@ -178,5 +263,138 @@ mod tests {
             page.results[0].serial_number.as_deref(),
             Some("SYNTHETIC-42")
         );
+    }
+
+    #[test]
+    fn catalog_converts_into_the_domain_entry() {
+        let catalog: Catalog = serde_json::from_str(
+            r#"{"uuid":"app","name":null,"defaultName":"Default","description":"About","developerInformation":{"name":null,"companyName":"Company"},"subType":"WINGET","platforms":["WINDOWS"],"versions":{"RELEASE":{"uuid":"version","versionName":"2.0"}},"icon":"icon","internalName":"Pkg.Id"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            catalog.into_catalog_entry(),
+            CatalogEntry {
+                id: "app".into(),
+                name: None,
+                default_name: Some("Default".into()),
+                description: Some("About".into()),
+                developer_name: None,
+                developer_company_name: Some("Company".into()),
+                subtype: Some("WINGET".into()),
+                platforms: vec!["WINDOWS".into()],
+                release_id: Some("version".into()),
+                release_label: Some("2.0".into()),
+                has_icon: true,
+                package_identifier: Some("Pkg.Id".into()),
+            }
+        );
+        let bare: Catalog =
+            serde_json::from_str(r#"{"uuid":"app","platforms":[],"versions":{}}"#).unwrap();
+        let entry = bare.into_catalog_entry();
+        assert_eq!((entry.release_id, entry.release_label), (None, None));
+        assert!(!entry.has_icon);
+    }
+
+    #[test]
+    fn inventory_prefers_the_displayed_version_label() {
+        let inventory = |json: &str| {
+            serde_json::from_str::<Inventory>(json)
+                .unwrap()
+                .into_installed_app()
+        };
+        assert_eq!(
+            inventory(
+                r#"{"identifier":"pkg","name":"App","appUuid":"app","versionUuid":"version","versionToShow":"2","versionName":"2.0.1","hasUpdateAvailable":true}"#
+            ),
+            InstalledApp {
+                identifier: Some("pkg".into()),
+                app_id: Some("app".into()),
+                version_id: Some("version".into()),
+                version_label: Some("2".into()),
+                has_update: Some(true),
+            }
+        );
+        assert_eq!(
+            inventory(r#"{"versionName":"2.0.1"}"#)
+                .version_label
+                .as_deref(),
+            Some("2.0.1")
+        );
+    }
+
+    #[test]
+    fn permission_subject_kinds_convert_case_insensitively() {
+        let permission = |read: bool, kind: &str| {
+            serde_json::from_str::<Permission>(&format!(
+                r#"{{"read":{read},"userGroupInfo":{{"uuid":"subject","type":"{kind}"}}}}"#
+            ))
+            .unwrap()
+            .into_app_permission()
+        };
+        assert_eq!(
+            permission(true, "user"),
+            AppPermission {
+                read: true,
+                subject: PermissionSubject::User("subject".into()),
+            }
+        );
+        assert_eq!(
+            permission(false, "Group").subject,
+            PermissionSubject::Group("subject".into())
+        );
+        assert!(!permission(false, "Group").read);
+        assert_eq!(permission(true, "ROLE").subject, PermissionSubject::Other);
+    }
+
+    #[test]
+    fn device_actions_convert_into_remote_actions() {
+        let actions: Page<DeviceAction> = serde_json::from_str(
+            r#"{"results":[{"uuid":"a","state":"PENDING","creationDate":7,"details":{"appUuid":"app","versionUuid":"version","appInternalName":"pkg"}},{"uuid":"b","state":"ERROR","creationDate":8}]}"#,
+        )
+        .unwrap();
+        let actions = actions
+            .results
+            .into_iter()
+            .map(DeviceAction::into_remote_action)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actions,
+            [
+                RemoteAction {
+                    id: "a".into(),
+                    state: "PENDING".into(),
+                    created_at: 7,
+                    details: Some(RemoteActionDetails {
+                        app_id: Some("app".into()),
+                        version_id: Some("version".into()),
+                        package_id: Some("pkg".into()),
+                    }),
+                },
+                RemoteAction {
+                    id: "b".into(),
+                    state: "ERROR".into(),
+                    created_at: 8,
+                    details: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn only_one_successful_deployment_result_is_acceptance() {
+        let response = |results: &[bool]| {
+            Page {
+                results: results
+                    .iter()
+                    .map(|&successful| Deployment { successful })
+                    .collect(),
+                total: None,
+            }
+            .into_deployment_response()
+        };
+        assert_eq!(response(&[true]), DeploymentResponse::Accepted);
+        assert_eq!(response(&[false]), DeploymentResponse::NotAccepted);
+        assert_eq!(response(&[true, true]), DeploymentResponse::NotAccepted);
+        assert_eq!(response(&[]), DeploymentResponse::NotAccepted);
     }
 }

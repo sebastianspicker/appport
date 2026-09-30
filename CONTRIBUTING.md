@@ -39,8 +39,9 @@ React features live beside their tests. Rust unit tests stay with their modules;
 integration tests go in `apps/windows-client/src-tauri/tests`.
 
 The React interface imports Tauri only through `src/native-bridge`. When changing
-a native command, update its Rust handler, `native-contract.json`, TypeScript
-bridge, and contract tests together. Authorization, device matching, deployment,
+a native command, update its Rust handler and `invoke_handler()` entry, `COMMAND_NAMES`,
+`native-contract.json`, TypeScript bridge, `wire-fixtures.json` (when a payload
+shape changes), and contract tests together. Authorization, device matching, deployment,
 Windows integration, and persistent state belong in Rust.
 
 The catalog has two views: Available and Updates. Installed applications with no

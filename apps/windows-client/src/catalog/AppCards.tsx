@@ -1,13 +1,11 @@
 import { useId, useState } from "react";
-import { designCopyFor } from "../i18n/designCopy";
 import { copyFor, type Locale } from "../i18n/copy";
 import { AppIcon } from "./AppIcon";
 import { AppActionState } from "./AppActionState";
 import { Icon } from "../ui/Icon";
 import type { ConfirmationHandler } from "./confirmation";
 import type { AppAction, AvailableApp } from "../native-bridge/types";
-import type { PollingState } from "./types";
-import type { ResumeAction } from "./useCatalogActions";
+import type { PollingState, ResumeAction } from "./model";
 
 type AppCardProps = {
   application: AvailableApp;
@@ -39,7 +37,6 @@ export function AppCard(props: AppCardProps) {
     writesEnabled,
   } = props;
   const copy = copyFor(locale);
-  const design = designCopyFor(locale);
   const [expanded, setExpanded] = useState(false);
   const detailId = useId();
   return (
@@ -90,7 +87,7 @@ export function AppCard(props: AppCardProps) {
         aria-controls={detailId}
         onClick={() => setExpanded(!expanded)}
       >
-        {design.view}
+        {copy.view}
         <Icon name="arrow" size={20} />
       </button>
       <div

@@ -1,12 +1,13 @@
-//! Fixed-origin Relution HTTP adapter. It owns endpoint and DTO operations only.
+//! Fixed-origin Relution HTTP adapter. It owns endpoint operations and DTO-to-domain conversion only.
 
 use crate::build_config::is_fixed_https_origin;
 use crate::domain::device::same_uuid;
+use crate::error::Error;
 use serde_json::json;
 use std::time::Duration;
 use url::Url;
 
-pub(crate) mod dto;
+mod dto;
 mod response;
 
 use transport::{encode, network, status};
@@ -49,28 +50,34 @@ pub struct ConnectedIdentity {
 }
 
 impl RelutionConfig {
-    pub fn embedded() -> Result<Self, String> {
-        let base = Url::parse(option_env!("APPPORT_RELUTION_API_BASE_URL").ok_or(
-            "configuration: APPPORT_RELUTION_API_BASE_URL was not embedded in this build",
-        )?)
-        .map_err(|_| "configuration: invalid Relution API URL")?;
+    pub fn embedded() -> Result<Self, Error> {
+        let base = Url::parse(option_env!("APPPORT_RELUTION_API_BASE_URL").ok_or_else(|| {
+            Error::configuration("APPPORT_RELUTION_API_BASE_URL was not embedded in this build")
+        })?)
+        .map_err(|_| Error::configuration("invalid Relution API URL"))?;
         if !is_fixed_https_origin(&base) {
-            return Err("configuration: Relution API URL must be a fixed HTTPS origin".into());
+            return Err(Error::configuration(
+                "Relution API URL must be a fixed HTTPS origin",
+            ));
         }
         let organization_uuid = option_env!("APPPORT_RELUTION_ORGANIZATION_UUID")
             .filter(|value| valid_id(value))
-            .ok_or(
-                "configuration: APPPORT_RELUTION_ORGANIZATION_UUID was not embedded in this build",
-            )?
+            .ok_or_else(|| {
+                Error::configuration(
+                    "APPPORT_RELUTION_ORGANIZATION_UUID was not embedded in this build",
+                )
+            })?
             .into();
         let native_app_uuid = option_env!("APPPORT_NATIVE_APP_UUID")
             .filter(|value| valid_id(value))
-            .ok_or("configuration: APPPORT_NATIVE_APP_UUID was not embedded in this build")?
+            .ok_or_else(|| {
+                Error::configuration("APPPORT_NATIVE_APP_UUID was not embedded in this build")
+            })?
             .into();
         let writes_enabled = match option_env!("APPPORT_RELUTION_WRITES_ENABLED") {
             Some("true") => true,
             Some("false") => false,
-            _ => return Err("configuration: invalid embedded write flag".into()),
+            _ => return Err(Error::configuration("invalid embedded write flag")),
         };
         Ok(Self {
             base,
@@ -82,14 +89,18 @@ impl RelutionConfig {
 }
 
 impl RelutionClient {
-    pub fn new(config: RelutionConfig) -> Result<Self, String> {
+    pub fn new(config: RelutionConfig) -> Result<Self, Error> {
+        Self::with_timeout(config, Duration::from_secs(20))
+    }
+
+    pub(crate) fn with_timeout(config: RelutionConfig, timeout: Duration) -> Result<Self, Error> {
         Ok(Self {
             config,
             http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(20))
+                .timeout(timeout)
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
-                .map_err(|_| "configuration: HTTP client unavailable")?,
+                .map_err(|_| Error::configuration("HTTP client unavailable"))?,
         })
     }
     pub(crate) fn native_app_uuid(&self) -> &str {
@@ -102,9 +113,9 @@ impl RelutionClient {
         self.config.writes_enabled
     }
 
-    pub async fn connect(&self, username: &str, token: &str) -> Result<ConnectedIdentity, String> {
+    pub async fn connect(&self, username: &str, token: &str) -> Result<ConnectedIdentity, Error> {
         if username.trim().is_empty() || token.trim().is_empty() {
-            return Err("session-expired: invalid Relution credentials".into());
+            return Err(Error::session_expired("invalid Relution credentials"));
         }
         let users: Vec<dto::User> = self
             .post_pages(
@@ -122,10 +133,9 @@ impl RelutionClient {
             })
             .collect();
         if matches.len() != 1 {
-            return Err(
-                "device_match_failed: Relution identity is not a single active organization user"
-                    .into(),
-            );
+            return Err(Error::device_match_failed(
+                "Relution identity is not a single active organization user",
+            ));
         }
         Ok(ConnectedIdentity {
             username: username.trim().into(),

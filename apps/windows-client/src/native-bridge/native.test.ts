@@ -30,12 +30,6 @@ describe("native command boundary", () => {
       call: () => native.connect(request),
       expected: ["connect", { request }],
     },
-    { name: "bootstrap", call: native.bootstrap, expected: ["bootstrap"] },
-    {
-      name: "list_apps",
-      call: () => native.apps("updates"),
-      expected: ["list_apps", { view: "updates" }],
-    },
     {
       name: "load_catalog",
       call: () => native.loadCatalog({ view: "updates", forceRefresh: true }),

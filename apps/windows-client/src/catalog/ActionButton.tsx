@@ -1,4 +1,3 @@
-import { designCopyFor } from "../i18n/designCopy";
 import { copyFor, type Locale } from "../i18n/copy";
 import type { ConfirmationHandler } from "./confirmation";
 import type { AvailableApp } from "../native-bridge/types";
@@ -27,8 +26,8 @@ export function ActionButton({
         application,
         state,
         copy.retryAction,
-        designCopyFor(locale).reviewUpdate,
-        designCopyFor(locale).reviewInstall,
+        copyFor(locale).reviewUpdate,
+        copyFor(locale).reviewInstall,
       )}
       <Icon name="arrow" size={20} />
     </button>

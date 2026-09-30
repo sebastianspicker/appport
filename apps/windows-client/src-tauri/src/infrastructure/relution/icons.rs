@@ -1,6 +1,7 @@
 //! Raw Relution icon retrieval with bounded response parsing.
 
 use super::{encode, network, status, RelutionClient};
+use crate::error::Error;
 use crate::infrastructure::logging;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::header;
@@ -12,7 +13,7 @@ impl RelutionClient {
         &self,
         token: &str,
         app_id: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<String>, Error> {
         let path = format!("/api/management/v1/content/apps/{}/icon", encode(app_id));
         let response = self
             .http
@@ -37,7 +38,7 @@ impl RelutionClient {
     }
 }
 
-async fn icon_data_url(response: reqwest::Response) -> Result<Option<String>, String> {
+async fn icon_data_url(response: reqwest::Response) -> Result<Option<String>, Error> {
     if response.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }
@@ -45,7 +46,7 @@ async fn icon_data_url(response: reqwest::Response) -> Result<Option<String>, St
         return Err(status(response.status()));
     }
     if response.content_length().unwrap_or(0) > MAX_ICON_BYTES as u64 {
-        return Err("server: icon response is too large".into());
+        return Err(Error::server("icon response is too large"));
     }
     let content_type = response
         .headers()
@@ -53,7 +54,7 @@ async fn icon_data_url(response: reqwest::Response) -> Result<Option<String>, St
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(';').next())
         .filter(|value| matches!(*value, "image/png" | "image/jpeg" | "image/webp"))
-        .ok_or("server: unsupported icon type")?
+        .ok_or_else(|| Error::server("unsupported icon type"))?
         .to_owned();
     let bytes = read_icon_at_most(response, MAX_ICON_BYTES).await?;
     Ok(Some(format!(
@@ -64,21 +65,21 @@ async fn icon_data_url(response: reqwest::Response) -> Result<Option<String>, St
 async fn read_icon_at_most(
     mut response: reqwest::Response,
     maximum: usize,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, Error> {
     let mut body = Vec::with_capacity(maximum.saturating_add(1).min(64 * 1024));
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|_| "server: icon response failed")?
+        .map_err(|_| Error::server("icon response failed"))?
     {
         let remaining = maximum.saturating_add(1).saturating_sub(body.len());
         if chunk.len() > remaining {
             body.extend_from_slice(&chunk[..remaining]);
-            return Err("server: icon response is too large".into());
+            return Err(Error::server("icon response is too large"));
         }
         body.extend_from_slice(&chunk);
         if body.len() > maximum {
-            return Err("server: icon response is too large".into());
+            return Err(Error::server("icon response is too large"));
         }
     }
     Ok(body)

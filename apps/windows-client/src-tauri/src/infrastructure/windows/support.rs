@@ -4,6 +4,8 @@
 //! credentials, request bodies, journals, Relution diagnostics, installed-app
 //! inventory, security logs, proof files, and profile paths are not collected.
 
+use crate::domain::support::{SupportBundleResult, SupportDetails};
+use crate::error::Error;
 use crate::infrastructure::windows::support_archive::{
     manifest_bytes, zip_stored, ManifestMetadata,
 };
@@ -24,25 +26,6 @@ pub(crate) const MAX_ARCHIVE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SupportDetails {
-    pub app_version: String,
-    pub source_revision: String,
-    pub username: String,
-    pub device_name: String,
-    pub device_status: String,
-    pub windows_display: String,
-    pub manufacturer: Option<String>,
-    pub model: Option<String>,
-    pub smbios_serial: Option<String>,
-    pub matched_relution_last_ip: Option<String>,
-    pub matched_relution_last_connection_at: Option<String>,
-    pub assigned_eligible_count: u32,
-    pub available_count: u32,
-    pub update_count: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct SupportCatalogSummary {
     pub assigned_eligible_count: u32,
     pub available_count: u32,
@@ -59,14 +42,6 @@ pub(crate) struct SupportBundleRequest {
     pub collector_warnings: Vec<String>,
     pub client_log: Option<PathBuf>,
     pub client_log_1: Option<PathBuf>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SupportBundleResult {
-    pub bundle_file_name: String,
-    pub bytes: u64,
-    pub warnings: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,22 +68,28 @@ impl SupportError {
         }
     }
 
-    pub(crate) const fn client_message(self) -> &'static str {
+    const fn client_detail(self) -> &'static str {
         match self {
-            Self::ConsentRequired => "support: explicit consent is required",
-            Self::GenerationActive => "support: a bundle is already being generated",
-            Self::Unsupported => "support: support bundles are only available on Windows",
-            Self::Containment => "support: support bundle storage is unavailable",
-            Self::InvalidRequest => "support: invalid bundle request",
-            Self::AssemblyFailed => "support: unable to create support bundle",
-            Self::ArchiveTooLarge => "support: support bundle exceeds the size limit",
+            Self::ConsentRequired => "explicit consent is required",
+            Self::GenerationActive => "a bundle is already being generated",
+            Self::Unsupported => "support bundles are only available on Windows",
+            Self::Containment => "support bundle storage is unavailable",
+            Self::InvalidRequest => "invalid bundle request",
+            Self::AssemblyFailed => "unable to create support bundle",
+            Self::ArchiveTooLarge => "support bundle exceeds the size limit",
         }
+    }
+}
+
+impl From<SupportError> for Error {
+    fn from(error: SupportError) -> Self {
+        Self::support(error.client_detail())
     }
 }
 
 impl std::fmt::Display for SupportError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.client_message())
+        Error::from(*self).fmt(formatter)
     }
 }
 

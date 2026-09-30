@@ -34,16 +34,17 @@ the single HTTPS Relution origin embedded during the build.
 
 | Path | What belongs there |
 | --- | --- |
-| `apps/windows-client/src/app` | Desktop composition and feature hooks |
-| `apps/windows-client/src/catalog` | Available and Updates views, application rows, confirmation dialogs, and action status |
-| `apps/windows-client/src/session` | Personal-token sign-in and local sign-out UI |
+| `apps/windows-client/src/app` | Desktop composition; `App.tsx` wires the session and catalog hooks together |
+| `apps/windows-client/src/catalog` | Available and Updates views, application rows, confirmation dialogs, action status, and `useCatalog`, which owns catalog state |
+| `apps/windows-client/src/session` | Personal-token sign-in and local sign-out UI, and the `CatalogControl` contract that sign-in and sign-out need |
 | `apps/windows-client/src/support` | Device details and support-bundle consent UI |
 | `apps/windows-client/src/native-bridge` | The only TypeScript code that imports Tauri APIs |
-| `apps/windows-client/src-tauri/src/interface` | Command decoding, runtime setup, serialized models, and error mapping |
-| `apps/windows-client/src-tauri/src/application` | Session, catalog, action, background, and support workflows |
-| `apps/windows-client/src-tauri/src/domain` | Side-effect-free catalog, action, and device rules |
-| `apps/windows-client/src-tauri/src/infrastructure/relution` | Relution HTTP transport, pagination, limits, and DTO conversion |
-| `apps/windows-client/src-tauri/src/infrastructure/windows` | Credentials, device discovery, scheduled tasks, notifications, protocol registration, portal access, and support files |
+| `apps/windows-client/src-tauri/src/interface` | Tauri command decoding and handler registration (`commands.rs`), serialized models (`wire.rs`), launch-argument parsing (`runtime.rs`), and error-to-wire-code mapping; it never references `infrastructure` |
+| `apps/windows-client/src-tauri/src/application` | Session, catalog, action, background, and support workflows; `desktop.rs` (`DesktopService`) runs the signed-in session workflows |
+| `apps/windows-client/src-tauri/src/domain` | Side-effect-free catalog, action, and device rules, and the support records (`support.rs`) shared by the support workflow, bundle archive, and wire |
+| `apps/windows-client/src-tauri/src/error.rs` | Typed native error (`kind` plus `detail`) carried from producer to decision; the kind, not the message text, selects wire codes and journal outcomes |
+| `apps/windows-client/src-tauri/src/infrastructure/relution` | Relution HTTP transport, pagination, limits, and DTO conversion; its `dto` module is private and its client returns domain values |
+| `apps/windows-client/src-tauri/src/infrastructure/windows` | Credentials, device discovery, scheduled tasks, notifications, protocol registration, the foreground singleton mutex, portal access, and support collection and archives |
 | `apps/windows-client/src-tauri/src/infrastructure/journal.rs` | Durable per-user action reservations and reconciliation state |
 | `apps/windows-client/src-tauri/src/qualification` | Installed candidate self-checks and live Relution tests |
 | `apps/web-demo` | Independent browser demo with synthetic data |
@@ -76,10 +77,44 @@ conversion. Catalog caching, permission orchestration, deployment policy, journa
 transitions, and Tauri response models live in their respective higher-level
 modules.
 
-Tauri commands remain small: they decode input, call an application service, and
-serialize the result. Any command change must be reflected in the Rust handler,
-`apps/windows-client/native-contract.json`, the TypeScript bridge, and the contract
-tests. Existing camelCase and snake_case wire fields are compatibility contracts.
+The `interface` layer only decodes Tauri input, calls the application, maps errors
+to wire codes, and converts results to wire types; it passes only what Tauri alone
+knows, such as the executable path. `DesktopService` in
+`application/desktop.rs` owns the signed-in session workflows: it holds the session
+coordinator, the session gate, and the action-workflow lock, and handles connect
+(including background-check registration), catalog loading, action requests, action
+lookup, icons, support details and bundles, sign-out, and the initial view;
+`desktop::open_relution_portal` opens the embedded Relution origin. `lib.rs`, the
+composition root, constructs the adapters and acquires the foreground singleton.
+An action request takes the lock, checks the credential generation, re-fetches for
+preflight, obtains a gate permit, and then dispatches detached: a
+generation check, the single deployment POST, and a second generation check. Race
+tests for this live in `application/desktop_coordination_tests.rs` and
+`desktop_deployment_tests.rs`. `load_catalog` is the only catalog command;
+`CatalogService::bootstrap` and `list_apps` serve the background check, support,
+and qualification.
+
+Errors are typed. `Error` in `src/error.rs` carries an `ErrorKind` and a detail, and
+its `Display` renders the stable `<kind>: <detail>` message. The interface maps kinds
+to the wire codes `OFFLINE`, `SESSION_EXPIRED`, `AUTHORIZATION_DENIED`,
+`DEVICE_MATCH_FAILED`, `SERVER`, `SUPPORT`, and `UNKNOWN`; configuration errors map
+to `UNKNOWN`.
+
+Relution DTOs are private to the adapter. `RelutionClient` returns domain values, so
+application code and qualification never see a DTO.
+
+Commands are described by two contract files. `apps/windows-client/native-contract.json`
+lists command names, install states, and error codes.
+`apps/windows-client/wire-fixtures.json` holds one golden JSON payload per serialized
+type: a Rust test asserts that serialization equals it, and a TypeScript test
+type-checks the bridge types against it. A command change must be reflected in the
+Rust handler and its entry in the `native_commands!` list in `interface/commands.rs`
+(which expands to both `invoke_handler()` and `COMMAND_NAMES`), `native-contract.json`, the TypeScript bridge, `wire-fixtures.json` when a payload
+shape changes, and the contract tests. Existing camelCase and snake_case wire fields
+are compatibility contracts.
+
+`pnpm architecture:check` enforces these boundaries; see
+[Development](DEVELOPMENT.md#quality-rules).
 
 ## Signing in and loading the catalog
 
@@ -100,8 +135,7 @@ Only Available and Update Available applications reach the UI. Installed-current
 applications remain an internal classification.
 
 `load_catalog` returns bootstrap counts, rows for the requested view, and one opaque
-`catalogRevision` from the same snapshot. The compatibility commands `bootstrap`
-and `list_apps` use the same service. A snapshot is tied to the current credential
+`catalogRevision` from the same snapshot. A snapshot is tied to the current credential
 generation and locale, and expires after 60 seconds on a monotonic clock. Moving
 between views refreshes expired data. Refresh and retry always revalidate. Concurrent
 refreshes share the same work, and a failed refresh does not reuse expired data.
@@ -135,7 +169,9 @@ The action service follows this sequence:
 5. Follow the Relution action and verify the exact package identity and target
    version in inventory before returning success.
 
-Missing, ambiguous, and timed-out outcomes end in the non-retryable `unknown` state.
+If the POST fails, only session-expired and device-match failures are recorded as a
+rejected submission. Every other failure, and any missing, ambiguous, or timed-out
+outcome, ends in the non-retryable `unknown` state and is never resent.
 The journal's internal `Reserved` state is shown in the UI as `queued`.
 
 The catalog and action services share a process-level SQLite journal in WAL mode.

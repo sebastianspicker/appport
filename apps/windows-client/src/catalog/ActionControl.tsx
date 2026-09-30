@@ -1,9 +1,9 @@
 import { copyFor, type Locale } from "../i18n/copy";
 import { ActionButton } from "./ActionButton";
 import type { ConfirmationHandler } from "./confirmation";
-import { isTerminalActionState, type ResumeAction } from "./useCatalogActions";
+import { isTerminalActionState } from "./actionState";
 import type { AvailableApp } from "../native-bridge/types";
-import type { PollingState } from "./types";
+import type { PollingState, ResumeAction } from "./model";
 
 type ActionControlProps = {
   application: AvailableApp;

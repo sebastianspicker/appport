@@ -2,7 +2,7 @@ use super::{
     assigned_device_response, catalog, catalog_body_response, concurrent_server,
     direct_user_permission, join2, run, snapshot_catalog_response, snapshot_service, Response,
 };
-use crate::infrastructure::journal::ActionJournal;
+use crate::{error::ErrorKind, infrastructure::journal::ActionJournal};
 use std::{
     fs,
     sync::{
@@ -142,6 +142,6 @@ fn generation_invalidation_during_refresh_rejects_the_completion() {
 
     handle.join().expect("mock server");
     invalidation.expect("session invalidation");
-    assert!(matches!(refresh, Err(error) if error.starts_with("session-expired:")));
+    assert!(matches!(refresh, Err(error) if error.kind() == ErrorKind::SessionExpired));
     assert_eq!(requests.load(Ordering::SeqCst), 5);
 }

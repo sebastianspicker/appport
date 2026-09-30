@@ -1,26 +1,27 @@
 //! Current-user-only ACLs and reparse-safe path validation.
 
+use crate::error::Error;
 use std::path::Path;
 
-pub(crate) fn validate_not_reparse(path: &Path) -> Result<(), String> {
-    let metadata =
-        std::fs::symlink_metadata(path).map_err(|_| "unknown: protected path is unavailable")?;
+pub(crate) fn validate_not_reparse(path: &Path) -> Result<(), Error> {
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|_| Error::unknown("protected path is unavailable"))?;
     if metadata.file_type().is_symlink() {
-        return Err("unknown: protected path is a reparse point".into());
+        return Err(Error::unknown("protected path is a reparse point"));
     }
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
         const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
         if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            return Err("unknown: protected path is a reparse point".into());
+            return Err(Error::unknown("protected path is a reparse point"));
         }
     }
     Ok(())
 }
 
 #[cfg(windows)]
-pub(crate) fn secure_current_user(path: &Path) -> Result<(), String> {
+pub(crate) fn secure_current_user(path: &Path) -> Result<(), Error> {
     use std::os::windows::ffi::OsStrExt;
     use windows::{
         core::{PCWSTR, PWSTR},
@@ -48,7 +49,7 @@ pub(crate) fn secure_current_user(path: &Path) -> Result<(), String> {
     let mut token = HANDLE::default();
     // SAFETY: token is an out-parameter for the current process pseudo-handle.
     unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }
-        .map_err(|_| "unknown: current-user security identity is unavailable")?;
+        .map_err(|_| Error::unknown("current-user security identity is unavailable"))?;
     let token = TokenHandle(token);
     let sid_buffer = token_user(&token)?;
     // SAFETY: GetTokenInformation populated a TOKEN_USER at the start of this
@@ -75,7 +76,7 @@ pub(crate) fn secure_current_user(path: &Path) -> Result<(), String> {
     // SAFETY: the access entry points to the live SID buffer and acl is an out-parameter.
     let acl_status = unsafe { SetEntriesInAclW(Some(&[access]), None, &mut acl) };
     if acl_status != ERROR_SUCCESS || acl.is_null() {
-        return Err("unknown: protected path ACL could not be created".into());
+        return Err(Error::unknown("protected path ACL could not be created"));
     }
     let acl = LocalAcl(acl);
     // SAFETY: wide_path is null-terminated and acl remains allocated for this call.
@@ -92,17 +93,19 @@ pub(crate) fn secure_current_user(path: &Path) -> Result<(), String> {
     };
     (status == ERROR_SUCCESS)
         .then_some(())
-        .ok_or_else(|| "unknown: protected path ACL could not be applied".into())
+        .ok_or_else(|| Error::unknown("protected path ACL could not be applied"))
 }
 
 #[cfg(windows)]
-fn token_user(token: &TokenHandle) -> Result<Vec<usize>, String> {
+fn token_user(token: &TokenHandle) -> Result<Vec<usize>, Error> {
     use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_USER};
     let mut required = 0;
     // SAFETY: the first call intentionally supplies no buffer and returns its size.
     let _ = unsafe { GetTokenInformation(token.0, TokenUser, None, 0, &mut required) };
     if required < std::mem::size_of::<TOKEN_USER>() as u32 {
-        return Err("unknown: current-user security identity is unavailable".into());
+        return Err(Error::unknown(
+            "current-user security identity is unavailable",
+        ));
     }
     let word = std::mem::size_of::<usize>();
     let mut buffer = vec![0usize; (required as usize).div_ceil(word)];
@@ -116,7 +119,7 @@ fn token_user(token: &TokenHandle) -> Result<Vec<usize>, String> {
             &mut required,
         )
     }
-    .map_err(|_| "unknown: current-user security identity is unavailable")?;
+    .map_err(|_| Error::unknown("current-user security identity is unavailable"))?;
     Ok(buffer)
 }
 
@@ -147,7 +150,7 @@ impl Drop for LocalAcl {
 }
 
 #[cfg(not(windows))]
-pub(crate) fn secure_current_user(path: &Path) -> Result<(), String> {
+pub(crate) fn secure_current_user(path: &Path) -> Result<(), Error> {
     validate_not_reparse(path)
 }
 

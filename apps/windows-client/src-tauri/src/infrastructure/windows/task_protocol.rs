@@ -1,3 +1,4 @@
+use crate::error::Error;
 use std::path::Path;
 
 #[cfg(windows)]
@@ -8,10 +9,10 @@ use std::process::Stdio;
 pub(super) const PROTOCOL: &str = "relution-appport";
 
 #[cfg(windows)]
-pub(super) fn register(executable: &Path) -> Result<(), String> {
+pub(super) fn register(executable: &Path) -> Result<(), Error> {
     let executable = executable
         .to_str()
-        .ok_or("unknown: application path is not Unicode")?;
+        .ok_or_else(|| Error::unknown("application path is not Unicode"))?;
     let root = format!(r"Software\Classes\{PROTOCOL}");
     write_registry_string(&root, None, "URL:Appport")?;
     write_registry_string(&root, Some("URL Protocol"), "")?;
@@ -23,7 +24,7 @@ pub(super) fn register(executable: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-pub(super) fn register(_: &Path) -> Result<(), String> {
+pub(super) fn register(_: &Path) -> Result<(), Error> {
     Ok(())
 }
 
@@ -32,10 +33,10 @@ pub(super) fn write_registry_string(
     path: &str,
     name: Option<&str>,
     value: &str,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let key = format!("HKCU\\{path}");
-    let mut command =
-        system_tools::command("reg.exe").map_err(|_| "unknown: protocol registry unavailable")?;
+    let mut command = system_tools::command("reg.exe")
+        .map_err(|_| Error::unknown("protocol registry unavailable"))?;
     command.args(["add", &key]);
     if let Some(name) = name {
         command.args(["/v", name]);
@@ -49,11 +50,11 @@ pub(super) fn write_registry_string(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map_err(|_| "unknown: protocol registry unavailable")?;
+        .map_err(|_| Error::unknown("protocol registry unavailable"))?;
     if status.success() {
         Ok(())
     } else {
-        Err("unknown: protocol registration failed".into())
+        Err(Error::unknown("protocol registration failed"))
     }
 }
 

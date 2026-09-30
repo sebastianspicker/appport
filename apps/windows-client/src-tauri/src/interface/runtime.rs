@@ -30,32 +30,6 @@ pub fn opens_updates(args: &[String]) -> bool {
         .any(|argument| argument == "--updates" || argument == "relution-appport://updates")
 }
 
-#[cfg(windows)]
-pub fn acquire_singleton() -> Result<(), String> {
-    use windows::{
-        core::PCWSTR,
-        Win32::{
-            Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS},
-            System::Threading::CreateMutexW,
-        },
-    };
-    let name: Vec<u16> = "Local\\Appport".encode_utf16().chain(Some(0)).collect();
-    unsafe {
-        let handle = CreateMutexW(None, true, PCWSTR(name.as_ptr()))
-            .map_err(|_| "unknown: singleton mutex failed")?;
-        if GetLastError() == ERROR_ALREADY_EXISTS {
-            let _ = CloseHandle(handle);
-            return Err("unknown: Appport is already running".into());
-        }
-    }
-    Ok(())
-}
-
-#[cfg(not(windows))]
-pub fn acquire_singleton() -> Result<(), String> {
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{launch_mode, opens_updates, LaunchMode};

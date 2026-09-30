@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { AppAction, AvailableApp } from "../native-bridge/types";
-import type {
-  ActionGenerationContext,
-  PollTimerRegistry,
-  PollingState,
-} from "./types";
+import {
+  completeTerminalAction,
+  isTerminalActionState,
+  saveAction,
+} from "./actionState";
+import type { PollingState } from "./model";
+import type { PollTimerRegistry } from "./usePollTimerRegistry";
 import { HydrationPool } from "./hydrationPool";
 
 type HydrationMarker = {
@@ -17,13 +19,15 @@ type HydrationAttempt = HydrationMarker & {
   actionGeneration: number;
 };
 
-export type HydrationContext = ActionGenerationContext & {
+type HydrationContext = {
+  actionGenerations: MutableRefObject<Map<string, number>>;
   beginPolling: (action: AppAction) => void;
   isCurrent: (
     appId: string,
     actionGeneration: number,
     sessionGeneration: number,
   ) => boolean;
+  generation: MutableRefObject<number>;
   load: () => Promise<void>;
   mounted: MutableRefObject<boolean>;
   pollTimers: PollTimerRegistry;
@@ -91,12 +95,28 @@ function discardFailedHydration(
   if (stillCurrent) hydrated.delete(application.id);
 }
 
+async function applyHydratedAction(
+  context: HydrationContext,
+  action: AppAction,
+) {
+  saveAction(action, context.setActions);
+  if (!isTerminalActionState(action.state)) {
+    context.beginPolling(action);
+    return;
+  }
+  await completeTerminalAction(
+    action,
+    context.pollTimers,
+    context.setPolling,
+    context.load,
+  );
+}
+
 async function hydrateAction(
   context: HydrationContext,
   hydrated: Map<string, HydrationMarker>,
   application: AvailableApp,
   pool: HydrationPool,
-  apply: (context: HydrationContext, action: AppAction) => Promise<void>,
 ) {
   const attempt = beginHydrationAttempt(context, hydrated, application);
   if (!attempt) return;
@@ -111,16 +131,13 @@ async function hydrateAction(
     if (!action) return;
     if (!isCurrentHydrationResult(context, application, attempt, action))
       return;
-    await apply(context, action);
+    await applyHydratedAction(context, action);
   } catch {
     discardFailedHydration(context, hydrated, application, attempt);
   }
 }
 
-export function useActionHydrator(
-  context: HydrationContext,
-  apply: (context: HydrationContext, action: AppAction) => Promise<void>,
-) {
+export function useActionHydrator(context: HydrationContext) {
   const pool = useRef(new HydrationPool());
   useEffect(() => () => pool.current.clear(), []);
   const hydrated = useRef(new Map<string, HydrationMarker>());
@@ -128,17 +145,11 @@ export function useActionHydrator(
     async (applications: AvailableApp[]) => {
       await Promise.all(
         applications.map((application) =>
-          hydrateAction(
-            context,
-            hydrated.current,
-            application,
-            pool.current,
-            apply,
-          ),
+          hydrateAction(context, hydrated.current, application, pool.current),
         ),
       );
     },
-    [context, apply],
+    [context],
   );
   const resetHydration = useCallback(() => {
     hydrated.current.clear();

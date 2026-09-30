@@ -1,12 +1,13 @@
 //! Bounded response decoding, diagnostic capture, and read-only retry policy.
 
 use super::{transport, MAX_JSON_BYTES};
+use crate::error::Error;
 use crate::infrastructure::logging;
 use serde::de::DeserializeOwned;
 use std::time::Duration;
 
 pub(super) enum RequestAttempt<T> {
-    Complete(Result<T, String>),
+    Complete(Result<T, Error>),
     Retry,
 }
 
@@ -118,7 +119,7 @@ fn diagnostic_success_too_large<T>(
         "complete",
         b"[response omitted: exceeds configured JSON limit]",
     );
-    RequestAttempt::Complete(Err("server: response is too large".into()))
+    RequestAttempt::Complete(Err(Error::server("response is too large")))
 }
 
 fn diagnostic_error_response<T>(
@@ -201,9 +202,9 @@ pub(super) fn network_attempt<T>(
     }
 }
 
-async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, String> {
+async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, Error> {
     if response.content_length().unwrap_or(0) > MAX_JSON_BYTES as u64 {
-        return Err("server: response is too large".into());
+        return Err(Error::server("response is too large"));
     }
     let bytes = read_response_at_most(response, MAX_JSON_BYTES).await?;
     decode_response_bytes(&bytes)
@@ -212,36 +213,36 @@ async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> Re
 async fn read_response_at_most(
     mut response: reqwest::Response,
     maximum: usize,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, Error> {
     let mut body = Vec::with_capacity(maximum.saturating_add(1).min(64 * 1024));
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|_| "server: response could not be read")?
+        .map_err(|_| Error::server("response could not be read"))?
     {
         extend_bounded(&mut body, &chunk, maximum)?;
     }
     Ok(body)
 }
 
-fn extend_bounded(body: &mut Vec<u8>, chunk: &[u8], maximum: usize) -> Result<(), String> {
+fn extend_bounded(body: &mut Vec<u8>, chunk: &[u8], maximum: usize) -> Result<(), Error> {
     let remaining = maximum.saturating_add(1).saturating_sub(body.len());
     if chunk.len() > remaining {
         body.extend_from_slice(&chunk[..remaining]);
-        return Err("server: response is too large".into());
+        return Err(Error::server("response is too large"));
     }
     body.extend_from_slice(chunk);
     if body.len() > maximum {
-        return Err("server: response is too large".into());
+        return Err(Error::server("response is too large"));
     }
     Ok(())
 }
 
-fn decode_response_bytes<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
+fn decode_response_bytes<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
     if bytes.len() > MAX_JSON_BYTES {
-        return Err("server: response is too large".into());
+        return Err(Error::server("response is too large"));
     }
-    serde_json::from_slice(bytes).map_err(|_| "server: invalid Relution response".into())
+    serde_json::from_slice(bytes).map_err(|_| Error::server("invalid Relution response"))
 }
 
 fn can_retry_status(status_code: reqwest::StatusCode, read: bool, attempt: u32) -> bool {
@@ -258,7 +259,10 @@ mod tests {
         decode_response_bytes, diagnostic_response_attempt, read_response_at_most, RequestAttempt,
         ResponseDiagnostic, MAX_JSON_BYTES,
     };
-    use crate::infrastructure::{logging, relution::transport::status};
+    use crate::{
+        error::Error,
+        infrastructure::{logging, relution::transport::status},
+    };
     use std::{
         io::{Read, Write},
         net::TcpListener,
@@ -282,7 +286,7 @@ mod tests {
             diagnostic_response_attempt::<serde_json::Value>(response, true, 0, &diagnostic()).await
         });
         server.join().unwrap();
-        assert_complete_error(result, "server: response is too large");
+        assert_complete_error(result, Error::server("response is too large"));
     }
 
     #[test]
@@ -293,7 +297,7 @@ mod tests {
             read_response_at_most(response, MAX_JSON_BYTES).await
         });
         server.join().unwrap();
-        assert_eq!(result.unwrap_err(), "server: response is too large");
+        assert_eq!(result.unwrap_err(), Error::server("response is too large"));
     }
 
     #[test]
@@ -317,7 +321,7 @@ mod tests {
             if attempt < 2 {
                 assert!(matches!(result, RequestAttempt::Retry));
             } else {
-                assert_complete_error(result, &status(reqwest::StatusCode::SERVICE_UNAVAILABLE));
+                assert_complete_error(result, status(reqwest::StatusCode::SERVICE_UNAVAILABLE));
             }
         }
     }
@@ -326,7 +330,7 @@ mod tests {
         ResponseDiagnostic::new("GET", "/api/management/v1/devices/device/actions")
     }
 
-    fn assert_complete_error(result: RequestAttempt<serde_json::Value>, expected: &str) {
+    fn assert_complete_error(result: RequestAttempt<serde_json::Value>, expected: Error) {
         match result {
             RequestAttempt::Complete(Err(error)) => assert_eq!(error, expected),
             RequestAttempt::Complete(Ok(_)) => panic!("expected an error response"),

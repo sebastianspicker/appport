@@ -1,5 +1,6 @@
 //! Pure matching of local device evidence to assigned devices.
 
+use crate::error::Error;
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
@@ -30,7 +31,7 @@ pub struct AssignedDevice {
 pub fn match_device(
     evidence: &DeviceEvidence,
     devices: &[AssignedDevice],
-) -> Result<AssignedDevice, String> {
+) -> Result<AssignedDevice, Error> {
     let signature = evidence
         .ent_dmid
         .as_deref()
@@ -55,7 +56,9 @@ pub fn match_device(
     if matches.len() == 1 {
         Ok(matches[0].clone())
     } else {
-        Err("device_match_failed: device evidence did not identify exactly one assigned Windows device".into())
+        Err(Error::device_match_failed(
+            "device evidence did not identify exactly one assigned Windows device",
+        ))
     }
 }
 
@@ -68,3 +71,7 @@ pub fn same_evidence_value(left: &str, right: &str) -> bool {
     let right = right.trim();
     !left.is_empty() && !right.is_empty() && left.eq_ignore_ascii_case(right)
 }
+
+#[cfg(test)]
+#[path = "device_tests.rs"]
+mod tests;

@@ -1,5 +1,6 @@
 //! Side-effect-free catalog models and classification policy.
 
+use crate::error::Error;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
@@ -82,6 +83,40 @@ pub struct InstalledApp {
     pub version_label: Option<String>,
     pub has_update: Option<bool>,
 }
+/// One Relution RELEASE permission row. Only readable grants authorize an app.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AppPermission {
+    pub read: bool,
+    pub subject: PermissionSubject,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PermissionSubject {
+    User(String),
+    Group(String),
+    Other,
+}
+
+impl AppPermission {
+    /// A readable grant to the user or to one of the user's direct groups.
+    pub fn grants_directly(&self, user_uuid: &str, direct_groups: &[String]) -> bool {
+        self.read
+            && match &self.subject {
+                PermissionSubject::User(id) => same_uuid(id, user_uuid),
+                PermissionSubject::Group(id) => {
+                    direct_groups.iter().any(|group| same_uuid(group, id))
+                }
+                PermissionSubject::Other => false,
+            }
+    }
+
+    /// The group whose recursive membership decides a readable group grant.
+    pub fn readable_group(&self) -> Option<&str> {
+        match &self.subject {
+            PermissionSubject::Group(id) if self.read => Some(id),
+            _ => None,
+        }
+    }
+}
 
 pub fn app_from(catalog: CatalogEntry, native_app_id: &str) -> Option<AvailableApp> {
     if same_uuid(&catalog.id, native_app_id)
@@ -118,7 +153,7 @@ pub fn app_from(catalog: CatalogEntry, native_app_id: &str) -> Option<AvailableA
 pub fn classify_catalog_inventory(
     mut app: AvailableApp,
     inventory: Option<&InstalledApp>,
-) -> Result<CatalogInventoryClassification, String> {
+) -> Result<CatalogInventoryClassification, Error> {
     let Some(inventory) = inventory else {
         return Ok(CatalogInventoryClassification::Visible(Box::new(app)));
     };
@@ -142,7 +177,9 @@ pub fn classify_catalog_inventory(
     if labels_are_comparable || matching_release || inventory.has_update == Some(false) {
         Ok(CatalogInventoryClassification::InstalledCurrent)
     } else {
-        Err("server: installed application version cannot be classified".into())
+        Err(Error::server(
+            "installed application version cannot be classified",
+        ))
     }
 }
 pub enum CatalogInventoryClassification {
@@ -280,3 +317,7 @@ mod tests {
         assert!(!keys[0].contains("update"));
     }
 }
+
+#[cfg(test)]
+#[path = "catalog_policy_tests.rs"]
+mod policy_tests;

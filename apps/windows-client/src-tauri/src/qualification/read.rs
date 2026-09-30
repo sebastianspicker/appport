@@ -5,6 +5,7 @@ use super::{
 use crate::{
     application::catalog::CatalogService,
     domain::catalog::{AvailableApp, CatalogView},
+    error::{Error, ErrorKind},
     infrastructure::relution::{ConnectedIdentity, RelutionClient},
     infrastructure::windows::platform,
 };
@@ -106,8 +107,8 @@ async fn run_catalog_checks(
     locale: &str,
     checks: &mut Vec<QualificationCheck>,
 ) -> (
-    Result<Vec<AvailableApp>, String>,
-    Result<Vec<AvailableApp>, String>,
+    Result<Vec<AvailableApp>, Error>,
+    Result<Vec<AvailableApp>, Error>,
 ) {
     let initial_bootstrap = bootstrap(catalog, credentials, user_b, 1, locale).await;
     checks.push(if initial_bootstrap.is_ok() {
@@ -145,7 +146,7 @@ async fn bootstrap(
     user_b: &ConnectedIdentity,
     generation: u64,
     locale: &str,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     catalog
         .bootstrap(
             &credentials.user_b_token,
@@ -159,8 +160,8 @@ async fn bootstrap(
 }
 
 fn record_catalog_results(
-    apps: &Result<Vec<AvailableApp>, String>,
-    updates: &Result<Vec<AvailableApp>, String>,
+    apps: &Result<Vec<AvailableApp>, Error>,
+    updates: &Result<Vec<AvailableApp>, Error>,
     checks: &mut Vec<QualificationCheck>,
 ) {
     checks.push(result_check("apps_catalog", apps));
@@ -182,8 +183,8 @@ async fn run_icon_check(
     catalog: &CatalogService,
     credentials: &QualificationCredentials,
     user_b: &ConnectedIdentity,
-    apps: &Result<Vec<AvailableApp>, String>,
-    updates: &Result<Vec<AvailableApp>, String>,
+    apps: &Result<Vec<AvailableApp>, Error>,
+    updates: &Result<Vec<AvailableApp>, Error>,
     locale: &str,
     checks: &mut Vec<QualificationCheck>,
 ) {
@@ -240,7 +241,7 @@ async fn verify_user_a_isolation(
     let result = catalog
         .current_device_uncached(&credentials.user_a_token, &user_a.user_uuid)
         .await;
-    if matches!(result, Err(error) if error.starts_with("device_match_failed:")) {
+    if matches!(result, Err(error) if error.kind() == ErrorKind::DeviceMatchFailed) {
         checks.push(passed(
             "user_a_unassigned_isolation",
             "unassigned ordinary user A was denied before action submission",

@@ -3,6 +3,7 @@ use super::{
     ActionJournal,
 };
 use crate::domain::action::{Intent, Reservation, State, Transition};
+use crate::error::Error;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::PathBuf;
 
@@ -14,10 +15,10 @@ fn clone_reuses_the_successful_connection() {
         .with_connection(|connection| {
             connection
                 .execute("CREATE TEMP TABLE connection_probe(value INTEGER)", [])
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| Error::unknown(error.to_string()))?;
             connection
                 .execute("INSERT INTO connection_probe VALUES (7)", [])
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| Error::unknown(error.to_string()))?;
             Ok(())
         })
         .unwrap();
@@ -27,7 +28,7 @@ fn clone_reuses_the_successful_connection() {
         .with_connection(|connection| {
             connection
                 .query_row("SELECT value FROM connection_probe", [], |row| row.get(0))
-                .map_err(|error| error.to_string())
+                .map_err(|error| Error::unknown(error.to_string()))
         })
         .unwrap();
     assert_eq!(value, 7);
@@ -98,7 +99,7 @@ fn reservations_are_durable_and_unique_across_connections() {
         runtime
             .block_on(second.reserve(reservation("two", "device", "app")))
             .unwrap_err(),
-        "server: an active application action already exists"
+        Error::server("an active application action already exists")
     );
 }
 
@@ -137,7 +138,7 @@ fn transitions_are_compare_and_set_and_own_borrowed_details() {
                 },
             ))
             .unwrap_err(),
-        "server: stale application action transition"
+        Error::server("stale application action transition")
     );
     assert_eq!(
         runtime
@@ -156,13 +157,13 @@ fn transitions_are_compare_and_set_and_own_borrowed_details() {
                 Transition::SubmissionAccepted,
             ))
             .unwrap_err(),
-        "server: application action was not found"
+        Error::server("application action was not found")
     );
     assert_eq!(
         runtime
             .block_on(journal.transition("one", State::Verifying, Transition::SubmissionAccepted,))
             .unwrap_err(),
-        "server: illegal application action transition"
+        Error::server("illegal application action transition")
     );
 }
 
@@ -177,17 +178,17 @@ fn schema_preserves_wal_timeout_and_active_index() {
         .with_connection(|connection| {
             let busy: i64 = connection
                 .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| Error::unknown(error.to_string()))?;
             let mode: String = connection
                 .query_row("PRAGMA journal_mode", [], |row| row.get(0))
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| Error::unknown(error.to_string()))?;
             let index: String = connection
                 .query_row(
                     "SELECT sql FROM sqlite_master WHERE type='index' AND name='active_action_per_app'",
                     [],
                     |row| row.get(0),
                 )
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| Error::unknown(error.to_string()))?;
             assert_eq!(busy, 5_000);
             assert_eq!(mode, "wal");
             assert!(index.contains("WHERE state IN"));

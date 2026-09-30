@@ -14,6 +14,7 @@ mod build_config;
 
 mod application;
 mod domain;
+mod error;
 mod infrastructure;
 mod interface;
 pub mod qualification;
@@ -24,15 +25,13 @@ use crate::infrastructure::journal;
 use crate::infrastructure::logging;
 #[cfg(windows)]
 use crate::{
-    application::{background, catalog::CatalogService},
+    application::{background, catalog::CatalogService, desktop::DesktopService},
+    domain::catalog::CatalogView,
     infrastructure::{
         relution,
         windows::{platform, task},
     },
-    interface::{
-        commands::{self, AppState},
-        runtime,
-    },
+    interface::{commands, runtime},
 };
 #[cfg(windows)]
 use std::sync::Arc;
@@ -66,7 +65,7 @@ pub fn run() {
         return;
     };
     if let Err(error) = journal.recover_interrupted_reservations() {
-        logging::write(&error);
+        logging::write(error);
     }
     launch_tauri(client, arguments, journal);
 }
@@ -88,15 +87,15 @@ fn run_background_mode(
     };
     let catalog = Arc::new(CatalogService::with_journal(client, journal));
     if let Err(error) = background::run_background_check(catalog) {
-        logging::write(&error);
+        logging::write(error);
     }
     true
 }
 
 #[cfg(windows)]
 fn foreground_client(config: relution::RelutionConfig) -> Option<Arc<relution::RelutionClient>> {
-    if let Err(error) = runtime::acquire_singleton() {
-        logging::write(&error);
+    if let Err(error) = platform::acquire_singleton() {
+        logging::write(error);
         return None;
     }
     relution::RelutionClient::new(config)
@@ -113,37 +112,23 @@ fn launch_tauri(
 ) {
     if let Ok(executable) = std::env::current_exe() {
         if let Err(error) = task::register_protocol(&executable) {
-            logging::write(&error);
+            logging::write(error);
         }
     }
     let catalog = Arc::new(CatalogService::with_journal(Arc::clone(&client), journal));
-    let state = Arc::new(AppState::new(
+    let state = Arc::new(DesktopService::new(
         client,
         catalog,
         if runtime::opens_updates(&arguments) {
-            "updates".into()
+            CatalogView::Updates
         } else {
-            "apps".into()
+            CatalogView::Apps
         },
     ));
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(state)
-        .invoke_handler(tauri::generate_handler![
-            commands::connect,
-            commands::bootstrap,
-            commands::list_apps,
-            commands::load_catalog,
-            commands::request_action,
-            commands::get_action,
-            commands::load_app_icon,
-            commands::support_details,
-            commands::generate_support_bundle,
-            commands::open_support_folder,
-            commands::sign_out,
-            commands::initial_view,
-            commands::open_relution_portal
-        ])
+        .invoke_handler(commands::invoke_handler())
         .run(tauri::generate_context!())
         .expect("Tauri runtime failed");
 }

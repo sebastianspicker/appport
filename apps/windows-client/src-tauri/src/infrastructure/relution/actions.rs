@@ -1,6 +1,8 @@
-//! Raw Relution deployment and device-action endpoint operations.
+//! Relution deployment and device-action endpoint operations.
 
 use super::{dto, encode, RelutionClient};
+use crate::domain::action::{DeploymentResponse, RemoteAction};
+use crate::error::Error;
 use serde_json::json;
 
 impl RelutionClient {
@@ -8,13 +10,18 @@ impl RelutionClient {
         &self,
         token: &str,
         device_id: &str,
-    ) -> Result<Vec<dto::DeviceAction>, String> {
-        self.get_pages(
-            &format!("/api/management/v1/devices/{}/actions", encode(device_id)),
-            token,
-            vec![],
-        )
-        .await
+    ) -> Result<Vec<RemoteAction>, Error> {
+        let actions: Vec<dto::DeviceAction> = self
+            .get_pages(
+                &format!("/api/management/v1/devices/{}/actions", encode(device_id)),
+                token,
+                vec![],
+            )
+            .await?;
+        Ok(actions
+            .into_iter()
+            .map(dto::DeviceAction::into_remote_action)
+            .collect())
     }
 
     pub(crate) async fn deploy(
@@ -23,16 +30,18 @@ impl RelutionClient {
         app_id: &str,
         version_id: &str,
         device_id: &str,
-    ) -> Result<dto::Page<dto::Deployment>, String> {
-        self.post_once(
-            &format!(
-                "/api/management/v1/content/apps/{}/versions/{}/deployments",
-                encode(app_id),
-                encode(version_id)
-            ),
-            token,
-            json!({"appUuid":app_id,"versionUuid":version_id,"deviceUuid":device_id}),
-        )
-        .await
+    ) -> Result<DeploymentResponse, Error> {
+        let response: dto::Page<dto::Deployment> = self
+            .post_once(
+                &format!(
+                    "/api/management/v1/content/apps/{}/versions/{}/deployments",
+                    encode(app_id),
+                    encode(version_id)
+                ),
+                token,
+                json!({"appUuid":app_id,"versionUuid":version_id,"deviceUuid":device_id}),
+            )
+            .await?;
+        Ok(response.into_deployment_response())
     }
 }

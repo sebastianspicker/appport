@@ -1,5 +1,6 @@
 //! Credential lifecycle and generation-fenced session coordination.
 
+use crate::error::Error;
 use crate::infrastructure::windows::credentials;
 
 #[derive(Default)]
@@ -26,7 +27,7 @@ pub struct SessionCoordinator {
 #[derive(Debug)]
 pub enum SignInCompletionError {
     StaleCredential,
-    Credential(String),
+    Credential(Error),
 }
 
 impl SessionStore {
@@ -47,7 +48,7 @@ impl SessionStore {
         access_token: String,
         username: String,
         user_uuid: String,
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         let record = credentials::CredentialRecord::new(access_token, username, user_uuid)?;
         credentials::save(&record)?;
         self.credential = Some(record);
@@ -60,7 +61,7 @@ impl SessionStore {
             .map(credentials::CredentialRecord::into_access_token)
     }
 
-    fn clear_credential(&self) -> Result<(), String> {
+    fn clear_credential(&self) -> Result<(), Error> {
         credentials::clear()
     }
 }
@@ -92,7 +93,7 @@ impl SessionCoordinator {
         self.active_generation
     }
 
-    pub fn ensure_current(&self, user_uuid: &str, generation: u64) -> Result<(), String> {
+    pub fn ensure_current(&self, user_uuid: &str, generation: u64) -> Result<(), Error> {
         if self.active_generation == generation
             && self
                 .store
@@ -102,11 +103,13 @@ impl SessionCoordinator {
         {
             Ok(())
         } else {
-            Err("session-expired: session changed while the request was running".into())
+            Err(Error::session_expired(
+                "session changed while the request was running",
+            ))
         }
     }
 
-    pub fn confirm_support(&mut self, user_uuid: &str, generation: u64) -> Result<(), String> {
+    pub fn confirm_support(&mut self, user_uuid: &str, generation: u64) -> Result<(), Error> {
         self.ensure_current(user_uuid, generation)?;
         self.support_confirmation = Some(generation);
         Ok(())
@@ -152,7 +155,7 @@ impl SessionCoordinator {
         self.sign_out_with_clear_result(clear_result)
     }
 
-    fn sign_out_with_clear_result(&mut self, clear_result: Result<(), String>) -> SignOutSnapshot {
+    fn sign_out_with_clear_result(&mut self, clear_result: Result<(), Error>) -> SignOutSnapshot {
         self.sign_in_generation = self.sign_in_generation.wrapping_add(1);
         self.active_generation = self.active_generation.wrapping_add(1);
         self.support_confirmation = None;
@@ -173,7 +176,7 @@ impl SessionCoordinator {
 
 #[cfg(all(test, not(windows)))]
 mod tests {
-    use super::{SessionCoordinator, SignInCompletionError};
+    use super::{Error, SessionCoordinator, SignInCompletionError};
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -246,7 +249,7 @@ mod tests {
             .finish_sign_in(operation, "token".into(), "user".into(), "uuid".into())
             .unwrap();
 
-        let first = session.sign_out_with_clear_result(Err("delete failed".into()));
+        let first = session.sign_out_with_clear_result(Err(Error::unknown("delete failed")));
         assert!(!first.credential_removed);
         assert!(first.token_revocation_required);
         assert!(session.credential().is_none());

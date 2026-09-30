@@ -1,105 +1,75 @@
 import { useMemo, useState } from "react";
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { copyFor, type Copy, type Locale } from "../i18n/copy";
-import type {
-  AvailableApp,
-  ClientProblem,
-  ConnectRequest,
-  NativeBootstrap,
-} from "../native-bridge/types";
+import type { ClientProblem, ConnectRequest } from "../native-bridge/types";
 import { native } from "../native-bridge/native";
 import { problemFor } from "../native-bridge/problem";
 
-type SessionSetters = {
-  setApps: Dispatch<SetStateAction<AvailableApp[]>>;
-  setBootstrap: Dispatch<SetStateAction<NativeBootstrap | undefined>>;
-  setPhase: Dispatch<SetStateAction<"ready" | ClientProblem>>;
+/** The catalog capabilities that session changes need; the app composition supplies them. */
+export type CatalogControl = {
+  /** Invalidates prior catalog work, clears actions, and shows loading. */
+  beginSignIn: () => void;
+  /** Invalidates in-flight catalog work of the current session. */
+  cancel: () => void;
+  /** Removes the signed-out catalog and its actions, then shows `phase`. */
+  clear: (phase: ClientProblem) => void;
+  currentGeneration: () => number;
+  load: () => Promise<void>;
+  showProblem: (problem: ClientProblem) => void;
 };
 
 type ConnectContext = {
-  load: () => Promise<void>;
-  cancel: () => void;
-  resetActions: () => void;
-  generation: MutableRefObject<number>;
-  setPhase: SessionSetters["setPhase"];
+  catalog: CatalogControl;
   setWarning: Dispatch<SetStateAction<string | undefined>>;
   copy: Copy;
 };
 
-function createConnect({
-  load,
-  cancel,
-  resetActions,
-  generation,
-  setPhase,
-  setWarning,
-  copy,
-}: ConnectContext) {
+function createConnect({ catalog, setWarning, copy }: ConnectContext) {
   return async (request: ConnectRequest) => {
-    cancel();
-    resetActions();
-    const requestGeneration = generation.current;
+    catalog.beginSignIn();
+    const requestGeneration = catalog.currentGeneration();
     setWarning(undefined);
-    setPhase("loading");
     try {
       const started = await native.connect(request);
-      if (generation.current !== requestGeneration) return;
+      if (catalog.currentGeneration() !== requestGeneration) return;
       setWarning(
         started.backgroundCheckRegistered
           ? undefined
           : copy.backgroundCheckUnavailable,
       );
-      await load();
+      await catalog.load();
     } catch (error) {
-      if (generation.current === requestGeneration) setPhase(problemFor(error));
+      if (catalog.currentGeneration() === requestGeneration)
+        catalog.showProblem(problemFor(error));
     }
   };
 }
 
-export function useConnect(
-  locale: Locale,
-  load: () => Promise<void>,
-  cancel: () => void,
-  resetActions: () => void,
-  generation: MutableRefObject<number>,
-  setPhase: SessionSetters["setPhase"],
-) {
+export function useConnect(locale: Locale, catalog: CatalogControl) {
   const [backgroundCheckWarning, setBackgroundCheckWarning] =
     useState<string>();
   const connect = useMemo(
     () =>
       createConnect({
-        load,
-        cancel,
-        resetActions,
-        generation,
-        setPhase,
+        catalog,
         setWarning: setBackgroundCheckWarning,
         copy: copyFor(locale),
       }),
-    [cancel, generation, load, locale, resetActions, setPhase],
+    [catalog, locale],
   );
   return { backgroundCheckWarning, connect };
 }
 
 type SignOutContext = {
+  catalog: CatalogControl;
   copy: Copy;
-  cancel: () => void;
-  setters: SessionSetters;
-  resetActions: () => void;
   setWarning: Dispatch<SetStateAction<string | undefined>>;
 };
 
-function createSignOut({
-  copy,
-  cancel,
-  setters,
-  resetActions,
-  setWarning,
-}: SignOutContext) {
+function createSignOut({ catalog, copy, setWarning }: SignOutContext) {
   return async () => {
     setWarning(undefined);
-    cancel();
+    catalog.cancel();
     const outcome = await native.signOut().catch(() => undefined);
     if (!outcome) {
       setWarning(copy.signOutFailed);
@@ -109,10 +79,7 @@ function createSignOut({
       setWarning(copy.signOutIncomplete);
       return;
     }
-    setters.setBootstrap(undefined);
-    setters.setApps([]);
-    resetActions();
-    setters.setPhase("session-expired");
+    catalog.clear("session-expired");
     setWarning(
       outcome.tokenRevocationRequired ||
         !outcome.scheduledTaskRemoved ||
@@ -123,23 +90,16 @@ function createSignOut({
   };
 }
 
-export function useSignOut(
-  locale: Locale,
-  cancel: () => void,
-  setters: SessionSetters,
-  resetActions: () => void,
-) {
+export function useSignOut(locale: Locale, catalog: CatalogControl) {
   const [signOutWarning, setSignOutWarning] = useState<string>();
   const signOut = useMemo(
     () =>
       createSignOut({
+        catalog,
         copy: copyFor(locale),
-        cancel,
-        setters,
-        resetActions,
         setWarning: setSignOutWarning,
       }),
-    [cancel, locale, resetActions, setters],
+    [catalog, locale],
   );
   return { signOut, signOutWarning };
 }

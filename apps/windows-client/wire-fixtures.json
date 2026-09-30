@@ -1,0 +1,442 @@
+{
+  "ConnectRequest": {
+    "authMethod": "personal_token",
+    "relutionUsername": "ada",
+    "accessToken": "example-token"
+  },
+  "LoadCatalogRequest": {
+    "view": "updates",
+    "forceRefresh": true
+  },
+  "CatalogViews": ["apps", "updates"],
+  "ConnectStarted": {
+    "backgroundCheckRegistered": true
+  },
+  "SignOutOutcome": {
+    "tokenRevocationRequired": true,
+    "credentialRemoved": true,
+    "scheduledTaskRemoved": false,
+    "notificationStateCleared": true
+  },
+  "NativeBootstrap": {
+    "user": {
+      "displayName": "Ada Lovelace"
+    },
+    "device": {
+      "name": "WIN-DEVICE-01",
+      "status": "COMPLIANT",
+      "lastSeenAt": null
+    },
+    "assignedEligibleCount": 3,
+    "availableCount": 2,
+    "updates": {
+      "count": 1,
+      "keys": [
+        "sha256:abababababababababababababababababababababababababababababababab"
+      ]
+    },
+    "writesEnabled": false
+  },
+  "AvailableApp": {
+    "id": "app-1",
+    "name": "Example App 1",
+    "description": "Example description",
+    "publisher": "Example Publisher",
+    "source": "winget",
+    "packageIdentifier": "Example.App1",
+    "releasedVersionId": "version-1-2",
+    "releasedVersionLabel": "2.0.0",
+    "installedVersionId": "version-1-1",
+    "installedVersionLabel": "1.0.0",
+    "installState": "update_available",
+    "activeActionId": "action-1",
+    "activeActionState": "queued",
+    "hasIcon": true
+  },
+  "AvailableAppVariants": [
+    {
+      "id": "app-1",
+      "name": "Example App 1",
+      "description": null,
+      "publisher": null,
+      "source": "winget",
+      "packageIdentifier": "Example.App1",
+      "releasedVersionId": "version-1-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": null,
+      "installedVersionLabel": null,
+      "installState": "available",
+      "activeActionId": "action-1",
+      "activeActionState": "queued",
+      "hasIcon": true
+    },
+    {
+      "id": "app-2",
+      "name": "Example App 2",
+      "description": "Example description",
+      "publisher": "Example Publisher",
+      "source": "windows_msi",
+      "packageIdentifier": null,
+      "releasedVersionId": "version-2-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": "version-2-1",
+      "installedVersionLabel": "1.0.0",
+      "installState": "update_available",
+      "activeActionId": "action-2",
+      "activeActionState": "sent",
+      "hasIcon": false
+    },
+    {
+      "id": "app-3",
+      "name": "Example App 3",
+      "description": null,
+      "publisher": null,
+      "source": "windows_exe",
+      "packageIdentifier": null,
+      "releasedVersionId": "version-3-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": null,
+      "installedVersionLabel": null,
+      "installState": "available",
+      "activeActionId": "action-3",
+      "activeActionState": "deferred",
+      "hasIcon": true
+    },
+    {
+      "id": "app-4",
+      "name": "Example App 4",
+      "description": "Example description",
+      "publisher": "Example Publisher",
+      "source": "winget",
+      "packageIdentifier": "Example.App4",
+      "releasedVersionId": "version-4-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": "version-4-1",
+      "installedVersionLabel": "1.0.0",
+      "installState": "update_available",
+      "activeActionId": "action-4",
+      "activeActionState": "verifying",
+      "hasIcon": false
+    },
+    {
+      "id": "app-5",
+      "name": "Example App 5",
+      "description": null,
+      "publisher": null,
+      "source": "windows_msi",
+      "packageIdentifier": null,
+      "releasedVersionId": "version-5-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": null,
+      "installedVersionLabel": null,
+      "installState": "available",
+      "activeActionId": "action-5",
+      "activeActionState": "succeeded",
+      "hasIcon": true
+    },
+    {
+      "id": "app-6",
+      "name": "Example App 6",
+      "description": "Example description",
+      "publisher": "Example Publisher",
+      "source": "windows_exe",
+      "packageIdentifier": null,
+      "releasedVersionId": "version-6-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": "version-6-1",
+      "installedVersionLabel": "1.0.0",
+      "installState": "update_available",
+      "activeActionId": "action-6",
+      "activeActionState": "failed",
+      "hasIcon": false
+    },
+    {
+      "id": "app-7",
+      "name": "Example App 7",
+      "description": null,
+      "publisher": null,
+      "source": "winget",
+      "packageIdentifier": "Example.App7",
+      "releasedVersionId": "version-7-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": null,
+      "installedVersionLabel": null,
+      "installState": "available",
+      "activeActionId": "action-7",
+      "activeActionState": "cancelled",
+      "hasIcon": true
+    },
+    {
+      "id": "app-8",
+      "name": "Example App 8",
+      "description": "Example description",
+      "publisher": "Example Publisher",
+      "source": "windows_msi",
+      "packageIdentifier": null,
+      "releasedVersionId": "version-8-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": "version-8-1",
+      "installedVersionLabel": "1.0.0",
+      "installState": "update_available",
+      "activeActionId": "action-8",
+      "activeActionState": "unknown",
+      "hasIcon": false
+    },
+    {
+      "id": "app-9",
+      "name": "Example App 9",
+      "description": null,
+      "publisher": null,
+      "source": "windows_exe",
+      "packageIdentifier": null,
+      "releasedVersionId": "version-9-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": null,
+      "installedVersionLabel": null,
+      "installState": "available",
+      "activeActionId": null,
+      "activeActionState": null,
+      "hasIcon": true
+    },
+    {
+      "id": "app-10",
+      "name": "Example App 10",
+      "description": "Example description",
+      "publisher": "Example Publisher",
+      "source": "windows_msi",
+      "packageIdentifier": null,
+      "releasedVersionId": "version-10-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": "version-10-1",
+      "installedVersionLabel": "1.0.0",
+      "installState": "update_available",
+      "activeActionId": null,
+      "activeActionState": null,
+      "hasIcon": false
+    },
+    {
+      "id": "app-11",
+      "name": "Example App 11",
+      "description": null,
+      "publisher": null,
+      "source": "winget",
+      "packageIdentifier": "Example.App11",
+      "releasedVersionId": "version-11-2",
+      "releasedVersionLabel": "2.0.0",
+      "installedVersionId": "version-11-1",
+      "installedVersionLabel": "1.0.0",
+      "installState": "update_available",
+      "activeActionId": null,
+      "activeActionState": null,
+      "hasIcon": true
+    }
+  ],
+  "CatalogSnapshot": {
+    "bootstrap": {
+      "user": {
+        "displayName": "Ada Lovelace"
+      },
+      "device": {
+        "name": "WIN-DEVICE-01",
+        "status": "COMPLIANT",
+        "lastSeenAt": null
+      },
+      "assignedEligibleCount": 3,
+      "availableCount": 2,
+      "updates": {
+        "count": 1,
+        "keys": [
+          "sha256:abababababababababababababababababababababababababababababababab"
+        ]
+      },
+      "writesEnabled": false
+    },
+    "apps": [
+      {
+        "id": "app-1",
+        "name": "Example App 1",
+        "description": "Example description",
+        "publisher": "Example Publisher",
+        "source": "winget",
+        "packageIdentifier": "Example.App1",
+        "releasedVersionId": "version-1-2",
+        "releasedVersionLabel": "2.0.0",
+        "installedVersionId": "version-1-1",
+        "installedVersionLabel": "1.0.0",
+        "installState": "update_available",
+        "activeActionId": "action-1",
+        "activeActionState": "queued",
+        "hasIcon": true
+      }
+    ],
+    "catalogRevision": "opaque-revision"
+  },
+  "AppAction": {
+    "id": "action-1",
+    "deviceId": "device-1",
+    "appId": "app-1",
+    "intent": "install",
+    "state": "queued",
+    "errorCode": null,
+    "errorMessage": null,
+    "createdAt": "1767225600",
+    "updatedAt": "1767225660"
+  },
+  "AppActionVariants": [
+    {
+      "id": "action-1",
+      "deviceId": "device-1",
+      "appId": "app-1",
+      "intent": "install",
+      "state": "queued",
+      "errorCode": null,
+      "errorMessage": null,
+      "createdAt": "1767225600",
+      "updatedAt": "1767225660"
+    },
+    {
+      "id": "action-2",
+      "deviceId": "device-1",
+      "appId": "app-2",
+      "intent": "update",
+      "state": "sent",
+      "errorCode": null,
+      "errorMessage": null,
+      "createdAt": "1767225600",
+      "updatedAt": "1767225660"
+    },
+    {
+      "id": "action-3",
+      "deviceId": "device-1",
+      "appId": "app-3",
+      "intent": "install",
+      "state": "deferred",
+      "errorCode": null,
+      "errorMessage": null,
+      "createdAt": "1767225600",
+      "updatedAt": "1767225660"
+    },
+    {
+      "id": "action-4",
+      "deviceId": "device-1",
+      "appId": "app-4",
+      "intent": "update",
+      "state": "verifying",
+      "errorCode": null,
+      "errorMessage": null,
+      "createdAt": "1767225600",
+      "updatedAt": "1767225660"
+    },
+    {
+      "id": "action-5",
+      "deviceId": "device-1",
+      "appId": "app-5",
+      "intent": "install",
+      "state": "succeeded",
+      "errorCode": null,
+      "errorMessage": null,
+      "createdAt": "1767225600",
+      "updatedAt": "1767225660"
+    },
+    {
+      "id": "action-6",
+      "deviceId": "device-1",
+      "appId": "app-6",
+      "intent": "update",
+      "state": "failed",
+      "errorCode": "SUBMISSION_REJECTED",
+      "errorMessage": "Relution rejected the application request.",
+      "createdAt": "1767225600",
+      "updatedAt": "1767225660"
+    },
+    {
+      "id": "action-7",
+      "deviceId": "device-1",
+      "appId": "app-7",
+      "intent": "install",
+      "state": "cancelled",
+      "errorCode": null,
+      "errorMessage": null,
+      "createdAt": "1767225600",
+      "updatedAt": "1767225660"
+    },
+    {
+      "id": "action-8",
+      "deviceId": "device-1",
+      "appId": "app-8",
+      "intent": "update",
+      "state": "unknown",
+      "errorCode": null,
+      "errorMessage": null,
+      "createdAt": "1767225600",
+      "updatedAt": "1767225660"
+    }
+  ],
+  "SupportDetails": {
+    "appVersion": "1.0.0",
+    "sourceRevision": "0123456789abcdef",
+    "username": "ada",
+    "deviceName": "WIN-DEVICE-01",
+    "deviceStatus": "COMPLIANT",
+    "windowsDisplay": "Windows 11 Pro 24H2",
+    "manufacturer": "Example Corp",
+    "model": "Example Model",
+    "smbiosSerial": "SN-0001",
+    "matchedRelutionLastIp": "192.0.2.10",
+    "matchedRelutionLastConnectionAt": "2026-01-01T00:00:00Z",
+    "assignedEligibleCount": 3,
+    "availableCount": 2,
+    "updateCount": 1
+  },
+  "SupportDetailsMinimal": {
+    "appVersion": "1.0.0",
+    "sourceRevision": "0123456789abcdef",
+    "username": "ada",
+    "deviceName": "WIN-DEVICE-01",
+    "deviceStatus": "COMPLIANT",
+    "windowsDisplay": "Windows 11 Pro 24H2",
+    "manufacturer": null,
+    "model": null,
+    "smbiosSerial": null,
+    "matchedRelutionLastIp": null,
+    "matchedRelutionLastConnectionAt": null,
+    "assignedEligibleCount": 0,
+    "availableCount": 0,
+    "updateCount": 0
+  },
+  "SupportBundleResult": {
+    "bundleFileName": "appport-support-20260101T000000Z.zip",
+    "bytes": 2048,
+    "warnings": ["Example collector warning"]
+  },
+  "NativeErrors": [
+    {
+      "code": "OFFLINE",
+      "message": "offline: unable to reach the service"
+    },
+    {
+      "code": "SESSION_EXPIRED",
+      "message": "session-expired: sign-in was superseded"
+    },
+    {
+      "code": "AUTHORIZATION_DENIED",
+      "message": "authorization: account lacks required access"
+    },
+    {
+      "code": "DEVICE_MATCH_FAILED",
+      "message": "device_match_failed: device evidence did not identify exactly one assigned Windows device"
+    },
+    {
+      "code": "SERVER",
+      "message": "server: unexpected response"
+    },
+    {
+      "code": "SUPPORT",
+      "message": "support: unable to create support bundle"
+    },
+    {
+      "code": "UNKNOWN",
+      "message": "unknown: something else"
+    }
+  ]
+}

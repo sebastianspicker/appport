@@ -11,8 +11,8 @@ pub use relution_diagnostics::{
 
 const MAX_FILE_BYTES: u64 = 256 * 1024;
 
-pub fn write(event: &str) {
-    let text = sanitize(event);
+pub fn write(event: impl std::fmt::Display) {
+    let text = sanitize(&event.to_string());
     let Some(path) = log_path() else {
         return;
     };

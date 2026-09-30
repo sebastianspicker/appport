@@ -1,4 +1,7 @@
-use crate::domain::action::{Action, ActionRequest, ActiveAction, Reservation, State, Transition};
+use crate::{
+    domain::action::{Action, ActionRequest, ActiveAction, Reservation, State, Transition},
+    error::Error,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::time::Duration;
 
@@ -13,20 +16,20 @@ CREATE TABLE IF NOT EXISTS actions (
 CREATE UNIQUE INDEX IF NOT EXISTS active_action_per_app ON actions(device_id,app_id)
  WHERE state IN ('reserved','queued','sent','deferred','verifying','unknown');";
 
-pub(super) fn initialize(connection: &Connection) -> Result<(), String> {
+pub(super) fn initialize(connection: &Connection) -> Result<(), Error> {
     connection
         .busy_timeout(Duration::from_secs(5))
         .and_then(|()| connection.execute_batch(SCHEMA))
-        .map_err(|_| "unknown: action journal is unavailable".into())
+        .map_err(|_| Error::unknown("action journal is unavailable"))
 }
 
-pub(super) fn recover_in(connection: &Connection, timestamp: i64) -> Result<(), String> {
+pub(super) fn recover_in(connection: &Connection, timestamp: i64) -> Result<(), Error> {
     connection
         .execute(
             "UPDATE actions SET state='unknown', error_code='SUBMISSION_INTERRUPTED', error_message='The submission status could not be confirmed. Do not retry.', updated_at=?1 WHERE state='reserved'",
             params![timestamp],
         )
-        .map_err(|_| "unknown: action journal could not recover interrupted actions")?;
+        .map_err(|_| Error::unknown("action journal could not recover interrupted actions"))?;
     Ok(())
 }
 
@@ -34,13 +37,13 @@ pub(super) fn reserve_in(
     connection: &Connection,
     reservation: Reservation<'_>,
     timestamp: i64,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let inserted = connection.execute(
         "INSERT INTO actions(id,tenant,device_id,app_id,version_id,package_id,intent,baseline,state,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'reserved',?9,?9)",
         params![reservation.id,reservation.tenant,reservation.device,reservation.app,reservation.version,reservation.package,reservation.intent.as_str(),reservation.baseline,timestamp],
-    ).map_err(|_| "server: an active application action already exists")?;
+    ).map_err(|_| Error::server("an active application action already exists"))?;
     if inserted != 1 {
-        return Err("unknown: action journal reservation did not persist".into());
+        return Err(Error::unknown("action journal reservation did not persist"));
     }
     Ok(())
 }
@@ -51,9 +54,9 @@ pub(super) fn transition_in(
     expected: State,
     event: Transition<'_>,
     timestamp: i64,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     if !event.allowed_from(expected) {
-        return Err("server: illegal application action transition".into());
+        return Err(Error::server("illegal application action transition"));
     }
     let target = event.target();
     let (correlation, code, message) = event.detail();
@@ -62,23 +65,23 @@ pub(super) fn transition_in(
             "UPDATE actions SET state=?2, correlation=COALESCE(?3,correlation), error_code=?4, error_message=?5, updated_at=?6 WHERE id=?1 AND state=?7 AND (?3 IS NULL OR correlation IS NULL OR correlation=?3)",
             params![id, target.as_str(), correlation, code, message, timestamp, expected.as_str()],
         )
-        .map_err(|_| "unknown: action journal could not be updated")?;
+        .map_err(|_| Error::unknown("action journal could not be updated"))?;
     if changed == 1 {
         return Ok(());
     }
     let exists = connection
         .query_row("SELECT 1 FROM actions WHERE id=?1", params![id], |_| Ok(()))
         .optional()
-        .map_err(|_| "unknown: action journal is unavailable")?
+        .map_err(|_| Error::unknown("action journal is unavailable"))?
         .is_some();
     Err(if exists {
-        "server: stale application action transition".into()
+        Error::server("stale application action transition")
     } else {
-        "server: application action was not found".into()
+        Error::server("application action was not found")
     })
 }
 
-pub(super) fn action_in(connection: &Connection, id: &str) -> Result<Option<Action>, String> {
+pub(super) fn action_in(connection: &Connection, id: &str) -> Result<Option<Action>, Error> {
     connection
         .query_row(
             "SELECT id,device_id,app_id,version_id,package_id,intent,baseline,correlation,state,error_code,error_message,created_at,updated_at FROM actions WHERE id=?1",
@@ -86,13 +89,13 @@ pub(super) fn action_in(connection: &Connection, id: &str) -> Result<Option<Acti
             action_from_row,
         )
         .optional()
-        .map_err(|_| "unknown: action journal is unavailable".into())
+        .map_err(|_| Error::unknown("action journal is unavailable"))
 }
 
 pub(super) fn active_actions_in(
     connection: &Connection,
     device_id: &str,
-) -> Result<Vec<ActiveAction>, String> {
+) -> Result<Vec<ActiveAction>, Error> {
     let rows = connection
         .prepare("SELECT id,app_id,state FROM actions WHERE device_id=?1 ORDER BY created_at,id")
         .and_then(|mut statement| {
@@ -108,7 +111,7 @@ pub(super) fn active_actions_in(
                 .collect()
         })
     })
-    .map_err(|_| "unknown: action journal is unavailable".into())
+    .map_err(|_| Error::unknown("action journal is unavailable"))
 }
 
 fn active_action_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ActiveAction> {
@@ -176,13 +179,13 @@ fn decode_state(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<State
         .map_err(|_| rusqlite::Error::InvalidColumnName("state".into()))
 }
 
-pub(super) fn prune(connection: &Connection, timestamp: i64) -> Result<(), String> {
+pub(super) fn prune(connection: &Connection, timestamp: i64) -> Result<(), Error> {
     connection
         .execute(
             "DELETE FROM actions WHERE state IN ('succeeded','failed','cancelled') AND updated_at < ?1",
             params![timestamp - RETENTION_DAYS * 86400],
         )
-        .map_err(|_| "unknown: action journal could not be pruned")?;
+        .map_err(|_| Error::unknown("action journal could not be pruned"))?;
     Ok(())
 }
 

@@ -1,5 +1,7 @@
 //! Hardened Windows known-folder and system-tool access.
 
+#[cfg(any(windows, test))]
+use crate::error::Error;
 #[cfg(windows)]
 use std::{
     ffi::OsString,
@@ -14,7 +16,7 @@ use std::path::PathBuf;
 use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
 
 #[cfg(windows)]
-pub(crate) fn local_app_data() -> Result<PathBuf, String> {
+pub(crate) fn local_app_data() -> Result<PathBuf, Error> {
     use windows::Win32::{
         System::Com::CoTaskMemFree,
         UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath, KF_FLAG_DEFAULT},
@@ -23,21 +25,21 @@ pub(crate) fn local_app_data() -> Result<PathBuf, String> {
     // SAFETY: SHGetKnownFolderPath allocates a null-terminated path for the
     // current user. It is copied before being released with CoTaskMemFree.
     let allocated = unsafe { SHGetKnownFolderPath(&FOLDERID_LocalAppData, KF_FLAG_DEFAULT, None) }
-        .map_err(|_| "unknown: Windows local application data is unavailable")?;
+        .map_err(|_| Error::unknown("Windows local application data is unavailable"))?;
     let path = PathBuf::from(OsString::from_wide(unsafe { allocated.as_wide() }));
     unsafe { CoTaskMemFree(Some(allocated.as_ptr().cast())) };
     validate_local_app_data(path)
 }
 
 #[cfg(windows)]
-pub(crate) fn appport_local_data_directory() -> Result<PathBuf, String> {
+pub(crate) fn appport_local_data_directory() -> Result<PathBuf, Error> {
     let base = local_app_data()?;
     let relution = create_non_reparse_directory(&base, "Relution")?;
     create_non_reparse_directory(&relution, "Appport")
 }
 
 #[cfg(windows)]
-pub(crate) fn open_https_url(url: &str) -> Result<(), String> {
+pub(crate) fn open_https_url(url: &str) -> Result<(), Error> {
     use windows::{
         core::PCWSTR,
         Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
@@ -60,45 +62,55 @@ pub(crate) fn open_https_url(url: &str) -> Result<(), String> {
     if result.0 as isize > 32 {
         Ok(())
     } else {
-        Err("unknown: unable to open HTTPS URL".into())
+        Err(Error::unknown("unable to open HTTPS URL"))
     }
 }
 
 #[cfg(windows)]
-fn validate_local_app_data(path: PathBuf) -> Result<PathBuf, String> {
+fn validate_local_app_data(path: PathBuf) -> Result<PathBuf, Error> {
     let is_local_absolute = matches!(
         path.components().next(),
         Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
     );
     if !is_local_absolute || !path.is_absolute() {
-        return Err("unknown: Windows local application data is not a local path".into());
+        return Err(Error::unknown(
+            "Windows local application data is not a local path",
+        ));
     }
     let metadata = std::fs::symlink_metadata(&path)
-        .map_err(|_| "unknown: Windows local application data is unavailable")?;
+        .map_err(|_| Error::unknown("Windows local application data is unavailable"))?;
     if !metadata.is_dir() || metadata.file_attributes() & 0x400 != 0 {
-        return Err("unknown: Windows local application data is redirected".into());
+        return Err(Error::unknown(
+            "Windows local application data is redirected",
+        ));
     }
     Ok(path)
 }
 
 #[cfg(windows)]
-fn create_non_reparse_directory(parent: &std::path::Path, name: &str) -> Result<PathBuf, String> {
+fn create_non_reparse_directory(parent: &std::path::Path, name: &str) -> Result<PathBuf, Error> {
     if !valid_appport_directory_component(name) {
-        return Err("unknown: Windows application data path is invalid".into());
+        return Err(Error::unknown("Windows application data path is invalid"));
     }
     let path = parent.join(name);
     match std::fs::create_dir(&path) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(_) => return Err("unknown: Windows application data directory is unavailable".into()),
+        Err(_) => {
+            return Err(Error::unknown(
+                "Windows application data directory is unavailable",
+            ))
+        }
     }
     let metadata = std::fs::symlink_metadata(&path)
-        .map_err(|_| "unknown: Windows application data directory is unavailable")?;
+        .map_err(|_| Error::unknown("Windows application data directory is unavailable"))?;
     if !metadata.is_dir()
         || metadata.file_type().is_symlink()
         || metadata.file_attributes() & 0x400 != 0
     {
-        return Err("unknown: Windows application data directory is redirected".into());
+        return Err(Error::unknown(
+            "Windows application data directory is redirected",
+        ));
     }
     Ok(path)
 }
@@ -114,20 +126,20 @@ fn valid_appport_directory_component(name: &str) -> bool {
 }
 
 #[cfg(windows)]
-pub(crate) fn command(tool: &str) -> Result<std::process::Command, String> {
+pub(crate) fn command(tool: &str) -> Result<std::process::Command, Error> {
     let system_directory = system_directory()?;
     command_in(&system_directory, tool)
 }
 
 #[cfg(windows)]
-fn system_directory() -> Result<PathBuf, String> {
+fn system_directory() -> Result<PathBuf, Error> {
     let mut capacity = 260usize;
     loop {
         let mut buffer = vec![0; capacity];
         // SAFETY: buffer is a valid writable UTF-16 slice.
         let length = unsafe { GetSystemDirectoryW(Some(&mut buffer)) } as usize;
         if length == 0 {
-            return Err("unknown: Windows System32 directory is unavailable".into());
+            return Err(Error::unknown("Windows System32 directory is unavailable"));
         }
         if length < capacity {
             buffer.truncate(length);
@@ -138,9 +150,9 @@ fn system_directory() -> Result<PathBuf, String> {
 }
 
 #[cfg(any(windows, test))]
-fn validated_system_directory(system_directory: PathBuf) -> Result<PathBuf, String> {
+fn validated_system_directory(system_directory: PathBuf) -> Result<PathBuf, Error> {
     if !system_directory.is_absolute() {
-        return Err("unknown: Windows System32 directory is not absolute".into());
+        return Err(Error::unknown("Windows System32 directory is not absolute"));
     }
     Ok(system_directory)
 }
@@ -149,17 +161,21 @@ fn validated_system_directory(system_directory: PathBuf) -> Result<PathBuf, Stri
 fn command_in(
     system_directory: &std::path::Path,
     tool: &str,
-) -> Result<std::process::Command, String> {
+) -> Result<std::process::Command, Error> {
     if !matches!(
         tool,
         "whoami.exe" | "icacls.exe" | "reg.exe" | "schtasks.exe" | "explorer.exe"
     ) {
-        return Err("unknown: requested Windows system tool is not allowlisted".into());
+        return Err(Error::unknown(
+            "requested Windows system tool is not allowlisted",
+        ));
     }
     let system_directory = validated_system_directory(system_directory.to_path_buf())?;
     let program = system_directory.join(tool);
     if !program.is_absolute() {
-        return Err("unknown: requested Windows system tool path is not absolute".into());
+        return Err(Error::unknown(
+            "requested Windows system tool path is not absolute",
+        ));
     }
     let mut command = std::process::Command::new(program);
     command.current_dir(system_directory);

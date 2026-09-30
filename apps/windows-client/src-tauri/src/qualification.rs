@@ -133,10 +133,10 @@ async fn run_configured(
     };
     let journal = ActionJournal::new();
     if profile.writes_enabled() {
-        if let Err(error) = crate::interface::runtime::acquire_singleton()
+        if let Err(error) = crate::infrastructure::windows::platform::acquire_singleton()
             .and_then(|()| journal.recover_interrupted_reservations())
         {
-            crate::infrastructure::logging::write(&error);
+            crate::infrastructure::logging::write(error);
             checks.push(failed(
                 "exclusive_action_owner",
                 "exclusive action journal startup failed",

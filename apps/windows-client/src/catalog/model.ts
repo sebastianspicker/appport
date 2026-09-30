@@ -1,43 +1,41 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type {
   AppAction,
+  AppSource,
   AvailableApp,
-  ConnectRequest,
+  ClientProblem,
   NativeBootstrap,
 } from "../native-bridge/types";
-import type {
-  CatalogPhase,
-  CatalogSetters,
-  PollingState,
-  SourceFilter,
-  View,
-} from "./types";
-import type { useActionWorkflow } from "./useCatalogActions";
-import type { useCatalogLoading } from "./useCatalogLoading";
 
-export type Catalog = CatalogSetters & {
+export type View = "apps" | "updates";
+export type SourceFilter = "all" | AppSource;
+export type PollingState = "polling" | "paused";
+export type CatalogPhase = "ready" | ClientProblem;
+export type ResumeAction = (appId: string) => void;
+
+/** The catalog read model and commands rendered by the catalog feature. */
+export type Catalog = {
   actionFailures: ReadonlyMap<string, string>;
   actions: ReadonlyMap<string, AppAction>;
   apps: AvailableApp[];
   bootstrap: NativeBootstrap | undefined;
-  busy: string | undefined;
   busyApps: ReadonlySet<string>;
-  connect: (request: ConnectRequest) => Promise<void>;
-  iconSession: number;
   catalogRevision: string;
-  load: ReturnType<typeof useCatalogLoading>;
-  mounted: MutableRefObject<boolean>;
+  iconSession: number;
+  load: (
+    activeView?: View,
+    showLoading?: boolean,
+    forceRefresh?: boolean,
+  ) => Promise<void>;
   phase: CatalogPhase;
   polling: ReadonlyMap<string, PollingState>;
   query: string;
-  resumeAction: ReturnType<typeof useActionWorkflow>["resumeAction"];
+  resumeAction: ResumeAction;
   rows: AvailableApp[];
+  selectView: (view: View) => void;
   setQuery: Dispatch<SetStateAction<string>>;
   setSourceFilter: Dispatch<SetStateAction<SourceFilter>>;
-  setView: Dispatch<SetStateAction<View | undefined>>;
-  signOut: () => Promise<void>;
-  signOutWarning: string | undefined;
   sourceFilter: SourceFilter;
-  startAction: ReturnType<typeof useActionWorkflow>["startAction"];
+  startAction: (application: AvailableApp) => Promise<void>;
   view: View | undefined;
 };

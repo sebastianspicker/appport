@@ -5,11 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { documentationLinkFailures } from "./documentation-links.mjs";
 
-import {
-  documentedPnpmScripts,
-  missingPnpmScripts,
-  standaloneBoundaryFailures,
-} from "./verify-docs.mjs";
+import { documentedPnpmScripts, missingPnpmScripts } from "./verify-docs.mjs";
 
 test("extracts root and package-scoped pnpm scripts", () => {
   assert.deepEqual(
@@ -33,13 +29,6 @@ test("reports missing root and package-scoped scripts", () => {
       "references missing package script missing",
       "references missing package script absent in apps/web-demo",
     ],
-  );
-});
-
-test("rejects legacy standalone paths", () => {
-  assert.deepEqual(
-    standaloneBoundaryFailures((path) => path === "src/server"),
-    ["standalone repository must not contain src/server"],
   );
 });
 

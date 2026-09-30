@@ -1,4 +1,5 @@
 use super::{join2, AuthorizedCatalog, CatalogService, DeviceSummary, RelutionClient};
+use crate::error::Error;
 use crate::{
     application::test_support::{client as test_client, run, server, Response},
     domain::{catalog::AppInstallState, device::DeviceEvidence},
@@ -292,7 +293,7 @@ fn credential_generation_fences_cold_catalog_reads_and_authorizes_icon_fetches()
         .is_some());
     assert!(matches!(
         run(service.icon("token", "user", "denied", 7, "en-US")),
-        Err(error) if error == "server: application is not permitted"
+        Err(error) if error == Error::server("application is not permitted")
     ));
     assert_eq!(
         run(service.cached_authorized_catalog("token", "user", &device(), 8, "en-US"))
@@ -321,7 +322,7 @@ fn invalidation_refreshes_only_the_current_generation_and_rejects_the_prior_one(
         .expect("advanced generation catalog");
     assert!(matches!(
         run(service.cached_authorized_catalog("token", "user", &device(), 7, "en-US")),
-        Err(error) if error == "session-expired: stale cache generation"
+        Err(error) if error == Error::session_expired("stale cache generation")
     ));
 
     handle.join().expect("mock server");
@@ -377,7 +378,7 @@ impl CatalogService {
         device: &DeviceSummary,
         generation: u64,
         locale: &str,
-    ) -> Result<AuthorizedCatalog, String> {
+    ) -> Result<AuthorizedCatalog, Error> {
         let context = self.cache.context(generation, locale)?;
         if let Some(catalog) = self.cache.catalog(generation, locale, self.catalog_ttl)? {
             return Ok(catalog);

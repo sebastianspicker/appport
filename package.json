@@ -42,11 +42,8 @@
     "quality:demo": "pnpm quality:lint:demo && pnpm quality:style:demo && pnpm quality:size:demo && pnpm quality:duplicates:demo",
     "quality:check": "pnpm quality:source && pnpm quality:demo",
     "verify:source": "node scripts/verify-source.mjs",
-    "verify": "pnpm verify:source",
-    "evidence:alpha": "node scripts/create-alpha-evidence.mjs",
-    "alpha:evidence": "pnpm evidence:alpha"
+    "alpha:evidence": "node scripts/create-alpha-evidence.mjs"
   },
-  "dependencies": {},
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "eslint": "10.9.1",
@@ -56,6 +53,7 @@
     "prettier": "3.6.2",
     "stylelint": "17.14.1",
     "stylelint-config-standard": "40.0.0",
-    "typescript-eslint": "8.69.0"
+    "typescript-eslint": "8.69.0",
+    "yaml": "2.9.1"
   }
 }

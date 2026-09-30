@@ -1,3 +1,4 @@
+use crate::error::Error;
 use std::path::Path;
 
 #[cfg(windows)]
@@ -37,7 +38,7 @@ pub(super) fn background_task_name(sid: &str) -> String {
 }
 
 #[cfg(windows)]
-pub(super) fn register(executable: &Path) -> Result<(), String> {
+pub(super) fn register(executable: &Path) -> Result<(), Error> {
     let sid = current_user_sid()?;
     let task_name = background_task_name(&sid);
     let task_xml = background_task_xml(executable, &sid)?;
@@ -48,35 +49,35 @@ pub(super) fn register(executable: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-pub(super) fn register(_: &Path) -> Result<(), String> {
+pub(super) fn register(_: &Path) -> Result<(), Error> {
     Ok(())
 }
 
 #[cfg(windows)]
-pub(super) fn remove() -> Result<(), String> {
+pub(super) fn remove() -> Result<(), Error> {
     let task_name = background_task_name(&current_user_sid()?);
     let status = system_tools::command("schtasks.exe")
-        .map_err(|_| "unknown: Task Scheduler unavailable")?
+        .map_err(|_| Error::unknown("Task Scheduler unavailable"))?
         .args(["/Delete", "/F", "/TN", &task_name])
         .status()
-        .map_err(|_| "unknown: Task Scheduler unavailable")?;
+        .map_err(|_| Error::unknown("Task Scheduler unavailable"))?;
     if status.success() {
         Ok(())
     } else {
-        Err("unknown: Task Scheduler removal failed".into())
+        Err(Error::unknown("Task Scheduler removal failed"))
     }
 }
 
 #[cfg(not(windows))]
-pub(super) fn remove() -> Result<(), String> {
+pub(super) fn remove() -> Result<(), Error> {
     Ok(())
 }
 
-pub(super) fn background_task_xml(executable: &Path, sid: &str) -> Result<String, String> {
+pub(super) fn background_task_xml(executable: &Path, sid: &str) -> Result<String, Error> {
     let command = xml_escape(
         executable
             .to_str()
-            .ok_or("unknown: application path is not Unicode")?,
+            .ok_or_else(|| Error::unknown("application path is not Unicode"))?,
     );
     let sid_xml = xml_escape(sid);
     Ok(BACKGROUND_TASK_TEMPLATE
@@ -85,7 +86,7 @@ pub(super) fn background_task_xml(executable: &Path, sid: &str) -> Result<String
 }
 
 #[cfg(windows)]
-fn write_background_task(task_xml: &str) -> Result<std::path::PathBuf, String> {
+fn write_background_task(task_xml: &str) -> Result<std::path::PathBuf, Error> {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -100,9 +101,9 @@ fn write_background_task(task_xml: &str) -> Result<std::path::PathBuf, String> {
 pub(super) fn write_background_task_named(
     task_xml: &str,
     file_name: &str,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<std::path::PathBuf, Error> {
     if !valid_task_file_name(file_name) {
-        return Err("unknown: task staging file name is invalid".into());
+        return Err(Error::unknown("task staging file name is invalid"));
     }
     let directory = local_data_directory()?;
     let task_file = directory.join(file_name);
@@ -114,43 +115,43 @@ pub(super) fn write_background_task_named(
         .write(true)
         .create_new(true)
         .open(&task_file)
-        .map_err(|_| "unknown: task definition unavailable")?;
+        .map_err(|_| Error::unknown("task definition unavailable"))?;
     file.write_all(&bytes)
-        .map_err(|_| "unknown: task definition unavailable")?;
+        .map_err(|_| Error::unknown("task definition unavailable"))?;
     file.sync_all()
-        .map_err(|_| "unknown: task definition unavailable")?;
+        .map_err(|_| Error::unknown("task definition unavailable"))?;
     Ok(task_file)
 }
 
 #[cfg(windows)]
-pub(super) fn create_scheduled_task(task_name: &str, task_file: &Path) -> Result<(), String> {
+pub(super) fn create_scheduled_task(task_name: &str, task_file: &Path) -> Result<(), Error> {
     let status = system_tools::command("schtasks.exe")
-        .map_err(|_| "unknown: Task Scheduler unavailable")?
+        .map_err(|_| Error::unknown("Task Scheduler unavailable"))?
         .args(["/Create", "/F", "/TN", task_name, "/XML"])
         .arg(task_file)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map_err(|_| "unknown: Task Scheduler unavailable")?;
+        .map_err(|_| Error::unknown("Task Scheduler unavailable"))?;
     if status.success() {
         Ok(())
     } else {
-        Err("unknown: Task Scheduler registration failed".into())
+        Err(Error::unknown("Task Scheduler registration failed"))
     }
 }
 
 #[cfg(windows)]
-pub(super) fn current_user_sid() -> Result<String, String> {
+pub(super) fn current_user_sid() -> Result<String, Error> {
     let output = system_tools::command("whoami.exe")
-        .map_err(|_| "unknown: Windows user identity unavailable")?
+        .map_err(|_| Error::unknown("Windows user identity unavailable"))?
         .args(["/user", "/fo", "csv", "/nh"])
         .output()
-        .map_err(|_| "unknown: Windows user identity unavailable")?;
+        .map_err(|_| Error::unknown("Windows user identity unavailable"))?;
     if !output.status.success() {
-        return Err("unknown: Windows user identity unavailable".into());
+        return Err(Error::unknown("Windows user identity unavailable"));
     }
     let text = String::from_utf8(output.stdout)
-        .map_err(|_| "unknown: Windows user identity is malformed")?;
+        .map_err(|_| Error::unknown("Windows user identity is malformed"))?;
     text.split(',')
         .nth(1)
         .map(|value| value.trim().trim_matches('"').to_owned())
@@ -160,13 +161,13 @@ pub(super) fn current_user_sid() -> Result<String, String> {
                     .chars()
                     .all(|character| character.is_ascii_digit() || character == '-')
         })
-        .ok_or("unknown: Windows user SID is unavailable".into())
+        .ok_or_else(|| Error::unknown("Windows user SID is unavailable"))
 }
 
 #[cfg(windows)]
-pub(super) fn local_data_directory() -> Result<std::path::PathBuf, String> {
+pub(super) fn local_data_directory() -> Result<std::path::PathBuf, Error> {
     system_tools::appport_local_data_directory()
-        .map_err(|_| "unknown: task staging directory unavailable".into())
+        .map_err(|_| Error::unknown("task staging directory unavailable"))
 }
 
 #[cfg(any(windows, test))]

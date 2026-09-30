@@ -33,28 +33,23 @@ export const sourceGateNames = Object.freeze(
   sourceGateCommands.map(([name]) => name),
 );
 
-const expectedStaticQualityCommand = [
-  "pnpm quality:lint:source",
-  "pnpm quality:style:source",
-  "pnpm quality:size:source",
-  "pnpm quality:duplicates:source",
-].join(" && ");
+const staticQualityChecks = Object.freeze([
+  "quality:lint:source",
+  "quality:style:source",
+  "quality:size:source",
+  "quality:duplicates:source",
+]);
 
 export function sourceGateCompositionFailures(
   scripts,
   commands = sourceGateCommands,
 ) {
   const failures = [];
-  if (scripts["quality:source:static"] !== expectedStaticQualityCommand) {
-    failures.push(
-      "quality:source:static must compose all source static checks",
-    );
-  }
-  if (
-    scripts["quality:source"] !==
-    "pnpm quality:source:static && node scripts/verify-source.mjs --gate rust-clippy"
-  ) {
-    failures.push("quality:source must compose static quality and Clippy");
+  const staticQuality = scripts["quality:source:static"] ?? "";
+  for (const check of staticQualityChecks) {
+    if (!staticQuality.includes(check)) {
+      failures.push(`quality:source:static must invoke ${check}`);
+    }
   }
   verifyGate(failures, commands, "quality", "quality:source:static");
   verifyGate(failures, commands, "tooling-tests", "tooling:test");

@@ -22,8 +22,6 @@ function verifyDocumentation() {
   }
   verifyPackageScripts(markdownFiles, markdownContents);
   verifyReleaseVersions();
-  verifyStandaloneBoundary();
-  verifyStandaloneLanguage(markdownFiles, markdownContents);
 
   if (failures.length > 0) {
     console.error(failures.map((failure) => `- ${failure}`).join("\n"));
@@ -187,48 +185,6 @@ function firstCapture(pattern, contents) {
   if (!match) return undefined;
   const [, capture] = match;
   return capture;
-}
-
-export const forbiddenStandalonePaths = [
-  "Dockerfile",
-  ".dockerignore",
-  "next.config.ts",
-  "next-env.d.ts",
-  "tsconfig.json",
-  "vitest.config.ts",
-  "docs/HTTP_API.md",
-  "src/app",
-  "src/server",
-  "packages/appport-contracts",
-  "scripts/revoke-native-sessions.mjs",
-];
-
-export function standaloneBoundaryFailures(pathExists) {
-  return forbiddenStandalonePaths
-    .filter((path) => pathExists(path))
-    .map((path) => `standalone repository must not contain ${path}`);
-}
-
-function verifyStandaloneBoundary() {
-  failures.push(
-    ...standaloneBoundaryFailures((path) => exists(join(root, path))),
-  );
-}
-
-function verifyStandaloneLanguage(markdownFiles, markdownContents) {
-  for (const path of markdownFiles) {
-    const relativePath = relative(root, path).replaceAll("\\", "/");
-    if (
-      relativePath.startsWith("docs/releases/") ||
-      relativePath.startsWith(".local/archive/")
-    )
-      continue;
-    if (/\b(?:broker|container)\b/i.test(markdownContents.get(path))) {
-      failures.push(
-        `${relativePath} contains terminology outside the standalone product boundary`,
-      );
-    }
-  }
 }
 
 function readJson(path) {

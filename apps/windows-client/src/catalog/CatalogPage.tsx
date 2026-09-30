@@ -2,7 +2,6 @@ import { useRef, useState, type ReactNode } from "react";
 import { CatalogNavigation } from "./CatalogNavigation";
 import { CatalogResults } from "./CatalogResults";
 import { copyFor, type Locale } from "../i18n/copy";
-import { designCopyFor } from "../i18n/designCopy";
 import { Icon } from "../ui/Icon";
 import type { ConfirmationHandler } from "./confirmation";
 import type { Catalog } from "./model";
@@ -17,6 +16,7 @@ type CatalogPageProps = {
   catalog: Catalog;
   locale: Locale;
   sessionControls: ReactNode;
+  sessionWarning: string | undefined;
   supportPanel: (active: boolean) => ReactNode;
 };
 
@@ -25,8 +25,8 @@ export function CatalogPage(props: CatalogPageProps) {
     return (
       <main className="signed-out-shell">
         {props.sessionControls}
-        {props.catalog.signOutWarning && (
-          <SignOutWarning message={props.catalog.signOutWarning} />
+        {props.sessionWarning && (
+          <SignOutWarning message={props.sessionWarning} />
         )}
       </main>
     );
@@ -37,10 +37,10 @@ function CatalogWorkspace({
   catalog,
   locale,
   sessionControls,
+  sessionWarning,
   supportPanel,
 }: CatalogPageProps) {
   const copy = copyFor(locale);
-  const design = designCopyFor(locale);
   const [supportOpen, setSupportOpen] = useState(false);
   const [task, setTask] = useScopedTask(catalog);
   const content = useRef<HTMLElement>(null);
@@ -112,10 +112,10 @@ function CatalogWorkspace({
         <header className="content-header">
           <p className="current-device">
             <strong>{catalog.bootstrap?.device.name}</strong>
-            <span>· {design.assignedDevice}</span>
+            <span>· {copy.assignedDevice}</span>
           </p>
-          <h1>{supportOpen ? copy.support : design.software}</h1>
-          <p>{supportOpen ? copy.supportSummary : design.summary}</p>
+          <h1>{supportOpen ? copy.support : copy.software}</h1>
+          <p>{supportOpen ? copy.supportSummary : copy.summary}</p>
         </header>
         <div className="catalog-taskbar">
           <CatalogNavigation
@@ -126,11 +126,7 @@ function CatalogWorkspace({
               setSupportOpen(false);
               if (!task?.submitted) setTask(undefined);
               focusContent();
-              if (view !== catalog.view) {
-                catalog.setPhase("loading");
-                catalog.setView(view);
-                void catalog.load(view, false);
-              }
+              if (view !== catalog.view) catalog.selectView(view);
             }}
           />
           <button
@@ -161,9 +157,7 @@ function CatalogWorkspace({
           />
         </div>
         <div hidden={!supportOpen}>{supportPanel(supportOpen)}</div>
-        {catalog.signOutWarning && (
-          <SignOutWarning message={catalog.signOutWarning} />
-        )}
+        {sessionWarning && <SignOutWarning message={sessionWarning} />}
       </main>
     </div>
   );
@@ -205,7 +199,6 @@ function CatalogBody({
   onSubmit: () => void;
 }) {
   const copy = copyFor(locale);
-  const design = designCopyFor(locale);
   return (
     <>
       {!catalog.bootstrap?.writesEnabled && (
@@ -234,7 +227,7 @@ function CatalogBody({
           )}
           <CatalogToolbar catalog={catalog} locale={locale} />
           <div className="catalog-columns" aria-hidden="true">
-            <span>{design.application}</span>
+            <span>{copy.application}</span>
             <span>{copy.version}</span>
             <span />
           </div>

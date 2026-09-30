@@ -1,6 +1,7 @@
 //! Stable façade for Windows protocol registration and background task staging.
 
 use super::{task_protocol, task_scheduler};
+use crate::error::Error;
 use std::path::Path;
 
 #[cfg(windows)]
@@ -8,15 +9,15 @@ use super::system_tools;
 #[cfg(windows)]
 use std::{fs, path::PathBuf, process::Stdio};
 
-pub fn register_protocol(executable: &Path) -> Result<(), String> {
+pub fn register_protocol(executable: &Path) -> Result<(), Error> {
     task_protocol::register(executable)
 }
 
-pub fn register_background_check(executable: &Path) -> Result<(), String> {
+pub fn register_background_check(executable: &Path) -> Result<(), Error> {
     task_scheduler::register(executable)
 }
 
-pub fn remove_background_check() -> Result<(), String> {
+pub fn remove_background_check() -> Result<(), Error> {
     task_scheduler::remove()
 }
 
@@ -46,7 +47,7 @@ impl CleanupState {
 }
 
 #[cfg(windows)]
-fn qualification_resources() -> Result<QualificationResources, String> {
+fn qualification_resources() -> Result<QualificationResources, Error> {
     let suffix = std::process::id().to_string();
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -54,8 +55,8 @@ fn qualification_resources() -> Result<QualificationResources, String> {
         .as_nanos();
     let registry_path = format!(r"Software\Classes\relution-appport-qualification-{suffix}");
     let task_file_name = format!("qualification-task-{suffix}-{nonce}.xml");
-    let executable =
-        std::env::current_exe().map_err(|_| "unknown: qualification executable unavailable")?;
+    let executable = std::env::current_exe()
+        .map_err(|_| Error::unknown("qualification executable unavailable"))?;
     let task_file_path = task_scheduler::local_data_directory()?.join(&task_file_name);
     Ok(QualificationResources {
         registry_key: format!(r"HKCU\{registry_path}"),
@@ -68,7 +69,7 @@ fn qualification_resources() -> Result<QualificationResources, String> {
 }
 
 #[cfg(windows)]
-fn stage_qualification_resources(resources: &QualificationResources) -> Result<(), String> {
+fn stage_qualification_resources(resources: &QualificationResources) -> Result<(), Error> {
     task_protocol::write_registry_string(
         &resources.registry_path,
         None,
@@ -85,33 +86,33 @@ fn stage_qualification_resources(resources: &QualificationResources) -> Result<(
 }
 
 #[cfg(windows)]
-fn require_registry_present(registry_key: &str) -> Result<(), String> {
+fn require_registry_present(registry_key: &str) -> Result<(), Error> {
     let query = system_tools::command("reg.exe")
-        .map_err(|_| "unknown: qualification registry query failed")?
+        .map_err(|_| Error::unknown("qualification registry query failed"))?
         .args(["query", registry_key])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map_err(|_| "unknown: qualification registry query failed")?;
+        .map_err(|_| Error::unknown("qualification registry query failed"))?;
     query
         .success()
         .then_some(())
-        .ok_or_else(|| "unknown: qualification registry state missing".into())
+        .ok_or_else(|| Error::unknown("qualification registry state missing"))
 }
 
 #[cfg(windows)]
-fn require_task_present(task_name: &str) -> Result<(), String> {
+fn require_task_present(task_name: &str) -> Result<(), Error> {
     let query = system_tools::command("schtasks.exe")
-        .map_err(|_| "unknown: qualification task query failed")?
+        .map_err(|_| Error::unknown("qualification task query failed"))?
         .args(["/Query", "/TN", task_name])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map_err(|_| "unknown: qualification task query failed")?;
+        .map_err(|_| Error::unknown("qualification task query failed"))?;
     query
         .success()
         .then_some(())
-        .ok_or_else(|| "unknown: qualification task state missing".into())
+        .ok_or_else(|| Error::unknown("qualification task state missing"))
 }
 
 #[cfg(windows)]
@@ -123,7 +124,7 @@ fn cleanup_qualification_resources(resources: &QualificationResources) -> Cleanu
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
-                .map_err(|_| "unknown: qualification registry cleanup failed".into())
+                .map_err(|_| Error::unknown("qualification registry cleanup failed"))
         })
         .map(|status| status.success())
         .unwrap_or(false);
@@ -134,7 +135,7 @@ fn cleanup_qualification_resources(resources: &QualificationResources) -> Cleanu
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
-                .map_err(|_| "unknown: qualification task cleanup failed".into())
+                .map_err(|_| Error::unknown("qualification task cleanup failed"))
         })
         .map(|status| status.success())
         .unwrap_or(false);
@@ -157,7 +158,7 @@ fn qualification_resources_absent(resources: &QualificationResources) -> bool {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
-                .map_err(|_| "unknown: qualification registry query failed".into())
+                .map_err(|_| Error::unknown("qualification registry query failed"))
         })
         .map(|status| status.success())
         .unwrap_or(true);
@@ -168,7 +169,7 @@ fn qualification_resources_absent(resources: &QualificationResources) -> bool {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
-                .map_err(|_| "unknown: qualification task query failed".into())
+                .map_err(|_| Error::unknown("qualification task query failed"))
         })
         .map(|status| status.success())
         .unwrap_or(true);
@@ -176,21 +177,23 @@ fn qualification_resources_absent(resources: &QualificationResources) -> bool {
 }
 
 #[cfg(windows)]
-pub fn qualification_platform_self_check() -> Result<(), String> {
+pub fn qualification_platform_self_check() -> Result<(), Error> {
     let resources = qualification_resources()?;
     let result = stage_qualification_resources(&resources);
     if !cleanup_qualification_resources(&resources).complete() {
-        return Err("unknown: qualification platform cleanup failed".into());
+        return Err(Error::unknown("qualification platform cleanup failed"));
     }
     if !qualification_resources_absent(&resources) {
-        return Err("unknown: qualification platform resource remains".into());
+        return Err(Error::unknown("qualification platform resource remains"));
     }
     result
 }
 
 #[cfg(not(windows))]
-pub fn qualification_platform_self_check() -> Result<(), String> {
-    Err("unknown: Windows registry and Task Scheduler are unavailable".into())
+pub fn qualification_platform_self_check() -> Result<(), Error> {
+    Err(Error::unknown(
+        "Windows registry and Task Scheduler are unavailable",
+    ))
 }
 
 #[cfg(test)]

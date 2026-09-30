@@ -1,14 +1,12 @@
 import { useLayoutEffect, useRef } from "react";
 import { copyFor, type Locale } from "../i18n/copy";
-import { designCopyFor } from "../i18n/designCopy";
 import { Status } from "../ui/Status";
 import { Icon } from "../ui/Icon";
 import { AppIcon } from "./AppIcon";
 import { ActionSummary } from "./ActionSummary";
 import { ActionControl } from "./ActionControl";
 import type { AvailableApp } from "../native-bridge/types";
-import type { Catalog } from "./model";
-import type { View } from "./types";
+import type { Catalog, View } from "./model";
 
 export type CatalogTaskState = {
   application: AvailableApp;
@@ -36,17 +34,16 @@ export function CatalogTask({
     heading.current?.focus();
   }, [task.submitted]);
   const copy = copyFor(locale);
-  const design = designCopyFor(locale);
   const application = task.application;
   const title = task.submitted
     ? submittedTitle(catalog, application.id, locale)
     : application.installedVersionId
-      ? design.reviewUpdate
-      : design.reviewInstall;
+      ? copy.reviewUpdate
+      : copy.reviewInstall;
   return (
     <section className="catalog-task" aria-labelledby="task-title">
       <button className="task-back text-button" onClick={onBack}>
-        ← {design.back}
+        ← {copy.back}
       </button>
       <div className="task-body">
         <AppIcon
@@ -65,7 +62,7 @@ export function CatalogTask({
           <dl className="task-facts">
             <div>
               <dt>
-                {task.submitted ? design.reviewedVersion : copy.targetVersion}
+                {task.submitted ? copy.reviewedVersion : copy.targetVersion}
               </dt>
               <dd>{application.releasedVersionLabel ?? copy.available}</dd>
             </div>
@@ -83,7 +80,7 @@ export function CatalogTask({
             />
           ) : (
             <>
-              <p>{design.permission}</p>
+              <p>{copy.permission}</p>
               <p className="task-warning">
                 <Icon name="warning" size={16} />
                 {copy.confirmationWarning}
@@ -98,8 +95,8 @@ export function CatalogTask({
                   onClick={onSubmit}
                 >
                   {application.installedVersionId
-                    ? design.requestUpdate
-                    : design.requestInstall}
+                    ? copy.requestUpdate
+                    : copy.requestInstall}
                 </button>
               </div>
             </>
@@ -121,7 +118,7 @@ export function SuccessReceipt({
   locale: Locale;
   onDismiss: () => void;
 }) {
-  const design = designCopyFor(locale);
+  const copy = copyFor(locale);
   const receipt = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     receipt.current?.focus();
@@ -134,12 +131,12 @@ export function SuccessReceipt({
       <div>
         <strong>
           {task.application.name} ·{" "}
-          {intent === "update" ? design.updated : design.installed}
+          {intent === "update" ? copy.updated : copy.installed}
         </strong>
-        <p>{design.receipt.replace("{device}", task.deviceName)}</p>
+        <p>{copy.receipt.replace("{device}", task.deviceName)}</p>
       </div>
       <button className="secondary" onClick={onDismiss}>
-        {design.close}
+        {copy.close}
       </button>
     </div>
   );
@@ -185,7 +182,7 @@ function TaskRefreshState({
 
 function submittedTitle(catalog: Catalog, appId: string, locale: Locale) {
   const action = catalog.actions.get(appId);
-  if (action?.state !== "verifying") return designCopyFor(locale).task;
+  if (action?.state !== "verifying") return copyFor(locale).task;
   return action.intent === "update"
     ? copyFor(locale).actionVerifyingUpdate
     : copyFor(locale).actionVerifyingInstall;

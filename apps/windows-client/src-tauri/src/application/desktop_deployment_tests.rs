@@ -2,7 +2,7 @@
 
 use super::{
     test_support::{blocked_sign_out, cancel_after_admission, signed_in_state},
-    AppState,
+    DesktopService,
 };
 use crate::{
     application::{
@@ -11,6 +11,7 @@ use crate::{
         test_support::{client, run, server, Response},
     },
     domain::{action::State, device::DeviceEvidence},
+    error::ErrorKind,
     infrastructure::{journal::ActionJournal, local::uuid_key},
 };
 use std::{
@@ -42,7 +43,7 @@ impl Drop for JournalFixture {
     }
 }
 
-async fn state(base: url::Url, journal: ActionJournal) -> Arc<AppState> {
+async fn state(base: url::Url, journal: ActionJournal) -> Arc<DesktopService> {
     let client = client(base, true);
     let catalog = Arc::new(
         CatalogService::with_test_device_evidence(
@@ -118,7 +119,10 @@ fn sign_out_during_preflight_finishes_without_a_reservation_or_post() {
             .unwrap();
         assert!(outcome.credential_removed);
         release.send(()).unwrap();
-        assert_eq!(read.await.unwrap().err().unwrap().code, "SESSION_EXPIRED");
+        assert_eq!(
+            read.await.unwrap().err().unwrap().kind(),
+            ErrorKind::SessionExpired
+        );
         assert!(fixture
             .journal
             .active_actions("device")
@@ -204,7 +208,7 @@ fn sign_out_during_authentication_prevents_late_registration() {
         let auth_state = Arc::clone(&state);
         let authentication = tokio::spawn(async move {
             auth_state
-                .connect_token("User".into(), "synthetic".into(), || {
+                .connect_token_with("User".into(), "synthetic".into(), || {
                     panic!("superseded authentication cannot register a scheduled task")
                 })
                 .await
@@ -218,8 +222,8 @@ fn sign_out_during_authentication_prevents_late_registration() {
         );
         release.send(()).unwrap();
         assert_eq!(
-            authentication.await.unwrap().err().unwrap().code,
-            "SESSION_EXPIRED"
+            authentication.await.unwrap().err().unwrap().kind(),
+            ErrorKind::SessionExpired
         );
         assert!(state.session.lock().await.credential().is_none());
     });
@@ -241,7 +245,7 @@ fn successful_sign_in_registration_precedes_sign_out_cleanup() {
         let registered = Arc::clone(&order);
         assert!(
             state
-                .connect_token("User".into(), "synthetic".into(), move || {
+                .connect_token_with("User".into(), "synthetic".into(), move || {
                     registered.lock().unwrap().push("register");
                     true
                 })

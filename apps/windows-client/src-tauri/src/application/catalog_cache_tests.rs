@@ -1,5 +1,6 @@
 use super::{AuthorizedCatalog, CatalogCache};
 use crate::domain::catalog::{AppInstallState, AppSource, AvailableApp, DeviceSummary};
+use crate::error::Error;
 use std::time::{Duration, Instant};
 
 fn app(id: impl Into<String>) -> AvailableApp {
@@ -73,7 +74,7 @@ fn locale_generation_and_exact_expiry_scope_snapshots() {
     cache.context(8, "en-US").expect("next generation");
     assert!(matches!(
         cache.catalog(7, "en-US", Duration::from_secs(60)),
-        Err(error) if error == "session-expired: stale cache generation"
+        Err(error) if error == Error::session_expired("stale cache generation")
     ));
 }
 
@@ -84,14 +85,14 @@ fn invalidation_rejects_in_flight_catalog_and_icon_completions() {
     cache.invalidate_session(4).expect("session invalidation");
     assert!(matches!(
         cache.store_catalog(&pending, catalog("stale", vec![])),
-        Err(error) if error == "session-expired: stale cache generation"
+        Err(error) if error == Error::session_expired("stale cache generation")
     ));
 
     store(&cache, "current", vec![app("allowed")]);
     cache.invalidate_apps(7).expect("application invalidation");
     assert!(matches!(
         cache.store_icon(7, "current", "allowed", Some("stale".into())),
-        Err(error) if error == "server: catalog revision is no longer current"
+        Err(error) if error == Error::server("catalog revision is no longer current")
     ));
 }
 

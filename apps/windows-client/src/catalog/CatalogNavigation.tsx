@@ -1,7 +1,7 @@
 import type { Dispatch } from "react";
 import { copyFor, type Locale } from "../i18n/copy";
 import type { NativeBootstrap } from "../native-bridge/types";
-import type { View } from "./types";
+import type { View } from "./model";
 
 const views: View[] = ["apps", "updates"];
 

@@ -32,6 +32,10 @@ test("source gate composition rejects weakened static quality", () => {
       ...scripts,
       "quality:source:static": "pnpm quality:lint:source",
     }),
-    ["quality:source:static must compose all source static checks"],
+    [
+      "quality:source:static must invoke quality:style:source",
+      "quality:source:static must invoke quality:size:source",
+      "quality:source:static must invoke quality:duplicates:source",
+    ],
   );
 });

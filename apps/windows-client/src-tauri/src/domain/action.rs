@@ -1,6 +1,7 @@
 //! Side-effect-free action models, transition legality, and reconciliation policy.
 
 use crate::domain::catalog::{AppInstallState, AvailableApp, InstalledApp};
+use crate::error::Error;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
@@ -60,7 +61,7 @@ impl State {
             Self::Unknown => "unknown",
         }
     }
-    pub fn decode(value: &str) -> Result<Self, String> {
+    pub fn decode(value: &str) -> Result<Self, Error> {
         match value {
             "reserved" => Ok(Self::Reserved),
             "queued" => Ok(Self::Queued),
@@ -71,7 +72,7 @@ impl State {
             "failed" => Ok(Self::Failed),
             "cancelled" => Ok(Self::Cancelled),
             "unknown" => Ok(Self::Unknown),
-            _ => Err("unknown: action journal contains an invalid state".into()),
+            _ => Err(Error::unknown("action journal contains an invalid state")),
         }
     }
     pub fn terminal(self) -> bool {
@@ -173,6 +174,12 @@ pub struct RemoteActionDetails {
     pub app_id: Option<String>,
     pub version_id: Option<String>,
     pub package_id: Option<String>,
+}
+/// Relution's answer to the single deployment POST: exactly one successful result is acceptance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeploymentResponse {
+    Accepted,
+    NotAccepted,
 }
 pub enum Transition<'a> {
     SubmissionAccepted,
@@ -288,12 +295,14 @@ pub fn attach_active_actions(apps: &mut [AvailableApp], actions: Vec<ActiveActio
         }
     }
 }
-pub fn request_intent(app: &AvailableApp) -> Result<Intent, String> {
+pub fn request_intent(app: &AvailableApp) -> Result<Intent, Error> {
     if app.installed_version_id.as_deref() == Some(&app.released_version_id)
         || app.installed_version_id.is_some()
             && app.install_state != AppInstallState::UpdateAvailable
     {
-        return Err("server: application is already current or update is not approved".into());
+        return Err(Error::server(
+            "application is already current or update is not approved",
+        ));
     }
     Ok(if app.installed_version_id.is_some() {
         Intent::Update
@@ -399,3 +408,7 @@ pub fn baseline(action: &Action) -> HashSet<&str> {
 fn same_uuid(left: &str, right: &str) -> bool {
     left.eq_ignore_ascii_case(right)
 }
+
+#[cfg(test)]
+#[path = "action_tests.rs"]
+mod tests;
