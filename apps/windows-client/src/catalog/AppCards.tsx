@@ -59,7 +59,8 @@ export function AppCard(props: AppCardProps) {
           <h2>{application.name}</h2>
           <p className="app-publisher">
             {application.publisher ?? copy.approved}
-            <span className="source-chip">
+            <span className="publisher-source">
+              {" · "}
               {sourceLabel(application.source)}
             </span>
           </p>
@@ -68,6 +69,7 @@ export function AppCard(props: AppCardProps) {
           </p>
         </div>
       </div>
+      <span className="row-source">{sourceLabel(application.source)}</span>
       {actionFailure && (
         <p className="inline-error" role="alert">
           <Icon name="error" size={16} />
@@ -76,9 +78,18 @@ export function AppCard(props: AppCardProps) {
       )}
       <div className="row-version">
         {application.installedVersionLabel && (
-          <span>{application.installedVersionLabel} → </span>
+          <>
+            <span className="version-from">
+              {application.installedVersionLabel}
+            </span>
+            <span aria-hidden="true"> → </span>
+          </>
         )}
-        {application.releasedVersionLabel ?? copy.available}
+        <span
+          className={`version-to${application.installedVersionLabel ? " changed" : ""}`}
+        >
+          {application.releasedVersionLabel ?? copy.available}
+        </span>
       </div>
       <button
         className="view-button"
@@ -95,12 +106,8 @@ export function AppCard(props: AppCardProps) {
         className="app-details"
         hidden={!expanded && !hasPendingState(props)}
       >
-        <div>
-          <h3>{application.name}</h3>
-          <p>{application.description ?? copy.approvedForDevice}</p>
-        </div>
-        <dl>
-          <dt>{copy.forDevice}</dt>
+        <dl className="detail-device">
+          <dt className="plate-label">{copy.forDevice}</dt>
           <dd>{props.deviceName}</dd>
         </dl>
         <div className="app-action">

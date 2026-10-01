@@ -87,9 +87,12 @@ function CatalogWorkspace({
           </span>
           <strong>{copy.appTitle}</strong>
         </div>
+        <DevicePlate
+          label={copy.assignedDevice}
+          name={catalog.bootstrap?.device.name}
+          status={catalog.bootstrap?.device.status}
+        />
         <div className="header-actions">
-          {sessionControls}
-          <span aria-hidden="true">·</span>
           <button
             className="support-link text-button"
             aria-current={supportOpen ? "page" : undefined}
@@ -101,6 +104,7 @@ function CatalogWorkspace({
           >
             {copy.support}
           </button>
+          {sessionControls}
         </div>
       </header>
       <main
@@ -110,10 +114,6 @@ function CatalogWorkspace({
         tabIndex={-1}
       >
         <header className="content-header">
-          <p className="current-device">
-            <strong>{catalog.bootstrap?.device.name}</strong>
-            <span>· {copy.assignedDevice}</span>
-          </p>
           <h1>{supportOpen ? copy.support : copy.software}</h1>
           <p>{supportOpen ? copy.supportSummary : copy.summary}</p>
         </header>
@@ -132,12 +132,13 @@ function CatalogWorkspace({
           <button
             className="refresh-button text-button"
             disabled={catalog.phase === "loading"}
+            hidden={supportOpen}
             onClick={() => {
               if (!task?.submitted) setTask(undefined);
               void catalog.load(catalog.view, true, true);
             }}
           >
-            <Icon name="updates" size={24} />
+            <Icon name="updates" size={20} />
             {copy.refresh}
           </button>
         </div>
@@ -160,6 +161,31 @@ function CatalogWorkspace({
         {sessionWarning && <SignOutWarning message={sessionWarning} />}
       </main>
     </div>
+  );
+}
+
+function DevicePlate({
+  label,
+  name,
+  status,
+}: {
+  label: string;
+  name: string | undefined;
+  status: string | undefined;
+}) {
+  return (
+    <p className="device-plate">
+      <span className="plate-label">{label}</span>
+      <span className="device-plate-name">{name}</span>
+      {status && (
+        <span
+          className="device-plate-status"
+          data-compliant={status.toUpperCase() === "COMPLIANT"}
+        >
+          {status}
+        </span>
+      )}
+    </p>
   );
 }
 
@@ -228,6 +254,7 @@ function CatalogBody({
           <CatalogToolbar catalog={catalog} locale={locale} />
           <div className="catalog-columns" aria-hidden="true">
             <span>{copy.application}</span>
+            <span>{copy.source}</span>
             <span>{copy.version}</span>
             <span />
           </div>

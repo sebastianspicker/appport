@@ -1,93 +1,94 @@
 @import url("./catalog-status.css");
+@import url("./catalog-task.css");
 
-/* Storefront and the dedicated request task share the same content width. */
+/* Storefront and the dedicated request task share one content column. */
 .content-pane {
   min-width: 0;
-  padding: 30px 40px 36px;
+  padding: var(--space-8) var(--inline) var(--space-12);
 }
 
 .content-pane:focus {
   outline: none;
+  box-shadow: none;
 }
 
 .content-header {
-  margin-bottom: 22px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
 .content-header h1 {
-  margin: 14px 0 6px;
-  font-family: var(--font-display);
-  font-size: clamp(32px, 4.4vw, 56px);
+  font-size: var(--type-page);
   font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
 .content-header p {
   margin: 0;
-  color: var(--text-2);
-  font-size: 19px;
-}
-
-.content-header .current-device {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  font-size: 14px;
+  color: var(--ink-2);
 }
 
 .catalog-taskbar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 18px;
-}
-
-.catalog-navigation {
-  display: flex;
-  gap: 32px;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+  border-bottom: var(--stroke) solid var(--rule);
 }
 
 .refresh-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 44px;
-  font-weight: 700;
+  min-height: 40px;
+  margin-bottom: var(--space-1);
+  padding: 0 var(--space-3);
+  color: var(--ink-2);
+  font-size: var(--type-small);
 }
 
+/* Search and source filter. */
 .toolbar {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .search-field,
 .source-field {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   min-width: 0;
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--stroke-strong);
-  border-radius: var(--r-control);
-  color: var(--text-2);
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: var(--stroke) solid var(--rule-strong);
+  border-radius: var(--radius-1);
+  background: var(--plate);
+  color: var(--ink-2);
 }
 
 .search-field {
   flex: 1;
-  max-width: 420px;
+  max-width: 460px;
 }
 
 .source-field {
-  flex: 0 1 180px;
+  flex: 0 1 200px;
+}
+
+.search-field:hover,
+.source-field:hover {
+  border-color: var(--ink);
 }
 
 .search-field:focus-within,
 .source-field:focus-within {
-  outline: 2px solid var(--text);
+  border-color: var(--ink);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--signal);
 }
 
 .search-field input,
@@ -98,88 +99,128 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--text);
-  font: inherit;
+  color: var(--ink);
+}
+
+.source-field select {
+  cursor: pointer;
+}
+
+.search-field input:focus-visible,
+.source-field select:focus-visible {
+  box-shadow: none;
 }
 
 .search-field input::placeholder {
-  color: var(--text-2);
+  color: var(--ink-3);
+  opacity: 1;
+}
+
+.source-field option {
+  background: var(--plate);
+  color: var(--ink);
 }
 
 .catalog-result-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 36px;
-  color: var(--text-2);
-  font-size: 13px;
+  min-height: 40px;
+  margin-top: var(--space-2);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 .catalog-result-bar p {
   margin: 0;
 }
 
+.catalog-result-bar .text-button {
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  font-family: var(--font-text);
+  font-size: var(--type-small);
+  letter-spacing: 0;
+  text-decoration: underline;
+  text-transform: none;
+  text-underline-offset: 3px;
+}
+
+/* The ledger: Application · Source · Version · action. */
 .catalog-columns,
 .card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px 130px;
-  gap: 22px;
+  grid-template-columns: minmax(0, 1fr) 88px minmax(120px, 210px) 96px;
+  column-gap: var(--space-5);
 }
 
 .catalog-columns {
-  color: var(--text-2);
-  padding: 10px 0;
-  border-bottom: 1px solid var(--stroke);
-  font-size: 14px;
+  padding: var(--space-2) 0;
+  border-bottom: var(--stroke) solid var(--ink);
 }
 
-.catalog-list {
-  background: var(--bg-card);
+.catalog-columns span {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* Column heads only make sense above rows. */
+.catalog-columns:has(+ .state) {
+  display: none;
 }
 
 .card {
   position: relative;
   align-items: center;
-  padding: 14px 0;
-  min-height: 100px;
-  border-bottom: 1px solid var(--stroke);
+  min-height: 80px;
+  padding: var(--space-3) 0;
+  border-bottom: var(--stroke) solid var(--rule);
 }
 
-.card.selected::before {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: -6px;
-  width: 6px;
-  background: var(--highlight-cyan);
-  content: "";
+.card:focus {
+  outline: none;
+}
+
+.card.selected,
+.card:has(> .app-details:not([hidden])) {
+  padding-bottom: 0;
+  border-bottom-color: var(--ink);
 }
 
 .app-identity {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: var(--space-4);
   min-width: 0;
 }
 
 .app-icon {
-  width: 64px;
-  height: 64px;
-  flex: 0 0 64px;
-  border-radius: 3px;
-  background-size: contain;
-  background-repeat: no-repeat;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: var(--radius-2);
   background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
 }
 
+/* Letter tile for apps without an icon: a stamped initial, not a color blob. */
 .app-icon.placeholder {
   display: grid;
   place-items: center;
-  background: var(--bg-subtle);
-  color: var(--text);
-  font-family: var(--font-display);
-  font-size: 32px;
-  font-weight: 800;
+  border: var(--stroke) solid var(--rule);
+  background: var(--sunken);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-title);
+  font-weight: 700;
 }
 
 .card-identity {
@@ -187,272 +228,205 @@
 }
 
 .card-identity h2 {
-  margin: 0;
-  font-size: 21px;
+  font-size: var(--type-lead);
+  font-weight: 700;
   line-height: 1.3;
-  font-weight: 750;
   overflow-wrap: anywhere;
 }
 
 .app-publisher,
 .app-description {
-  display: inline;
-  margin: 3px 0 0;
-  color: var(--text-2);
-  font-size: 15px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--type-small);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
-.app-description::before,
-.source-chip::before {
-  content: " · ";
+.app-publisher {
+  color: var(--ink);
+}
+
+/* Source repeats in the byline only where its column is hidden. */
+.publisher-source {
+  display: none;
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.app-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.row-source {
+  justify-self: start;
+  padding: 2px var(--space-2);
+  border: var(--stroke) solid var(--rule-strong);
+  border-radius: var(--radius-1);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.row-version,
+.version-rail {
+  font-family: var(--font-mono);
+  font-feature-settings: "zero" 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .row-version {
+  min-width: 0;
+  font-size: var(--type-small);
+  line-height: 1.6;
   overflow-wrap: anywhere;
-  font-variant-numeric: tabular-nums;
+}
+
+.version-from {
+  color: var(--ink-3);
+}
+
+/* The version that will change carries the yellow mark. */
+.version-to.changed {
+  padding: 0 3px;
+  background: var(--signal);
+  color: var(--on-signal);
+  box-decoration-break: clone;
 }
 
 .view-button {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
-  padding: 12px 0;
+  gap: var(--space-2);
+  justify-self: end;
+  padding: 0 var(--space-2) 0 var(--space-3);
   border: 0;
+  border-radius: var(--radius-1);
   background: transparent;
-  color: var(--text);
+  color: var(--ink);
   font-weight: 700;
 }
 
+.view-button:hover {
+  background: var(--sunken);
+}
+
+.view-button .icon {
+  transition: transform var(--duration-2) var(--ease-out);
+}
+
+.view-button[aria-expanded="true"] .icon {
+  transform: rotate(90deg);
+}
+
+/* Opened row: a plate of facts and the next step, aligned under the name. */
 .app-details {
   display: flex;
   align-items: center;
-  gap: 30px;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
   grid-column: 1 / -1;
-  background: var(--bg-subtle);
-  padding: 22px 20px 22px 88px;
+  margin-top: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-4) 64px;
+  border-top: var(--stroke) dashed var(--rule-strong);
+  background: var(--sunken);
 }
 
 .app-details[hidden] {
   display: none;
 }
 
-.app-details > :where(div:first-child) {
-  flex: 1;
-}
-
-.app-details h3 {
-  margin: 0;
-  font-size: 20px;
-}
-
-.app-details p {
-  margin: 4px 0 0;
-  color: var(--text-2);
-}
-
-.app-details dl {
-  min-width: 120px;
+.detail-device {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
   margin: 0;
 }
 
-.app-details dt {
-  color: var(--text-2);
-  font-size: 14px;
-}
-
-.app-details dd {
-  margin: 8px 0 0;
+.detail-device dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-feature-settings: "zero" 1;
+  font-size: var(--type-small);
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .app-action {
   display: flex;
   align-items: center;
-  gap: 24px;
+  flex: 1;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-6);
   min-width: 0;
 }
 
 .card > .inline-error {
   grid-column: 1 / -1;
+  margin-top: var(--space-2);
 }
 
-.catalog-task {
-  padding: 8px 0 32px;
-}
-
-.task-back {
-  margin-bottom: 30px;
-}
-
-.task-body {
-  display: flex;
-  gap: 28px;
-}
-
-.task-body > .app-icon {
-  width: 88px;
-  height: 88px;
-  flex-basis: 88px;
-}
-
-.task-content {
-  min-width: 0;
-  flex: 1;
-}
-
-.task-content h2 {
-  margin: 0 0 8px;
-  font-size: 30px;
-  font-weight: 800;
-}
-
-.task-content p {
-  color: var(--text-2);
-}
-
-.task-content .task-identity {
-  margin: 0;
-  font-size: 21px;
-  color: var(--text);
-}
-
-.task-facts {
-  border-top: 1px solid var(--stroke);
-  margin: 24px 0;
-  padding-top: 18px;
-}
-
-.task-facts div {
-  display: grid;
-  grid-template-columns: 160px 1fr;
-  margin: 8px 0;
-}
-
-.task-facts dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.task-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-size: 14px;
-}
-
-.task-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 28px;
-}
-
-.task-actions button,
-.success-receipt button {
-  min-height: 44px;
-  padding: 10px 24px;
-}
-
-.task-status {
-  display: grid;
-  justify-items: start;
-  gap: 18px;
-}
-
-.success-receipt {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 20px;
-  margin: 18px 0;
-  background: var(--bg-subtle);
-}
-
-.receipt-check {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
-  border-radius: 50%;
-  background: var(--text);
-  color: var(--bg-card);
-}
-
-.success-receipt > div {
-  flex: 1;
-}
-
-.success-receipt p {
-  margin: 4px 0 0;
-  color: var(--text-2);
-}
-
-@media (width <= 800px) {
-  .content-pane {
-    padding: 24px;
+@media (width <= 860px) {
+  .app-shell {
+    --gutter: 24px;
   }
 
   .catalog-columns,
   .card {
-    grid-template-columns: minmax(0, 1fr) 100px 90px;
-    gap: 14px;
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 160px) 88px;
   }
 
-  .app-identity {
-    gap: 16px;
+  .catalog-columns span:nth-child(2),
+  .row-source {
+    display: none;
   }
 
-  .app-icon {
-    width: 48px;
-    height: 48px;
-    flex-basis: 48px;
+  .publisher-source {
+    display: inline;
   }
 
   .app-details {
-    padding: 20px;
-    flex-wrap: wrap;
-  }
-
-  .app-action {
-    flex-wrap: wrap;
-  }
-
-  .task-body {
-    gap: 20px;
+    padding-left: var(--space-5);
   }
 }
 
 @media (width <= 560px) {
+  .app-shell {
+    --gutter: 16px;
+  }
+
   .content-pane {
-    padding: 20px 16px;
+    padding-top: var(--space-6);
   }
 
   .catalog-taskbar {
     align-items: flex-start;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 0;
   }
 
   .catalog-navigation {
-    gap: 22px;
+    gap: var(--space-5);
   }
 
   .toolbar {
     flex-wrap: wrap;
   }
 
-  .search-field {
-    flex-basis: 100%;
-    max-width: none;
-  }
-
+  .search-field,
   .source-field {
     flex-basis: 100%;
+    max-width: none;
   }
 
   .catalog-columns {
@@ -461,6 +435,7 @@
 
   .card {
     grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--space-2);
   }
 
   .app-identity {
@@ -474,17 +449,6 @@
   .app-details {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .task-body {
-    flex-direction: column;
-  }
-
-  .task-facts div {
-    grid-template-columns: 100px 1fr;
-  }
-
-  .success-receipt {
-    flex-wrap: wrap;
+    padding: var(--space-4);
   }
 }

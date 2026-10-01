@@ -190,8 +190,9 @@ windows, dark mode, and Windows forced colors. An install or update reaches succ
 only after native inventory confirmation. The receipt omits a final version because
 the action response does not provide one.
 
-The UI bundles Manrope for display text and Source Sans 3 for body text, with system
-fallbacks. Font sources and OFL notices are documented in
+The UI bundles Atkinson Hyperlegible Next for text and Atkinson Hyperlegible Mono for
+versions, identifiers, and labels, with system fallbacks. Design decisions are recorded
+in [DESIGN_BRIEF.md](../DESIGN_BRIEF.md). Font sources and OFL notices are documented in
 `apps/windows-client/src/ui/fonts/README.md`. No font is fetched at runtime.
 
 A browser test with a synthetic native bridge can cover layout, keyboard use, and

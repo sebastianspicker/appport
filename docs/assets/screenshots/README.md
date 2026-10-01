@@ -1,7 +1,7 @@
 # README screenshots
 
 The [README tour](../../../README.md#screenshot-tour) shows the browser demo running
-in Chromium 151 with Playwright 1.62.1 on macOS. All software, user, device, serial,
+in Chromium 153 with Playwright 1.62.1 on macOS. All software, user, device, serial,
 and network details are fictional. These captures show the browser interface;
 they do not establish native Windows behavior.
 
@@ -35,5 +35,5 @@ all four images in the README.
 Check the interface at a narrow width too. The current tour was also checked at
 390 × 844. Exercise search, source filters, empty results, the locked example, and
 support details. For an install, check Cancel and Escape, then confirm and watch
-Queued, Verifying, and Succeeded. The completed card should disappear, and a reload
+Queued, Verifying installation, and Succeeded. The completed card should disappear, and a reload
 should restore it.

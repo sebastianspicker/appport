@@ -27,8 +27,9 @@ hot-reload connection. Use the production preview when checking the tour.
 
 1. Search for Field Notes and choose MSI in the source filter.
 2. Clear the search and choose All sources, then select Install on Drawpad.
-   Cancel once, then try again and confirm. Its card moves through Queued,
-   Verifying, and Succeeded before leaving the list. Cancel or Escape closes the
+   Cancel once, then try again and confirm. Its row moves along the request
+   track through Queued, Verifying installation, and Succeeded before leaving
+   the list. Cancel or Escape closes the
    dialog and returns focus to the action button. While the dialog is open,
    background controls are excluded from keyboard navigation.
 3. Open Updates to compare installed and target versions.
@@ -39,7 +40,9 @@ hot-reload connection. Use the production preview when checking the tour.
 6. Reload to restore the starting catalog.
 
 The interface uses English or German based on your browser language and follows
-your system's light or dark theme.
+your system's light or dark theme. It shares the Windows client's visual system
+(see [DESIGN_BRIEF.md](../../DESIGN_BRIEF.md)) and bundles its own copy of the
+Atkinson Hyperlegible fonts under the SIL Open Font License.
 
 ## Check a change
 

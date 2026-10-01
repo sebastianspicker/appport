@@ -37,7 +37,8 @@ follows your system's light or dark theme.
 ### Confirm a request
 
 Install and Update ask for confirmation. In the demo, confirming starts a short
-simulation: Queued, Verifying, then Succeeded.
+simulation on the four-stage request track: Queued, Verifying installation, then
+Succeeded.
 
 ![Install confirmation for Drawpad, with Cancel and Confirm controls](docs/assets/screenshots/confirmation.png)
 

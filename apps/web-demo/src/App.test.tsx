@@ -51,7 +51,7 @@ describe("interactive demo", () => {
     expect(screen.getByText("Queued")).toBeTruthy();
     expect(screen.getByRole("progressbar")).toBeTruthy();
     act(() => vi.advanceTimersByTime(700));
-    expect(screen.getByText("Verifying")).toBeTruthy();
+    expect(screen.getByText("Verifying installation")).toBeTruthy();
     act(() => vi.advanceTimersByTime(1_400));
     expect(screen.getByText("Succeeded")).toBeTruthy();
     act(() => vi.advanceTimersByTime(900));
@@ -98,7 +98,7 @@ describe("interactive demo", () => {
     expect(
       screen.getByRole("navigation", { name: "Softwareansichten" }),
     ).toBeTruthy();
-    expect(screen.getByText("Verwaltete Software")).toBeTruthy();
+    expect(screen.getByText("Freigegebene Software")).toBeTruthy();
     expect(screen.getByText(/Projektnotizen offline erfassen/)).toBeTruthy();
     expect(document.documentElement.lang).toBe("de");
     language.mockRestore();

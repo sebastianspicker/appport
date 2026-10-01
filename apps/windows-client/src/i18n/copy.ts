@@ -11,7 +11,7 @@ export const text = {
     filteredResultsCount: "{count} of {total} applications",
     skipToContent: "Skip to content",
     forThisDevice: "For this device",
-    softwareMissing: "Software missing?",
+    softwareMissing: "Missing something?",
     account: "Account",
     close: "Close",
     signingIn: "Signing in…",
@@ -19,14 +19,21 @@ export const text = {
     signOutWaiting: "Finishing any submitted work before signing out.",
     portalOpening: "Opening Relution…",
     portalFailed: "Relution could not be opened. Try again.",
-    tokenHint: "Use your personal, expiring Relution token.",
+    tokenHint:
+      "Not your password: a personal, expiring token from your Relution profile.",
     deviceDetails: "Device details",
     shareWithIT: "Share details with IT",
     appTitle: "Appport",
     managedSoftware: "Managed software",
     signInTitle: "Sign in to Appport",
     signInSummary:
-      "See the software and updates approved for this device. Your organization manages what appears here.",
+      "Use your Relution username and a personal access token. Your organization decides which software appears here.",
+    signInPitch: "The software your organization approved for this PC.",
+    signInSteps: [
+      "Sign in with a personal Relution token.",
+      "Choose approved software or an update.",
+      "Relution installs it. Appport confirms the exact version on this PC.",
+    ],
     availableSummary: "Software approved for this device by your organization.",
     updatesSummary: "Updates approved for software already on this device.",
     connected: "Connected",
@@ -49,7 +56,7 @@ export const text = {
     relutionUsername: "Relution username",
     accessToken: "Personal access token",
     tokenGuidance:
-      "Use your personal, expiring Relution token. Appport cannot revoke it; revoke replaced or exposed tokens in your Relution profile.",
+      "Appport cannot revoke tokens. Revoke a replaced or exposed token in your Relution profile.",
     apps: "Available",
     updates: "Updates",
     search: "Search",
@@ -58,7 +65,10 @@ export const text = {
     allSources: "All sources",
     noSearchResults: "No approved software matches your search.",
     loading: ["Loading this device", "Checking your approved software."],
-    empty: ["Nothing to show", "There is no approved software in this view."],
+    empty: [
+      "Nothing here right now",
+      "No approved software is waiting in this view. New assignments from IT appear here.",
+    ],
     offline: ["You are offline", "Connect to the internet and try again."],
     sessionExpired: ["Your session expired", "Sign in again to continue."],
     authorizationDenied: [
@@ -80,15 +90,15 @@ export const text = {
     unknown: ["Something went wrong", "Try again in a moment."],
     refresh: "Refresh",
     retry: "Try again",
-    approved: "Approved software",
+    approved: "Publisher not listed",
     approvedForDevice: "Approved for this device.",
     available: "Available",
-    updateAvailable: "Update available",
     installedVersion: "Installed version",
     availableVersion: "Available version",
     install: "Install",
     update: "Update",
-    readOnly: "Read-only candidate. Installation and updates are disabled.",
+    readOnly:
+      "Read-only build: you can browse, but installs and updates are switched off.",
     retryAction: "Retry",
     starting: "Starting…",
     status: "Status",
@@ -104,7 +114,7 @@ export const text = {
     cancel: "Cancel",
     confirm: "Confirm",
     confirmationWarning:
-      "After confirmation, the result may be temporarily unknown. Do not submit the action again unless IT confirms it is safe.",
+      "This request is sent once. If its result stays unknown, do not request again; give IT the action ID instead.",
     backgroundCheckUnavailable:
       "Background update checks could not be registered. Keep Appport open to receive update status.",
     signOutIncomplete:
@@ -114,9 +124,9 @@ export const text = {
     signOutFailed:
       "Sign-out could not run. Your stored credential may still be present. Try again or contact IT.",
     support: "Support",
-    supportSummary: "Device details and local support bundle",
+    supportSummary: "What IT needs to help with this PC.",
     supportGuidance:
-      "Only software assigned through Relution appears in Appport.",
+      "Appport lists only software assigned to you in Relution. Ask IT to assign it.",
     supportWindows: "Windows display and build",
     supportManufacturer: "Manufacturer",
     supportModel: "Model",
@@ -150,8 +160,8 @@ export const text = {
     supportUsername: "Relution username",
     supportDeviceName: "Device name",
     reviewedVersion: "Reviewed version",
-    software: "Software",
-    summary: "Applications for this device.",
+    software: "Approved software",
+    summary: "Chosen for this PC by your organization.",
     assignedDevice: "Assigned device",
     application: "Application",
     view: "View",
@@ -160,11 +170,16 @@ export const text = {
     reviewUpdate: "Review update",
     requestInstall: "Request installation",
     requestUpdate: "Request update",
-    permission: "Your permission is checked again before sending the request.",
+    permission:
+      "Appport checks your permission and this PC's inventory again before anything is sent.",
     installed: "Installation confirmed",
     updated: "Update confirmed",
-    receipt: "Confirmed on {device}.",
+    receipt: "Inventory on {device} shows the new version.",
     task: "Installation status",
+    trackRequested: "Requested",
+    trackSent: "Sent",
+    trackVerifying: "Verifying",
+    trackConfirmed: "Confirmed",
   },
   de: {
     catalogToolbar: "Software suchen und filtern",
@@ -174,7 +189,7 @@ export const text = {
     filteredResultsCount: "{count} von {total} Anwendungen",
     skipToContent: "Zum Inhalt springen",
     forThisDevice: "Für dieses Gerät",
-    softwareMissing: "Software fehlt?",
+    softwareMissing: "Etwas fehlt?",
     account: "Konto",
     close: "Schließen",
     signingIn: "Anmeldung läuft…",
@@ -184,14 +199,22 @@ export const text = {
     portalOpening: "Relution wird geöffnet…",
     portalFailed:
       "Relution konnte nicht geöffnet werden. Versuchen Sie es erneut.",
-    tokenHint: "Verwenden Sie Ihren persönlichen, ablaufenden Relution-Token.",
+    tokenHint:
+      "Nicht Ihr Passwort: ein persönlicher, ablaufender Token aus Ihrem Relution-Profil.",
     deviceDetails: "Gerätedetails",
     shareWithIT: "Details an die IT weitergeben",
     appTitle: "Appport",
     managedSoftware: "Verwaltete Software",
     signInTitle: "Bei Appport anmelden",
     signInSummary:
-      "Zeigt die für dieses Gerät freigegebene Software und Updates. Ihre Organisation legt fest, was hier erscheint.",
+      "Mit Ihrem Relution-Benutzernamen und einem persönlichen Zugriffstoken. Ihre Organisation legt fest, welche Software hier erscheint.",
+    signInPitch:
+      "Die Software, die Ihre Organisation für diesen PC freigegeben hat.",
+    signInSteps: [
+      "Mit einem persönlichen Relution-Token anmelden.",
+      "Freigegebene Software oder ein Update wählen.",
+      "Relution installiert. Appport bestätigt die genaue Version auf diesem PC.",
+    ],
     availableSummary:
       "Von Ihrer Organisation für dieses Gerät freigegebene Software.",
     updatesSummary:
@@ -216,7 +239,7 @@ export const text = {
     relutionUsername: "Relution-Benutzername",
     accessToken: "Persönlicher Zugriffstoken",
     tokenGuidance:
-      "Verwenden Sie Ihren persönlichen, ablaufenden Relution-Token. Appport kann ihn nicht widerrufen; widerrufen Sie ersetzte oder offengelegte Token in Ihrem Relution-Profil.",
+      "Appport kann Token nicht widerrufen. Widerrufen Sie ersetzte oder offengelegte Token in Ihrem Relution-Profil.",
     apps: "Verfügbar",
     updates: "Updates",
     search: "Suchen",
@@ -229,8 +252,8 @@ export const text = {
       "Ihre freigegebene Software wird geprüft.",
     ],
     empty: [
-      "Nichts vorhanden",
-      "In dieser Ansicht ist keine Software vorhanden.",
+      "Zurzeit nichts vorhanden",
+      "In dieser Ansicht wartet keine freigegebene Software. Neue Zuweisungen der IT erscheinen hier.",
     ],
     offline: [
       "Sie sind offline",
@@ -259,16 +282,15 @@ export const text = {
     unknown: ["Ein Fehler ist aufgetreten", "Versuchen Sie es später erneut."],
     refresh: "Aktualisieren",
     retry: "Erneut versuchen",
-    approved: "Freigegebene Software",
+    approved: "Herausgeber nicht angegeben",
     approvedForDevice: "Für dieses Gerät freigegeben.",
     available: "Verfügbar",
-    updateAvailable: "Update verfügbar",
     installedVersion: "Installierte Version",
     availableVersion: "Verfügbare Version",
     install: "Installieren",
     update: "Aktualisieren",
     readOnly:
-      "Schreibgeschützte Testversion. Installationen und Updates sind deaktiviert.",
+      "Schreibgeschützte Version: Sie können sich umsehen, aber Installationen und Updates sind ausgeschaltet.",
     retryAction: "Erneut versuchen",
     starting: "Wird gestartet…",
     status: "Status",
@@ -284,7 +306,7 @@ export const text = {
     cancel: "Abbrechen",
     confirm: "Bestätigen",
     confirmationWarning:
-      "Nach der Bestätigung kann das Ergebnis vorübergehend unbekannt sein. Starten Sie die Aktion nur dann erneut, wenn die IT dies bestätigt.",
+      "Diese Anfrage wird einmal gesendet. Bleibt ihr Ergebnis unbekannt, fordern Sie nicht erneut an, sondern geben Sie der IT die Aktions-ID.",
     backgroundCheckUnavailable:
       "Hintergrundprüfungen für Updates konnten nicht registriert werden. Lassen Sie Appport geöffnet, um Update-Status zu erhalten.",
     signOutIncomplete:
@@ -294,9 +316,9 @@ export const text = {
     signOutFailed:
       "Die Abmeldung konnte nicht ausgeführt werden. Die gespeicherte Anmeldeinformation kann noch vorhanden sein. Versuchen Sie es erneut oder wenden Sie sich an den Support.",
     support: "Support",
-    supportSummary: "Gerätedetails und lokales Supportpaket",
+    supportSummary: "Was die IT braucht, um bei diesem PC zu helfen.",
     supportGuidance:
-      "In Appport erscheint nur Software, die über Relution zugewiesen ist.",
+      "Appport zeigt nur Software, die Ihnen in Relution zugewiesen ist. Bitten Sie die IT um eine Zuweisung.",
     supportWindows: "Windows-Anzeige und Build",
     supportManufacturer: "Hersteller",
     supportModel: "Modell",
@@ -333,8 +355,8 @@ export const text = {
     supportUsername: "Relution-Benutzername",
     supportDeviceName: "Gerätename",
     reviewedVersion: "Version bei Prüfung",
-    software: "Software",
-    summary: "Anwendungen für dieses Gerät.",
+    software: "Freigegebene Software",
+    summary: "Von Ihrer Organisation für diesen PC ausgewählt.",
     assignedDevice: "Zugeordnetes Gerät",
     application: "Anwendung",
     view: "Ansehen",
@@ -343,11 +365,16 @@ export const text = {
     reviewUpdate: "Update vorbereiten",
     requestInstall: "Installation anfordern",
     requestUpdate: "Update anfordern",
-    permission: "Die Berechtigung wird vor dem Senden erneut geprüft.",
+    permission:
+      "Appport prüft Ihre Berechtigung und den Softwarebestand dieses PCs vor dem Senden erneut.",
     installed: "Installation bestätigt",
     updated: "Update bestätigt",
-    receipt: "Auf {device} bestätigt.",
+    receipt: "Der Softwarebestand von {device} zeigt die neue Version.",
     task: "Installationsstatus",
+    trackRequested: "Angefordert",
+    trackSent: "Gesendet",
+    trackVerifying: "Prüfung",
+    trackConfirmed: "Bestätigt",
   },
 } as const;
 

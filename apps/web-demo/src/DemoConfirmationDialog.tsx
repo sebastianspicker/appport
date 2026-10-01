@@ -38,8 +38,22 @@ export function DemoConfirmationDialog({
       ref={dialogRef}
     >
       <h2 id="demo-confirm-title">{copy.confirmTitle}</h2>
-      <p id="demo-confirm-description">
-        <strong>{application.name}</strong> · {copy.confirmText}
+      <dl>
+        <div>
+          <dt>{copy.application}</dt>
+          <dd>{application.name}</dd>
+        </div>
+        <div>
+          <dt>{copy.target}</dt>
+          <dd>{application.targetVersion}</dd>
+        </div>
+        <div>
+          <dt>{copy.supportDevice}</dt>
+          <dd>DEMO-PC-047</dd>
+        </div>
+      </dl>
+      <p id="demo-confirm-description" className="dialog-note">
+        {copy.confirmText}
       </p>
       <div className="dialog-actions">
         <button className="secondary" onClick={onCancel} ref={cancelRef}>

@@ -1,0 +1,189 @@
+/* The request task: a single plate that states exactly what will be sent. */
+.catalog-task {
+  max-width: 760px;
+  padding: 0 0 var(--space-8);
+}
+
+.task-back {
+  min-height: 40px;
+  margin: 0 0 var(--space-5) calc(-1 * var(--space-3));
+  padding: 0 var(--space-3);
+  color: var(--ink-2);
+  font-size: var(--type-small);
+}
+
+.task-body {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: var(--space-6);
+  padding: var(--space-8);
+  border: var(--stroke) solid var(--rule-strong);
+  border-radius: var(--radius-1);
+  background: var(--plate);
+}
+
+.task-body > .app-icon {
+  width: 64px;
+  height: 64px;
+  flex-basis: 64px;
+}
+
+.task-content {
+  min-width: 0;
+}
+
+.task-content h2 {
+  margin-bottom: var(--space-1);
+  font-size: var(--type-page);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.task-content h2:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.task-content p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.task-content .task-identity {
+  margin-bottom: var(--space-2);
+  color: var(--ink);
+  font-size: var(--type-lead);
+  font-weight: 700;
+}
+
+/* Facts are stamped in mono, label above value, between two rules. */
+.task-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin: var(--space-6) 0;
+  border-block: var(--stroke) solid var(--ink);
+}
+
+.task-facts div {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4) var(--space-3) 0;
+}
+
+.task-facts > * + * {
+  padding-left: var(--space-4);
+  border-left: var(--stroke) solid var(--rule);
+}
+
+.task-facts dt {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.task-facts dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-feature-settings: "zero" 1;
+  font-size: var(--type-lead);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.task-content .task-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-1);
+  background: var(--attention-tint);
+  color: var(--attention);
+  font-size: var(--type-small);
+}
+
+.task-warning .icon {
+  margin-top: 2px;
+}
+
+.task-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
+}
+
+.task-status {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-5);
+}
+
+/* Receipt: the moment of value, stamped with a check and the device. */
+.success-receipt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: var(--stroke) solid var(--ok);
+  border-radius: var(--radius-1);
+  background: var(--ok-tint);
+}
+
+.success-receipt:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.receipt-check {
+  display: grid;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: var(--radius-1);
+  background: var(--ok);
+  color: var(--plate);
+}
+
+.success-receipt > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.success-receipt strong {
+  font-size: var(--type-lead);
+}
+
+.success-receipt p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--type-small);
+}
+
+@media (width <= 560px) {
+  .task-body {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-5);
+  }
+
+  .task-actions button,
+  .success-receipt button {
+    flex: 1 1 100%;
+  }
+
+  .success-receipt {
+    flex-wrap: wrap;
+  }
+
+  .success-receipt > div {
+    flex-basis: calc(100% - 56px);
+  }
+}

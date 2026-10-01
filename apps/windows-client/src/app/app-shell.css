@@ -1,13 +1,14 @@
 .skip-link {
   position: fixed;
   z-index: 30;
-  top: 12px;
-  left: 12px;
-  padding: 12px 18px;
+  top: var(--space-3);
+  left: var(--space-3);
+  padding: var(--space-3) var(--space-5);
   transform: translateY(-160%);
-  border-radius: var(--r-control);
-  background: var(--accent);
-  color: var(--on-accent);
+  border-radius: var(--radius-1);
+  background: var(--ink);
+  color: var(--on-ink);
+  font-weight: 700;
 }
 
 .skip-link:focus {
@@ -15,123 +16,201 @@
 }
 
 .app-shell {
+  --inline: max(var(--gutter), calc((100% - var(--measure)) / 2));
+
   min-height: 100vh;
 }
 
+/* Top band: brand, the device plate, then Support and Account. */
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 22px 40px;
-  border-bottom: 1px solid var(--stroke);
-  background: var(--bg-card);
+  gap: var(--space-6);
+  min-height: 64px;
+  padding: var(--space-2) var(--inline);
+  border-bottom: var(--stroke) solid var(--rule);
+  background: var(--plate);
 }
 
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: var(--space-3);
   min-width: 0;
 }
 
 .brand-lockup strong {
-  font-family: var(--font-display);
-  font-size: 30px;
+  font-size: var(--type-title);
   font-weight: 800;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.02em;
 }
 
+/* Ink square with a yellow notch: the same mark that flags the active view. */
 .brand-mark {
+  position: relative;
   display: grid;
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
   place-items: center;
-  border-radius: 3px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-family: var(--font-display);
-  font-size: 30px;
+  border-radius: var(--radius-1);
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: 20px;
   font-weight: 800;
   line-height: 1;
+}
+
+.brand-mark::after {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  left: 5px;
+  height: 3px;
+  background: var(--signal);
+  content: "";
+}
+
+/* Device plate: a segmented asset label for the PC this catalog belongs to. */
+.device-plate {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  margin: 0;
+  border: var(--stroke) solid var(--rule-strong);
+  border-radius: var(--radius-1);
+  font-family: var(--font-mono);
+  font-feature-settings: "zero" 1;
+}
+
+.device-plate > span {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+}
+
+.device-plate > span + span {
+  border-left: var(--stroke) solid var(--rule-strong);
+}
+
+.device-plate .plate-label {
+  background: var(--sunken);
+  color: var(--ink-2);
+}
+
+.device-plate-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--type-small);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-plate-status {
+  gap: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.device-plate-status::before {
+  width: 8px;
+  height: 8px;
+  background: var(--ink-3);
+  content: "";
+}
+
+.device-plate-status[data-compliant="true"]::before {
+  background: var(--ok);
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: var(--space-1);
+  margin-left: auto;
 }
 
-.header-actions > button {
-  min-height: 44px;
-  padding: 8px 10px;
+.header-actions > button,
+.session-controls .account-button {
+  min-height: 40px;
+  padding: 0 var(--space-3);
   border: 0;
-  border-radius: var(--r-control);
   background: transparent;
-  color: var(--text);
-  font-size: 17px;
-  font-weight: 400;
+  color: var(--ink);
+  font-weight: 600;
 }
 
-.header-actions > button:hover {
-  background: var(--bg-subtle);
+.header-actions > button:hover,
+.session-controls .account-button:hover {
+  background: var(--sunken);
 }
 
 .header-actions > button[aria-current] {
-  text-decoration: underline;
-  text-underline-offset: 7px;
+  box-shadow:
+    inset 0 -1px 0 var(--ink),
+    inset 0 -5px 0 var(--signal);
 }
 
+/* View tabs sit on the ledger's top rule; the active one carries the yellow mark. */
 .catalog-navigation {
   display: flex;
   flex-wrap: wrap;
-  gap: 32px;
+  gap: var(--space-6);
 }
 
 .nav-item {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 48px;
-  padding: 7px 4px 12px;
+  padding: 0 var(--space-1);
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--text);
-  font-size: 20px;
+  color: var(--ink-2);
+  font-size: var(--type-lead);
   font-weight: 700;
   text-align: left;
-  text-decoration: none;
 }
 
 .nav-item:hover {
-  background: var(--bg-subtle);
+  color: var(--ink);
+}
+
+.nav-item.active {
+  color: var(--ink);
 }
 
 .nav-item.active::after {
   position: absolute;
   right: 0;
-  bottom: 0;
+  bottom: -1px;
   left: 0;
   height: 5px;
-  background: var(--highlight-yellow);
+  border-bottom: 1px solid var(--ink);
+  background: var(--signal);
   content: "";
 }
 
 .nav-count {
-  color: var(--text);
-  font-weight: 400;
+  min-width: 24px;
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-1);
+  background: var(--sunken);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
 }
 
-.nav-count.attention::after {
-  display: inline-block;
-  content: "";
-  width: 9px;
-  height: 9px;
-  margin-left: 4px;
-  border-radius: 50%;
-  background: var(--highlight-magenta);
+.nav-count.attention {
+  background: var(--signal);
+  color: var(--on-signal);
 }

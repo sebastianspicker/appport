@@ -1,50 +1,12 @@
-type IconName =
-  | "apps"
-  | "check"
-  | "device"
-  | "error"
-  | "mark"
-  | "search"
-  | "support"
-  | "updates"
-  | "warning";
+type IconName = "check" | "error" | "search" | "warning";
 
 const paths: Record<IconName, React.ReactNode> = {
-  apps: (
-    <>
-      <rect x="3" y="3" width="5.5" height="5.5" rx="1" />
-      <rect x="11.5" y="3" width="5.5" height="5.5" rx="1" />
-      <rect x="3" y="11.5" width="5.5" height="5.5" rx="1" />
-      <rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1" />
-    </>
-  ),
   check: <path d="m4.5 10.5 3.6 3.6 7.4-7.6" />,
-  device: (
-    <>
-      <rect x="2.5" y="3.5" width="15" height="10" rx="1.5" />
-      <path d="M7 16.5h6" />
-    </>
-  ),
   error: (
     <>
       <circle cx="10" cy="10" r="7.5" />
       <path d="m12.6 7.4-5.2 5.2m0-5.2 5.2 5.2" />
     </>
-  ),
-  mark: (
-    <g fill="currentColor" stroke="none">
-      <rect x="2" y="2" width="7.5" height="7.5" rx="1" />
-      <rect x="10.5" y="2" width="7.5" height="7.5" rx="1" />
-      <rect x="2" y="10.5" width="7.5" height="7.5" rx="1" />
-      <rect
-        x="10.5"
-        y="10.5"
-        width="7.5"
-        height="7.5"
-        rx="3.75"
-        opacity=".75"
-      />
-    </g>
   ),
   search: (
     <>
@@ -52,14 +14,6 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="m13.2 13.2 3.55 3.55" />
     </>
   ),
-  support: (
-    <>
-      <circle cx="10" cy="10" r="7.5" />
-      <path d="M7.6 7.4a2.5 2.5 0 1 1 3.5 2.9c-.8.4-1.1.8-1.1 1.7" />
-      <path d="M10 14.6h.01" />
-    </>
-  ),
-  updates: <path d="M16 10a6 6 0 1 1-1.76-4.24M16 3.5v3h-3" />,
   warning: (
     <>
       <path d="M10 3.5 17.5 16h-15L10 3.5Z" />

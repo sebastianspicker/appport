@@ -2,38 +2,36 @@
 .catalog-notice {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  color: var(--text-2);
-  font-size: 13px;
-  line-height: 1.6;
+  gap: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--type-small);
+  line-height: 1.5;
+}
+
+.catalog-help .icon,
+.catalog-notice .icon {
+  margin-top: 1px;
 }
 
 .catalog-help {
-  margin: 20px 0 0;
+  margin: var(--space-6) 0 0;
 }
 
 .catalog-notice {
-  margin: 0 0 14px;
-  padding: 12px 14px;
-  border: 1px solid var(--stroke);
-  border-radius: var(--r-control);
-  background: var(--bg-subtle);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: var(--stroke) dashed var(--rule-strong);
+  border-radius: var(--radius-1);
 }
 
 .version-rail {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   flex-wrap: wrap;
-  gap: 8px;
-  flex: 1;
+  gap: var(--space-1) var(--space-2);
   min-width: 0;
   max-width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
+  font-size: var(--type-small);
 }
 
 .version-rail span,
@@ -42,100 +40,144 @@
 }
 
 .version-rail strong {
-  color: var(--text);
-  font-size: 17px;
-  font-weight: 400;
+  font-size: var(--type-body);
+  font-weight: 700;
+}
+
+.version-label {
+  flex-basis: 100%;
 }
 
 .action-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: fit-content;
-  min-width: 112px;
-  min-height: 44px;
+  min-width: 128px;
+  min-height: var(--control-height);
   flex: 0 0 auto;
-  padding: 5px 16px;
-  border-radius: var(--r-control);
-  font-size: 17px;
-  font-weight: 650;
 }
 
-.read-only-note {
-  margin: auto 0 0;
-  color: var(--text-2);
-  font-size: 12px;
+.action-button .icon {
+  margin-right: calc(-1 * var(--space-1));
 }
 
 .status-line {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
+/* Status stamp: mono capitals inside a ruled frame, colored by outcome. */
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   width: fit-content;
   max-width: 100%;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--bg-subtle);
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 650;
+  padding: 3px var(--space-2);
+  border: var(--stroke) solid currentcolor;
+  border-radius: var(--radius-1);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.04em;
   overflow-wrap: anywhere;
-}
-
-.version-rail .status-pill {
-  width: max-content;
+  text-transform: uppercase;
 }
 
 .status-pill.success {
-  background: var(--success-soft);
-  color: var(--success);
+  background: var(--ok-tint);
+  color: var(--ok);
 }
 
 .status-pill.danger {
-  background: var(--danger-soft);
-  color: var(--danger);
+  background: var(--fail-tint);
+  color: var(--fail);
 }
 
 .status-pill.working {
-  background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--ink);
+}
+
+/* Request track: four stages that fill with ink as Relution reports progress. */
+.request-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  width: min(100%, 420px);
+}
+
+.request-track i {
+  position: relative;
+  display: grid;
+  gap: var(--space-1);
+  font-style: normal;
+}
+
+.request-track i::before {
+  height: 6px;
+  background: var(--rule);
+  content: "";
+}
+
+.request-track i.done::before {
+  background: var(--ink);
+}
+
+.request-track i.current::after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  transform-origin: left center;
+  background: var(--ink);
+  animation: track-current 1.6s var(--ease-out) infinite alternate;
+  content: "";
+}
+
+.track-label {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.done > .track-label,
+.current > .track-label {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.action-polling small,
+.status-note {
+  color: var(--ink-3);
+  font-size: var(--type-label);
+}
+
+.action-polling code {
+  color: var(--ink-2);
 }
 
 .indeterminate-progress {
   display: block;
-  height: 3px;
+  height: 4px;
   overflow: hidden;
-  border-radius: 2px;
-  background: var(--bg-inset);
+  background: var(--rule);
 }
 
 .indeterminate-progress > i {
   display: block;
-  width: 42%;
+  width: 40%;
   height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-  animation: indeterminate 1.25s ease-in-out infinite alternate;
-}
-
-.action-polling small {
-  color: var(--text-3);
-  font-size: 11.5px;
+  background: var(--ink);
+  animation: indeterminate 1.25s var(--ease-out) infinite alternate;
 }
 
 .status-note {
-  margin: auto 0 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--bg-subtle);
-  color: var(--text-2);
-  font-size: 12px;
+  margin: 0;
 }
 
 .status-note code,
@@ -148,111 +190,129 @@
 .sign-out-warning {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  margin: auto 0 0;
-  padding: 9px 10px;
-  border-radius: 8px;
-  font-size: 12.5px;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-1);
+  font-size: var(--type-small);
+  line-height: 1.45;
+}
+
+.inline-error .icon,
+.unknown-action .icon,
+.sign-out-warning .icon {
+  margin-top: 2px;
 }
 
 .inline-error,
 .sign-out-warning {
-  background: var(--danger-soft);
-  color: var(--danger);
+  background: var(--fail-tint);
+  color: var(--fail);
+}
+
+.sign-out-warning {
+  margin-top: var(--space-6);
 }
 
 .unknown-action {
-  background: var(--warning-soft);
-  color: var(--warning);
+  max-width: 560px;
+  border: var(--stroke) solid
+    color-mix(in srgb, var(--attention) 40%, transparent);
+  background: var(--attention-tint);
+  color: var(--attention);
 }
 
 .unknown-action span {
   min-width: 0;
 }
 
+/* The action ID is what the person reads to IT: large, mono, selectable. */
 .unknown-action code {
   display: block;
-  margin-top: 4px;
-  color: var(--text-2);
+  width: fit-content;
+  max-width: 100%;
+  margin-top: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-1);
+  background: var(--plate);
+  color: var(--ink);
+  font-size: var(--type-small);
+  font-weight: 600;
+  user-select: all;
 }
 
+/* Page-level states: loading, empty, and problems. */
 .state {
   display: grid;
-  gap: 12px;
-  padding: 28px;
-  border: 1px solid var(--stroke);
-  border-radius: var(--r-card);
-  background: var(--bg-card);
-  max-width: 620px;
-  margin: 20px auto;
+  justify-items: start;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-8) 0;
+  border-block: var(--stroke) solid var(--ink);
+}
+
+.state > * {
+  max-width: 560px;
 }
 
 .state h2 {
-  margin: 0;
-  font-size: 17px;
+  font-size: var(--type-title);
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .state p {
   margin: 0;
-  color: var(--text-2);
+  color: var(--ink-2);
 }
 
 .state > .icon {
-  color: var(--warning);
+  color: var(--attention);
+}
+
+.state[role="status"] > .icon {
+  color: var(--ink-2);
 }
 
 .loading-progress {
-  width: 100%;
+  width: min(100%, 560px);
+  margin-top: var(--space-2);
 }
 
 .state button {
-  align-self: start;
+  margin-top: var(--space-3);
 }
 
 .search-empty {
   margin: 0;
-  padding: 18px;
-  border: 1px dashed var(--stroke-strong);
-  border-radius: var(--r-card);
-  color: var(--text-2);
-}
-
-.state:has(.loading-progress) > .icon,
-.state[role="status"] > .icon {
-  color: var(--accent);
-}
-
-.version-label {
-  flex-basis: 100%;
-  color: var(--text-2);
-  font-size: 14px;
+  padding: var(--space-8) 0;
+  border-bottom: var(--stroke) solid var(--rule);
+  color: var(--ink-2);
 }
 
 .task-status .status-pill {
-  font-size: 17px;
-  padding: 8px 12px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--type-small);
 }
 
 .task-status .status-line {
-  gap: 18px;
-  min-width: min(100%, 340px);
+  gap: var(--space-4);
+  width: min(100%, 520px);
+}
+
+.task-status .request-track {
+  width: 100%;
+}
+
+.task-status .request-track i::before,
+.task-status .request-track i.current::after {
+  height: 10px;
+}
+
+.task-status .track-label {
+  font-size: var(--type-label);
 }
 
 .task-status .action-polling small {
-  font-size: 14px;
-}
-
-.task-status .indeterminate-progress {
-  height: 5px;
-}
-
-@media (width <= 560px) {
-  .success-receipt > div {
-    flex-basis: calc(100% - 60px);
-    min-width: 0;
-  }
-
-  .success-receipt button {
-    width: 100%;
-  }
+  font-size: var(--type-small);
 }

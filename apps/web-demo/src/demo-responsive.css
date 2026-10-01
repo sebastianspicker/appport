@@ -1,11 +1,22 @@
-/* stylelint-disable property-no-deprecated -- clip remains paired with clip-path for older WebView accessibility support. */
-@keyframes indeterminate {
+@keyframes track-current {
   from {
-    transform: translateX(-70%);
+    transform: scaleX(0.12);
   }
 
   to {
-    transform: translateX(240%);
+    transform: scaleX(0.88);
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -18,189 +29,206 @@
     scroll-behavior: auto !important;
     transition: none !important;
   }
-}
 
-@media (width <= 850px) {
-  .navigation-rail {
-    flex-basis: 68px;
-    width: 68px;
-    padding-inline: 8px;
-  }
-
-  .brand-lockup {
-    justify-content: center;
-    padding-inline: 0;
-  }
-
-  .brand-lockup > span:last-child,
-  .nav-item > span:not(.nav-count),
-  .device-card p,
-  .device-name,
-  .user-name,
-  .replace-token,
-  .session-controls > .portal-link {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    clip-path: inset(50%);
-  }
-
-  .nav-item {
-    justify-content: center;
-    padding-inline: 0;
-  }
-
-  .nav-item.active::before {
-    left: -8px;
-  }
-
-  .nav-count {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    min-width: 15px;
-    padding: 0 3px;
-    font-size: 9px;
-  }
-
-  .device-card {
-    display: none;
-  }
-
-  .user-row {
-    justify-content: center;
-    padding: 4px 0;
-  }
-
-  .user-row .avatar {
-    display: none;
-  }
-
-  .icon-button {
-    position: static;
-  }
-
-  .content-pane {
-    padding: 24px;
+  .request-track i.current::after {
+    transform: scaleX(0.5);
+    animation: none;
   }
 }
 
-@media (width <= 620px) {
-  .app-shell {
-    display: block;
+@media (width <= 960px) {
+  .demo-frame {
+    --gutter: 24px;
   }
 
-  .navigation-rail {
-    position: sticky;
-    z-index: 2;
-    top: 0;
-    flex-direction: row;
-    width: 100%;
-    min-height: auto;
-    padding: 8px;
-    border-right: 0;
-    border-bottom: 1px solid var(--stroke);
+  .catalog-columns,
+  .card {
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 140px) 260px;
   }
 
-  .brand-lockup {
-    width: 34px;
-    padding: 0;
+  .catalog-columns span:nth-child(2),
+  .row-source {
+    display: none;
   }
 
-  .navigation-rail nav {
-    display: flex;
+  .publisher-source {
+    display: inline;
+  }
+}
+
+@media (width <= 760px) {
+  .app-header {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    padding-block: var(--space-3);
+  }
+
+  .device-plate {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .device-plate-name {
     flex: 1;
-    grid-template-columns: unset;
+  }
+}
+
+/* Phones: each application becomes a stacked plate with its action below. */
+@media (width <= 600px) {
+  .demo-frame {
+    --gutter: 16px;
   }
 
-  .nav-item {
-    flex: 1;
+  .demo-notice {
+    font-size: var(--type-label);
   }
 
-  .support-link {
-    flex: 0 0 40px;
-    margin: 0;
-  }
-
-  .session-controls {
-    display: flex;
-    margin: 0 0 0 auto;
-    padding: 0;
-  }
-
-  .user-row {
-    padding: 0;
+  .header-user,
+  .device-plate .plate-label,
+  .publisher-source {
+    display: none;
   }
 
   .content-pane {
-    padding: 22px 16px 30px;
+    padding-top: var(--space-6);
   }
 
   .content-header {
     display: grid;
-    align-items: start;
-    gap: 16px;
   }
 
   .toolbar {
-    width: 100%;
+    flex-wrap: wrap;
   }
 
-  .search-field {
+  .search-field,
+  .source-field {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .catalog-columns {
+    display: none;
+  }
+
+  .card {
+    grid-template-columns: 60px minmax(0, 1fr) auto;
+    row-gap: var(--space-3);
+    padding: var(--space-5) 0;
+  }
+
+  .app-identity {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .row-source {
+    display: inline-block;
+    grid-column: 2;
+    align-self: center;
+  }
+
+  .row-version {
+    grid-column: 3;
+    justify-self: end;
+    text-align: right;
+  }
+
+  .row-action {
+    grid-column: 2 / -1;
+    justify-content: stretch;
+  }
+
+  .row-action .action-button {
     flex: 1;
   }
 
-  .search-field input {
-    width: 100%;
+  .action-progress-wrap {
+    justify-items: start;
   }
 
-  .source-field {
-    max-width: 124px;
+  .support-summary {
+    padding-inline: var(--space-4);
   }
 
-  .grid {
-    grid-template-columns: 1fr;
+  .support-details {
+    grid-template-columns: minmax(0, 1fr);
+    margin-inline: var(--space-4);
+  }
+
+  .support-details > :nth-child(even) {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .confirmation {
+    padding: var(--space-5);
+  }
+
+  .dialog-actions button {
+    flex: 1;
   }
 }
 
 @media (forced-colors: active) {
   :root {
-    --bg-base: Canvas;
-    --bg-layer: Canvas;
-    --bg-card: Canvas;
-    --bg-subtle: Canvas;
-    --bg-inset: Canvas;
-    --text: CanvasText;
-    --text-2: CanvasText;
-    --text-3: CanvasText;
-    --accent: Highlight;
-    --on-accent: HighlightText;
-    --stroke: ButtonText;
-    --stroke-strong: ButtonText;
-    --accent-soft: Canvas;
-    --success-soft: Canvas;
-    --warning-soft: Canvas;
-    --danger-soft: Canvas;
+    --paper: Canvas;
+    --plate: Canvas;
+    --sunken: Canvas;
+    --ink: CanvasText;
+    --ink-2: CanvasText;
+    --ink-3: CanvasText;
+    --on-ink: Canvas;
+    --rule: CanvasText;
+    --rule-strong: CanvasText;
+    --signal: Highlight;
+    --on-signal: HighlightText;
+    --night: Canvas;
+    --night-text: CanvasText;
+    --night-text-2: CanvasText;
+    --ok: CanvasText;
+    --ok-tint: Canvas;
+    --fail: CanvasText;
+    --fail-tint: Canvas;
+    --attention: CanvasText;
+    --attention-tint: Canvas;
   }
 
-  .nav-item.active::before {
-    background: Highlight;
-  }
-
-  .card,
-  .state,
-  .device-card,
-  .support-panel details,
-  .confirmation,
-  .support-dialog,
-  .search-field,
-  .source-field,
-  .version-rail {
-    border: 1px solid ButtonText;
+  :focus-visible {
+    outline: 3px solid Highlight;
     box-shadow: none;
+  }
+
+  .brand-mark {
+    forced-color-adjust: none;
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .nav-item.active {
+    text-decoration: underline;
+    text-decoration-thickness: 3px;
+  }
+
+  .version-to.changed,
+  .demo-stamp {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .request-track i::before,
+  .request-track i.current::after {
+    forced-color-adjust: none;
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+
+  .request-track i.done::before,
+  .request-track i.current::after {
+    background: Highlight;
   }
 
   .primary {
@@ -210,14 +238,10 @@
   }
 
   .status-pill,
-  .inline-error,
-  .unknown-action,
-  .sign-out-warning,
-  .support-status,
-  .support-warning,
-  .support-error,
-  .support-local-note {
-    border: 1px solid ButtonText;
+  .unknown-note,
+  .confirmation,
+  .support-panel {
+    border: 1px solid CanvasText;
     background: Canvas;
     color: CanvasText;
   }

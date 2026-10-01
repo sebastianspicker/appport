@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { copyForBrowser } from "./copy";
 import { DemoCatalog, type SourceFilter } from "./DemoCatalog";
 import { DemoConfirmationDialog } from "./DemoConfirmationDialog";
-import { DemoNavigation } from "./DemoNavigation";
+import { DemoHeader, DemoNavigation } from "./DemoNavigation";
 import { DemoSupport } from "./DemoSupport";
 import {
   demoApplications,
@@ -10,7 +10,6 @@ import {
   type DemoApplication,
   type View,
 } from "./data";
-import { Icon } from "./Icon";
 
 type PendingAction = {
   application: DemoApplication;
@@ -65,41 +64,48 @@ export function App() {
   return (
     <div className="demo-frame" data-demo-build="appport-synthetic-demo">
       <div className="demo-notice" role="status">
-        <Icon name="warning" size={16} />
+        <span className="demo-stamp" aria-hidden="true">
+          Demo
+        </span>
         <strong>{copy.demoNotice}</strong>
-        <span>{copy.disclosure}</span>
+        <span className="demo-disclosure">{copy.disclosure}</span>
       </div>
-      <main className="app-shell">
-        <DemoNavigation
-          copy={copy}
-          counts={counts}
-          view={view}
-          onViewChange={changeView}
-        />
-        <DemoCatalog
-          applications={visibleApplications}
-          copy={copy}
-          query={query}
-          source={source}
-          states={states}
-          supportPanel={<DemoSupport copy={copy} />}
-          view={view}
-          onConfirm={(application, opener) =>
-            setPending({ application, opener })
-          }
-          onQueryChange={setQuery}
-          onSourceChange={setSource}
-        />
-        {pending && (
-          <DemoConfirmationDialog
-            application={pending.application}
+      <div className="app-shell">
+        <DemoHeader copy={copy} />
+        <main className="content-pane">
+          <DemoCatalog
+            applications={visibleApplications}
             copy={copy}
-            onCancel={() => setPending(undefined)}
-            onConfirm={() => startAction(pending.application)}
-            returnFocus={pending.opener}
+            navigation={
+              <DemoNavigation
+                copy={copy}
+                counts={counts}
+                view={view}
+                onViewChange={changeView}
+              />
+            }
+            query={query}
+            source={source}
+            states={states}
+            supportPanel={<DemoSupport copy={copy} />}
+            view={view}
+            onConfirm={(application, opener) =>
+              setPending({ application, opener })
+            }
+            onQueryChange={setQuery}
+            onSourceChange={setSource}
           />
-        )}
-      </main>
+          {pending && (
+            <DemoConfirmationDialog
+              application={pending.application}
+              copy={copy}
+              onCancel={() => setPending(undefined)}
+              onConfirm={() => startAction(pending.application)}
+              returnFocus={pending.opener}
+            />
+          )}
+        </main>
+      </div>
     </div>
   );
 }

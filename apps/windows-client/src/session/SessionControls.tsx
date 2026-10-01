@@ -5,7 +5,6 @@ import type {
   ConnectRequest,
   NativeBootstrap,
 } from "../native-bridge/types";
-import { Icon } from "../ui/Icon";
 import { AccountDialog } from "./AccountDialog";
 import { ConnectForm } from "./ConnectForm";
 import { PortalButton } from "./PortalButton";
@@ -33,13 +32,21 @@ export function SessionControls({
   if (!bootstrap)
     return (
       <section className="connect-wrap" aria-labelledby="connect-title">
-        <div className="connect-panel">
+        <div className="connect-intro">
           <div className="connect-brand">
-            <span className="brand-mark">
-              <Icon name="mark" size={25} />
+            <span className="brand-mark" aria-hidden="true">
+              A
             </span>
             <strong>{copy.appTitle}</strong>
           </div>
+          <p className="connect-pitch">{copy.signInPitch}</p>
+          <ol className="connect-steps">
+            {copy.signInSteps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </div>
+        <div className="connect-panel">
           <h1 id="connect-title">{copy.signInTitle}</h1>
           <p>{copy.signInSummary}</p>
           <ConnectForm

@@ -9,8 +9,10 @@ export function DemoSupport({
     <section className="support-panel" id="support">
       <details>
         <summary className="support-summary">
-          <strong>{copy.support}</strong>
-          <span>{copy.supportText}</span>
+          <span>
+            <strong>{copy.support}</strong>
+            <span>{copy.supportText}</span>
+          </span>
         </summary>
         <dl className="support-details">
           <Detail label={copy.supportUser} value="Demo User" />
@@ -26,6 +28,7 @@ export function DemoSupport({
     </section>
   );
 }
+
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>

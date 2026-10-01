@@ -69,6 +69,13 @@ function PollingAction({
   locale: Locale;
 }) {
   const copy = copyFor(locale);
+  const reached = trackPosition(action.state);
+  const stages = [
+    copy.trackRequested,
+    copy.trackSent,
+    copy.trackVerifying,
+    copy.trackConfirmed,
+  ];
   return (
     <div className="action-polling status-line" role="status">
       <span className="status-pill working">
@@ -77,16 +84,34 @@ function PollingAction({
       </span>
       <span
         aria-label={`${copy.polling} ${application.name}`}
-        className="indeterminate-progress"
+        className="request-track"
+        aria-valuetext={stages[reached]}
         role="progressbar"
       >
-        <i />
+        {stages.map((step, index) => (
+          <i
+            key={step}
+            className={
+              index < reached ? "done" : index === reached ? "current" : ""
+            }
+          >
+            <span className="track-label">{step}</span>
+          </i>
+        ))}
       </span>
       <small>
         {copy.status}: <code>{action.id}</code>
       </small>
     </div>
   );
+}
+
+/** Places a polled state on the four-stage request track. */
+function trackPosition(state: AppAction["state"]) {
+  if (state === "queued") return 0;
+  if (state === "sent" || state === "deferred") return 1;
+  if (state === "verifying") return 2;
+  return 3;
 }
 
 function ResolvedAction({
@@ -159,17 +184,20 @@ function VersionRail({
     : `${copy.availableVersion}: ${target}.`;
   return (
     <div className="version-rail" aria-label={label}>
-      <span className="version-label">{copy.version}</span>
+      <span className="version-label plate-label">{copy.version}</span>
       {application.installedVersionLabel && (
         <>
-          <span>{application.installedVersionLabel}</span>
+          <span className="version-from">
+            {application.installedVersionLabel}
+          </span>
           <span aria-hidden="true">→</span>
         </>
       )}
-      <strong>{target}</strong>
-      {application.installedVersionLabel && (
-        <span className="status-pill success">{copy.updateAvailable}</span>
-      )}
+      <strong
+        className={`version-to${application.installedVersionLabel ? " changed" : ""}`}
+      >
+        {target}
+      </strong>
     </div>
   );
 }

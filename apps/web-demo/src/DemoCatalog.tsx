@@ -4,10 +4,12 @@ import type { copyForBrowser } from "./copy";
 import type { ActionState, DemoApplication, Source, View } from "./data";
 
 export type SourceFilter = "all" | Source;
+type Copy = ReturnType<typeof copyForBrowser>;
 
 export function DemoCatalog({
   applications,
   copy,
+  navigation,
   query,
   source,
   states,
@@ -18,7 +20,8 @@ export function DemoCatalog({
   onSourceChange,
 }: {
   applications: readonly DemoApplication[];
-  copy: ReturnType<typeof copyForBrowser>;
+  copy: Copy;
+  navigation: ReactNode;
   query: string;
   source: SourceFilter;
   states: Record<string, ActionState>;
@@ -29,60 +32,67 @@ export function DemoCatalog({
   onSourceChange: (source: SourceFilter) => void;
 }) {
   return (
-    <section className="content-pane">
+    <>
       <header className="content-header">
-        <div>
-          <h1>{view === "updates" ? copy.updates : copy.available}</h1>
-          <p>
-            {view === "updates" ? copy.updatesSummary : copy.availableSummary}
-          </p>
-        </div>
-        <section className="toolbar" aria-label={copy.toolbarLabel}>
-          <label className="search-field">
-            <Icon name="search" size={16} />
-            <input
-              aria-label={copy.searchPlaceholder}
-              onChange={(event) => onQueryChange(event.target.value)}
-              placeholder={copy.searchPlaceholder}
-              value={query}
-            />
-          </label>
-          <label className="source-field">
-            <span className="visually-hidden">{copy.source}</span>
-            <select
-              aria-label={copy.source}
-              onChange={(event) =>
-                onSourceChange(event.target.value as SourceFilter)
-              }
-              value={source}
-            >
-              <option value="all">{copy.allSources}</option>
-              <option value="winget">Winget</option>
-              <option value="windows_msi">MSI</option>
-              <option value="windows_exe">EXE</option>
-            </select>
-          </label>
-        </section>
+        <h1>{copy.managedSoftware}</h1>
+        <p>
+          {view === "updates" ? copy.updatesSummary : copy.availableSummary}
+        </p>
       </header>
+      <div className="catalog-taskbar">{navigation}</div>
+      <section className="toolbar" aria-label={copy.toolbarLabel}>
+        <label className="search-field">
+          <Icon name="search" size={18} />
+          <input
+            aria-label={copy.searchPlaceholder}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder={copy.searchPlaceholder}
+            value={query}
+          />
+        </label>
+        <label className="source-field">
+          <span className="visually-hidden">{copy.source}</span>
+          <select
+            aria-label={copy.source}
+            onChange={(event) =>
+              onSourceChange(event.target.value as SourceFilter)
+            }
+            value={source}
+          >
+            <option value="all">{copy.allSources}</option>
+            <option value="winget">Winget</option>
+            <option value="windows_msi">MSI</option>
+            <option value="windows_exe">EXE</option>
+          </select>
+        </label>
+      </section>
       <section className="catalog-results" aria-live="polite">
         {applications.length > 0 ? (
-          <div className="grid">
-            {applications.map((application) => (
-              <DemoCard
-                application={application}
-                copy={copy}
-                key={application.id}
-                onConfirm={onConfirm}
-                state={states[application.id] ?? "available"}
-              />
-            ))}
-          </div>
+          <>
+            <div className="catalog-columns" aria-hidden="true">
+              <span>{copy.application}</span>
+              <span>{copy.source}</span>
+              <span>{copy.version}</span>
+              <span />
+            </div>
+            <div className="catalog-list">
+              {applications.map((application) => (
+                <DemoCard
+                  application={application}
+                  copy={copy}
+                  key={application.id}
+                  onConfirm={onConfirm}
+                  state={states[application.id] ?? "available"}
+                />
+              ))}
+            </div>
+          </>
         ) : (
           <p className="empty-state">{copy.noResults}</p>
         )}
       </section>
       {supportPanel}
-    </section>
+    </>
   );
 }
 
@@ -93,7 +103,7 @@ function DemoCard({
   state,
 }: {
   application: DemoApplication;
-  copy: ReturnType<typeof copyForBrowser>;
+  copy: Copy;
   onConfirm: (application: DemoApplication, opener: HTMLButtonElement) => void;
   state: ActionState;
 }) {
@@ -101,39 +111,49 @@ function DemoCard({
     application.view === "updates" ? copy.update : copy.install;
   return (
     <article className="card">
-      <div className="card-heading">
+      <div className="app-identity">
         <span className="app-icon placeholder" aria-hidden="true">
           {application.name.slice(0, 1)}
         </span>
         <div className="card-identity">
           <h2>{application.name}</h2>
-          <p>
+          <p className="app-publisher">
             {application.publisher}
-            <span className="source-chip">
+            <span className="publisher-source">
+              {" · "}
               {sourceLabel(application.source)}
             </span>
           </p>
+          <p className="app-description">
+            {application.description[copy.locale]}
+          </p>
         </div>
       </div>
-      <p className="app-description">{application.description[copy.locale]}</p>
-      <div className="version-rail">
+      <span className="row-source">{sourceLabel(application.source)}</span>
+      <p className="row-version">
         {application.currentVersion ? (
           <>
-            <span>{copy.current}</span>
-            <strong>{application.currentVersion}</strong>
-            <span aria-hidden="true">→</span>
+            <span className="visually-hidden">{copy.current} </span>
+            <span className="version-from">{application.currentVersion}</span>
+            <span aria-hidden="true"> → </span>
           </>
         ) : null}
-        <span>{copy.target}</span>
-        <strong>{application.targetVersion}</strong>
+        <span className="visually-hidden">{copy.target} </span>
+        <span
+          className={`version-to${application.currentVersion ? " changed" : ""}`}
+        >
+          {application.targetVersion}
+        </span>
+      </p>
+      <div className="row-action">
+        <DemoAction
+          application={application}
+          copy={copy}
+          label={actionLabel}
+          onConfirm={onConfirm}
+          state={state}
+        />
       </div>
-      <DemoAction
-        application={application}
-        copy={copy}
-        label={actionLabel}
-        onConfirm={onConfirm}
-        state={state}
-      />
     </article>
   );
 }
@@ -146,7 +166,7 @@ function DemoAction({
   state,
 }: {
   application: DemoApplication;
-  copy: ReturnType<typeof copyForBrowser>;
+  copy: Copy;
   label: string;
   onConfirm: (application: DemoApplication, opener: HTMLButtonElement) => void;
   state: ActionState;
@@ -162,17 +182,23 @@ function DemoAction({
     );
   if (state === "failed")
     return (
-      <DemoActionButton
-        application={application}
-        label={copy.retry}
-        onConfirm={onConfirm}
-        tone="secondary"
-      />
+      <>
+        <span className="status-pill danger">
+          <Icon name="error" size={14} />
+          {copy.failed}
+        </span>
+        <DemoActionButton
+          application={application}
+          label={copy.retry}
+          onConfirm={onConfirm}
+          tone="secondary"
+        />
+      </>
     );
   if (state === "unknown")
     return (
       <div className="unknown-note" role="status">
-        <Icon name="warning" size={15} />
+        <Icon name="warning" size={16} />
         <span>{copy.locked}</span>
       </div>
     );
@@ -200,13 +226,14 @@ function DemoActionButton({
   );
 }
 
+/** The same four-stage request track as the Windows client, simulated. */
 function DemoProgress({
   application,
   copy,
   state,
 }: {
   application: DemoApplication;
-  copy: ReturnType<typeof copyForBrowser>;
+  copy: Copy;
   state: Exclude<ActionState, "available" | "failed" | "unknown">;
 }) {
   const working = state !== "succeeded";
@@ -214,8 +241,17 @@ function DemoProgress({
     state === "queued"
       ? copy.queued
       : state === "verifying"
-        ? copy.verifying
+        ? application.view === "updates"
+          ? copy.verifyingUpdate
+          : copy.verifying
         : copy.succeeded;
+  const reached = state === "queued" ? 0 : state === "verifying" ? 2 : 4;
+  const steps = [
+    copy.trackRequested,
+    copy.trackSent,
+    copy.trackVerifying,
+    copy.trackConfirmed,
+  ];
   return (
     <div className="action-progress-wrap">
       <span
@@ -224,15 +260,25 @@ function DemoProgress({
         {state === "succeeded" ? <Icon name="check" size={14} /> : null}
         {text}
       </span>
-      {working ? (
-        <div
-          aria-label={`${application.name}: ${text}`}
-          className="action-progress"
-          role="progressbar"
-        >
-          <span />
-        </div>
-      ) : null}
+      <span
+        className="request-track"
+        {...(working && {
+          "aria-label": `${application.name}: ${text}`,
+          "aria-valuetext": steps[reached],
+          role: "progressbar",
+        })}
+      >
+        {steps.map((step, index) => (
+          <i
+            key={step}
+            className={
+              index < reached ? "done" : index === reached ? "current" : ""
+            }
+          >
+            <span className="track-label">{step}</span>
+          </i>
+        ))}
+      </span>
     </div>
   );
 }

@@ -8,6 +8,28 @@
   }
 }
 
+@keyframes track-current {
+  from {
+    transform: scaleX(0.12);
+  }
+
+  to {
+    transform: scaleX(0.88);
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -17,104 +39,103 @@
     scroll-behavior: auto !important;
     transition: none !important;
   }
+
+  /* Without motion the current stage still reads as half-filled. */
+  .request-track i.current::after {
+    transform: scaleX(0.5);
+    animation: none;
+  }
 }
 
-@media (width <= 620px) {
+@media (width <= 720px) {
   .app-header {
-    gap: 12px;
-    padding: 16px;
     flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    padding-block: var(--space-3);
   }
 
-  .brand-lockup {
-    gap: 10px;
+  .device-plate {
+    order: 3;
+    flex-basis: 100%;
   }
 
+  .device-plate-name {
+    flex: 1;
+  }
+}
+
+@media (width <= 560px) {
   .brand-lockup strong {
-    font-size: 24px;
+    font-size: var(--type-lead);
   }
 
-  .brand-mark {
-    width: 36px;
-    height: 36px;
-    font-size: 25px;
+  .header-actions > button,
+  .session-controls .account-button {
+    padding: 0 var(--space-2);
   }
 
-  .header-actions {
-    gap: 8px;
-  }
-
-  .catalog-navigation {
-    gap: 20px;
-  }
-
-  .nav-item {
-    gap: 8px;
-    font-size: 18px;
+  .device-plate .plate-label {
+    display: none;
   }
 
   .support-device-section,
   .support-bundle-section {
-    padding: 18px;
+    padding: var(--space-5);
   }
 
   .support-section-header {
     align-items: flex-start;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
-  .support-details div {
-    grid-template-columns: 1fr;
-    gap: 5px;
+  .support-details {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .support-actions {
     flex-direction: column;
   }
 
-  .connect-wrap {
-    padding: 24px 16px;
-  }
-
-  .connect-panel {
-    padding: 26px 20px;
-  }
-
-  .connect-panel h1 {
-    font-size: 24px;
-  }
-
-  .account-dialog {
-    padding: 22px;
+  .account-dialog,
+  .confirmation,
+  .support-dialog {
+    padding: var(--space-5);
   }
 
   .dialog-actions {
     flex-wrap: wrap;
   }
+
+  .dialog-actions button {
+    flex: 1 1 100%;
+  }
 }
 
 @media (forced-colors: active) {
   :root {
-    --bg-base: Canvas;
-    --bg-layer: Canvas;
-    --bg-card: Canvas;
-    --bg-subtle: Canvas;
-    --bg-inset: Canvas;
-    --text: CanvasText;
-    --text-2: CanvasText;
-    --text-3: CanvasText;
-    --accent: Highlight;
-    --on-accent: HighlightText;
-    --stroke: ButtonText;
-    --stroke-strong: ButtonText;
-    --accent-soft: Canvas;
-    --success-soft: Canvas;
-    --warning-soft: Canvas;
-    --danger-soft: Canvas;
-    --highlight-yellow: Highlight;
-    --highlight-cyan: Highlight;
-    --highlight-magenta: CanvasText;
+    --paper: Canvas;
+    --plate: Canvas;
+    --sunken: Canvas;
+    --ink: CanvasText;
+    --ink-2: CanvasText;
+    --ink-3: CanvasText;
+    --on-ink: Canvas;
+    --rule: CanvasText;
+    --rule-strong: CanvasText;
+    --signal: Highlight;
+    --on-signal: HighlightText;
+    --ok: CanvasText;
+    --ok-tint: Canvas;
+    --fail: CanvasText;
+    --fail-tint: Canvas;
+    --attention: CanvasText;
+    --attention-tint: Canvas;
+  }
+
+  :focus-visible {
+    outline: 3px solid Highlight;
+    box-shadow: none;
   }
 
   .brand-mark {
@@ -126,18 +147,25 @@
 
   .nav-item.active {
     text-decoration: underline;
+    text-decoration-thickness: 3px;
   }
 
-  .catalog-list,
-  .state,
-  .support-device-section,
-  .support-bundle-section,
-  .account-dialog,
-  .support-dialog,
-  .search-field,
-  .source-field {
-    border: 1px solid ButtonText;
-    box-shadow: none;
+  .version-to.changed {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .request-track i::before,
+  .request-track i.current::after {
+    forced-color-adjust: none;
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+
+  .request-track i.done::before,
+  .request-track i.current::after {
+    background: Highlight;
   }
 
   .primary {
@@ -146,15 +174,30 @@
     color: HighlightText;
   }
 
+  .state,
+  .support-device-section,
+  .support-bundle-section,
+  .account-dialog,
+  .confirmation,
+  .support-dialog,
+  .search-field,
+  .source-field,
+  .task-body {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+
   .status-pill,
   .inline-error,
   .unknown-action,
   .sign-out-warning,
+  .task-warning,
+  .success-receipt,
   .support-status,
   .support-warning,
   .support-error,
   .support-local-note {
-    border: 1px solid ButtonText;
+    border: 1px solid CanvasText;
     background: Canvas;
     color: CanvasText;
   }
