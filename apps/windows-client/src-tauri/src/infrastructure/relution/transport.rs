@@ -1,6 +1,8 @@
 //! Fixed-origin Relution transport with bounded response reads.
 
-use super::{dto, response, RelutionClient, MAX_PAGES, PAGE_SIZE};
+use super::{
+    dto, response, RelutionClient, MAX_JSON_BYTES, MAX_PAGES, MAX_PAGINATED_JSON_BYTES, PAGE_SIZE,
+};
 use crate::domain::{
     catalog::{AppPermission, CatalogEntry, InstalledApp},
     device::AssignedDevice,
@@ -122,28 +124,31 @@ impl RelutionClient {
         q: Vec<(&str, &str)>,
     ) -> Result<Vec<T>, Error> {
         let mut out = vec![];
+        let mut budget = PaginationBudget::default();
         for n in 0..MAX_PAGES {
             let mut x = q.clone();
             x.extend([("getItems", "true"), ("getNonpagedCount", "true")]);
-            let page: dto::Page<T> = self
-                .get(
+            let page: response::DecodedResponse<dto::PaginatedPage<T>> = self
+                .request_decoded(
+                    Method::GET,
                     p,
                     t,
+                    None,
                     x.into_iter()
                         .chain([
                             ("limit", &PAGE_SIZE.to_string()[..]),
                             ("offset", &(n * PAGE_SIZE).to_string()[..]),
                         ])
                         .collect(),
+                    ResponsePolicy::paginated(budget.response_limit()?),
                 )
                 .await?;
-            if append_page(&mut out, page) {
-                return Ok(out);
+            match budget.append_page(&mut out, page)? {
+                true => return Ok(out),
+                false => continue,
             }
         }
-        Err(Error::server(
-            "Relution pagination exceeded the configured limit",
-        ))
+        pagination_limit_error()
     }
     pub(super) async fn post_pages<T: DeserializeOwned>(
         &self,
@@ -152,18 +157,26 @@ impl RelutionClient {
         b: serde_json::Value,
     ) -> Result<Vec<T>, Error> {
         let mut out = vec![];
+        let mut budget = PaginationBudget::default();
         for n in 0..MAX_PAGES {
             let mut b = b.clone();
             b["limit"] = json!(PAGE_SIZE);
             b["offset"] = json!(n * PAGE_SIZE);
-            let page: dto::Page<T> = self.post_once(p, t, b).await?;
-            if append_page(&mut out, page) {
+            let page: response::DecodedResponse<dto::PaginatedPage<T>> = self
+                .request_decoded(
+                    Method::POST,
+                    p,
+                    t,
+                    Some(b),
+                    vec![],
+                    ResponsePolicy::paginated(budget.response_limit()?),
+                )
+                .await?;
+            if budget.append_page(&mut out, page)? {
                 return Ok(out);
             }
         }
-        Err(Error::server(
-            "Relution pagination exceeded the configured limit",
-        ))
+        pagination_limit_error()
     }
     pub(super) async fn get<T: DeserializeOwned>(
         &self,
@@ -189,6 +202,20 @@ impl RelutionClient {
         b: Option<serde_json::Value>,
         q: Vec<(&str, &str)>,
     ) -> Result<T, Error> {
+        self.request_decoded(m, p, t, b, q, ResponsePolicy::standard())
+            .await
+            .map(|response| response.value)
+    }
+
+    async fn request_decoded<T: DeserializeOwned>(
+        &self,
+        m: Method,
+        p: &str,
+        t: &str,
+        b: Option<serde_json::Value>,
+        q: Vec<(&str, &str)>,
+        policy: ResponsePolicy,
+    ) -> Result<response::DecodedResponse<T>, Error> {
         let read = m == Method::GET;
         for attempt in 0..response::request_attempts(read) {
             match self
@@ -202,6 +229,7 @@ impl RelutionClient {
                     },
                     read,
                     attempt,
+                    policy,
                 )
                 .await
             {
@@ -217,11 +245,20 @@ impl RelutionClient {
         input: RequestInput<'_>,
         read: bool,
         attempt: u32,
-    ) -> response::RequestAttempt<T> {
+        policy: ResponsePolicy,
+    ) -> response::RequestAttempt<response::DecodedResponse<T>> {
         let diagnostic = response::ResponseDiagnostic::new(input.method.as_str(), input.path);
         match self.send_request(input).await {
             Ok(http_response) => {
-                response::response_attempt(http_response, read, attempt, &diagnostic).await
+                response::response_attempt(
+                    http_response,
+                    read,
+                    attempt,
+                    &diagnostic,
+                    policy.maximum,
+                    policy.log_success_body,
+                )
+                .await
             }
             Err(SendFailure::Network(error)) => response::network_attempt(error, read, attempt),
             Err(SendFailure::Path(error)) => response::RequestAttempt::Complete(Err(error)),
@@ -261,11 +298,44 @@ impl RelutionClient {
     }
 }
 
-fn append_page<T>(items: &mut Vec<T>, page: dto::Page<T>) -> bool {
-    let total = page.total;
-    let page_len = page.results.len();
-    items.extend(page.results);
-    page_len < PAGE_SIZE || total.is_some_and(|total| items.len() as u64 >= total)
+fn pagination_limit_error<T>() -> Result<Vec<T>, Error> {
+    Err(Error::server(
+        "Relution pagination exceeded the configured limit",
+    ))
+}
+
+#[derive(Default)]
+struct PaginationBudget {
+    encoded_bytes: usize,
+}
+
+impl PaginationBudget {
+    fn remaining(&self) -> Result<usize, Error> {
+        MAX_PAGINATED_JSON_BYTES
+            .checked_sub(self.encoded_bytes)
+            .filter(|remaining| *remaining > 0)
+            .ok_or_else(|| Error::server("Relution pagination exceeded the response byte limit"))
+    }
+
+    fn response_limit(&self) -> Result<usize, Error> {
+        Ok(MAX_JSON_BYTES.min(self.remaining()?))
+    }
+
+    fn append_page<T>(
+        &mut self,
+        items: &mut Vec<T>,
+        response: response::DecodedResponse<dto::PaginatedPage<T>>,
+    ) -> Result<bool, Error> {
+        self.encoded_bytes = self
+            .encoded_bytes
+            .checked_add(response.encoded_bytes)
+            .filter(|total| *total <= MAX_PAGINATED_JSON_BYTES)
+            .ok_or_else(|| Error::server("Relution pagination exceeded the response byte limit"))?;
+        let total = response.value.total;
+        let page_len = response.value.results.len();
+        items.extend(response.value.results);
+        Ok(page_len < PAGE_SIZE || total.is_some_and(|total| items.len() as u64 >= total))
+    }
 }
 
 pub(super) fn encode(value: &str) -> String {
@@ -296,6 +366,28 @@ struct RequestInput<'a> {
     query: &'a [(&'a str, &'a str)],
 }
 
+#[derive(Clone, Copy)]
+struct ResponsePolicy {
+    maximum: usize,
+    log_success_body: bool,
+}
+
+impl ResponsePolicy {
+    const fn standard() -> Self {
+        Self {
+            maximum: MAX_JSON_BYTES,
+            log_success_body: true,
+        }
+    }
+
+    const fn paginated(maximum: usize) -> Self {
+        Self {
+            maximum,
+            log_success_body: false,
+        }
+    }
+}
+
 enum SendFailure {
     Network(reqwest::Error),
     Path(Error),
@@ -307,4 +399,87 @@ fn append_query(url: &mut Url, query: &[(&str, &str)], tenant: &str) {
         pairs.append_pair(key, value);
     }
     pairs.append_pair("tenantOrganizationUuid", tenant);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        dto, response::DecodedResponse, Error, PaginationBudget, MAX_JSON_BYTES,
+        MAX_PAGINATED_JSON_BYTES, PAGE_SIZE,
+    };
+
+    fn page(
+        start: usize,
+        count: usize,
+        total: Option<u64>,
+        encoded_bytes: usize,
+    ) -> DecodedResponse<dto::PaginatedPage<usize>> {
+        DecodedResponse {
+            value: dto::PaginatedPage {
+                results: (start..start + count).collect(),
+                total,
+            },
+            encoded_bytes,
+        }
+    }
+
+    #[test]
+    fn pagination_rejects_aggregate_bytes_before_retaining_the_page() {
+        let mut budget = PaginationBudget::default();
+        let mut items = Vec::new();
+        assert!(!budget
+            .append_page(
+                &mut items,
+                page(
+                    0,
+                    PAGE_SIZE,
+                    Some((PAGE_SIZE * 2) as u64),
+                    MAX_PAGINATED_JSON_BYTES - 1
+                ),
+            )
+            .unwrap());
+
+        assert_eq!(
+            budget
+                .append_page(
+                    &mut items,
+                    page(PAGE_SIZE, PAGE_SIZE, Some((PAGE_SIZE * 2) as u64), 2),
+                )
+                .unwrap_err(),
+            Error::server("Relution pagination exceeded the response byte limit")
+        );
+        assert_eq!(items.len(), PAGE_SIZE);
+    }
+
+    #[test]
+    fn pagination_keeps_the_per_response_limit_within_the_aggregate_budget() {
+        assert_eq!(
+            PaginationBudget::default().response_limit().unwrap(),
+            MAX_JSON_BYTES
+        );
+        assert_eq!(
+            PaginationBudget {
+                encoded_bytes: MAX_PAGINATED_JSON_BYTES - 1,
+            }
+            .response_limit()
+            .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn pagination_preserves_one_hundred_full_pages_and_ten_thousand_items() {
+        let mut budget = PaginationBudget::default();
+        let mut items = Vec::new();
+        for page_number in 0..100 {
+            let complete = budget
+                .append_page(
+                    &mut items,
+                    page(page_number * PAGE_SIZE, PAGE_SIZE, Some(10_000), 1),
+                )
+                .unwrap();
+            assert_eq!(complete, page_number == 99);
+        }
+        assert_eq!(items, (0..10_000).collect::<Vec<_>>());
+    }
 }

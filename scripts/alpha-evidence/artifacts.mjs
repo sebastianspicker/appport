@@ -4,6 +4,9 @@ import process from "node:process";
 import { hash, readRegularFile } from "./io.mjs";
 
 const msiMagic = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+const authenticodeTargetEnvironment = "APPPORT_AUTHENTICODE_TARGET";
+const authenticodeCommand =
+  "(Get-AuthenticodeSignature -LiteralPath $env:APPPORT_AUTHENTICODE_TARGET).Status.ToString().ToLowerInvariant()";
 
 export function inspectMsiArtifact(path, forbiddenMarkers) {
   if (!path) return null;
@@ -78,20 +81,27 @@ function hasWindowsExecutableMagic(contents) {
 }
 
 function authenticodeStatus(path) {
-  const escaped = path.replaceAll("'", "''");
+  const invocation = authenticodeInvocation(path);
   const result = process
     .getBuiltinModule("node:child_process")
-    .spawnSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        `(Get-AuthenticodeSignature -LiteralPath '${escaped}').Status.ToString().ToLowerInvariant()`,
-      ],
-      { encoding: "utf8" },
-    );
+    .spawnSync(invocation.executable, invocation.arguments, invocation.options);
   if (result.status !== 0) return "unknown";
   const status = result.stdout.trim().toLowerCase();
   return status === "notsigned" ? "not_signed" : status || "unknown";
+}
+
+export function authenticodeInvocation(path) {
+  return {
+    executable: "powershell.exe",
+    arguments: [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      authenticodeCommand,
+    ],
+    options: {
+      encoding: "utf8",
+      env: { ...process.env, [authenticodeTargetEnvironment]: path },
+    },
+  };
 }

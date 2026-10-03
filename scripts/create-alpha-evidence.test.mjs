@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { parseArguments } from "./create-alpha-evidence.mjs";
 import {
+  authenticodeInvocation,
   inspectMsiArtifact,
   inspectQualificationUtility,
 } from "./alpha-evidence/artifacts.mjs";
@@ -48,4 +49,22 @@ test("artifact inspection distinguishes MSI and EXE signatures", () => {
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("Authenticode passes an untrusted artifact path as data", () => {
+  const firstPath = String.raw`C:\release\candidate’; Write-Output injected; '.msi`;
+  const secondPath = String.raw`C:\release\$(Write-Output injected)[x].msi`;
+  const first = authenticodeInvocation(firstPath);
+  const second = authenticodeInvocation(secondPath);
+
+  assert.equal(first.executable, "powershell.exe");
+  assert.deepEqual(first.arguments, second.arguments);
+  assert.equal(first.options.env.APPPORT_AUTHENTICODE_TARGET, firstPath);
+  assert.equal(second.options.env.APPPORT_AUTHENTICODE_TARGET, secondPath);
+  assert.equal(first.arguments.join(" ").includes(firstPath), false);
+  assert.equal(second.arguments.join(" ").includes(secondPath), false);
+  assert.match(
+    first.arguments.at(-1),
+    /-LiteralPath \$env:APPPORT_AUTHENTICODE_TARGET/,
+  );
 });

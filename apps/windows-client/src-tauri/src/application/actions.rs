@@ -28,6 +28,14 @@ pub struct ActionService {
 
 pub struct PreparedAction(ActionRequest);
 
+pub struct ExpectedActionTarget<'a> {
+    pub device_id: &'a str,
+    pub app_id: &'a str,
+    pub version_id: &'a str,
+    pub version_label: &'a str,
+    pub intent: crate::domain::action::Intent,
+}
+
 impl ActionService {
     pub fn new(client: Arc<RelutionClient>, catalog: Arc<CatalogService>) -> Self {
         let journal = catalog.journal();
@@ -51,12 +59,37 @@ impl ActionService {
         self.submit_action(token, prepared).await
     }
 
+    pub async fn request_action_for_target(
+        &self,
+        token: &str,
+        user_uuid: &str,
+        target: ExpectedActionTarget<'_>,
+        locale: &str,
+    ) -> Result<AppAction, Error> {
+        let prepared = self
+            .prepare_action_with_target(token, user_uuid, target.app_id, locale, Some(&target))
+            .await?;
+        self.submit_action(token, prepared).await
+    }
+
     pub async fn prepare_action(
         &self,
         token: &str,
         user_uuid: &str,
         app_id: &str,
         locale: &str,
+    ) -> Result<PreparedAction, Error> {
+        self.prepare_action_with_target(token, user_uuid, app_id, locale, None)
+            .await
+    }
+
+    async fn prepare_action_with_target(
+        &self,
+        token: &str,
+        user_uuid: &str,
+        app_id: &str,
+        locale: &str,
+        expected: Option<&ExpectedActionTarget<'_>>,
     ) -> Result<PreparedAction, Error> {
         if !self.client.writes_enabled() {
             return Err(Error::server("Relution writes are disabled for this build"));
@@ -68,6 +101,17 @@ impl ActionService {
             .action_target(token, user_uuid, app_id, locale)
             .await?;
         let intent = request_intent(&app)?;
+        if expected.is_some_and(|target| {
+            device.id != target.device_id
+                || app.id != target.app_id
+                || app.released_version_id != target.version_id
+                || app.released_version_label.as_deref() != Some(target.version_label)
+                || intent != target.intent
+        }) {
+            return Err(Error::authorization(
+                "fresh action target did not match the approved qualification fixture",
+            ));
+        }
         let remote_actions = self.client.device_actions(token, &device.id).await?;
         if has_blocking_remote_action(&remote_actions, &app) {
             return Err(Error::server(

@@ -1,4 +1,7 @@
-use super::{has_blocking_remote_action, Action, ActionService, AvailableApp, RelutionClient};
+use super::{
+    has_blocking_remote_action, Action, ActionService, AvailableApp, ExpectedActionTarget,
+    RelutionClient,
+};
 use crate::error::Error;
 use crate::{
     application::{
@@ -69,6 +72,20 @@ fn one_request_server(
     })
 }
 
+fn assert_no_action_dispatch(
+    requests: Arc<AtomicUsize>,
+    deployments: Arc<AtomicUsize>,
+    handle: std::thread::JoinHandle<()>,
+    expected_requests: usize,
+) {
+    handle.join().expect("mock server");
+    assert_eq!(requests.load(Ordering::SeqCst), expected_requests);
+    assert_eq!(deployments.load(Ordering::SeqCst), 0);
+    assert!(run(journal::ActionJournal::new().active_actions("device"))
+        .expect("journal read")
+        .is_empty());
+}
+
 #[test]
 fn active_and_unmapped_remote_actions_block_a_new_reservation() {
     let action = |id: &str, state: &str| RemoteAction {
@@ -100,8 +117,11 @@ fn active_and_unmapped_remote_actions_block_a_new_reservation() {
 fn reserved_submission_is_not_retried_and_ambiguous_delivery_stays_unknown() {
     let _environment = journal_environment();
     let _sandbox = JournalSandbox::new();
-    let (base, requests, handle) =
-        one_request_server("/content/apps/app/versions/version/deployments", 503, "{}");
+    let (base, requests, handle) = one_request_server(
+        "/content/apps/app/versions/version/deployments",
+        200,
+        r#"{"results":[{"successful":true},{"successful":true}]}"#,
+    );
     let client = client(base, true);
     let service = service(Arc::clone(&client));
     run(journal::ActionJournal::new().reserve(Reservation {
@@ -129,6 +149,87 @@ fn reserved_submission_is_not_retried_and_ambiguous_delivery_stays_unknown() {
         .expect("saved action");
     assert_eq!(action.state, State::Unknown);
     assert_eq!(action.error_code.as_deref(), Some("SUBMISSION_UNCERTAIN"));
+    assert_eq!(
+        run(journal::ActionJournal::new().reserve(Reservation {
+            id: "second-action",
+            tenant: "tenant",
+            device: "device",
+            app: "app",
+            version: "version",
+            package: Some("app.package"),
+            intent: crate::domain::action::Intent::Install,
+            baseline: "",
+        }))
+        .unwrap_err(),
+        Error::server("an active application action already exists")
+    );
+}
+
+fn assert_approved_target_mismatch_is_rejected(target: ExpectedActionTarget<'_>) {
+    let _environment = journal_environment();
+    let _sandbox = JournalSandbox::new();
+    let deployments = Arc::new(AtomicUsize::new(0));
+    let deployment_requests = Arc::clone(&deployments);
+    let (base, requests, handle) = requests_server(5, move |request| {
+        if request.contains("/deployments") {
+            deployment_requests.fetch_add(1, Ordering::SeqCst);
+        }
+        catalog_response(request, DIRECT_PERMISSION).expect("fresh action target request")
+    });
+    let (service, _) = service_with_test_evidence(client(base, true));
+
+    assert_eq!(
+        run(service.request_action_for_target("token", "user", target, "en-US")).unwrap_err(),
+        Error::authorization(
+            "fresh action target did not match the approved qualification fixture"
+        )
+    );
+
+    assert_no_action_dispatch(requests, deployments, handle, 5);
+}
+
+#[test]
+fn approved_action_rejects_a_fresh_device_change_before_reservation() {
+    assert_approved_target_mismatch_is_rejected(ExpectedActionTarget {
+        device_id: "other-device",
+        app_id: "app",
+        version_id: "version",
+        version_label: "2",
+        intent: crate::domain::action::Intent::Install,
+    });
+}
+
+#[test]
+fn approved_action_rejects_a_fresh_release_change_before_reservation() {
+    assert_approved_target_mismatch_is_rejected(ExpectedActionTarget {
+        device_id: "device",
+        app_id: "app",
+        version_id: "other-version",
+        version_label: "2",
+        intent: crate::domain::action::Intent::Install,
+    });
+}
+
+#[test]
+fn approved_action_rejects_a_fresh_release_label_change_before_reservation() {
+    assert_approved_target_mismatch_is_rejected(ExpectedActionTarget {
+        device_id: "device",
+        app_id: "app",
+        version_id: "version",
+        version_label: "3",
+        intent: crate::domain::action::Intent::Install,
+    });
+}
+
+#[test]
+fn approved_action_rejects_a_fresh_intent_change_before_reservation() {
+    assert_approved_target_mismatch_is_rejected(ExpectedActionTarget {
+        device_id: "device",
+        app_id: "app",
+        version_id: "version",
+        version_label: "2",
+        intent: crate::domain::action::Intent::Update,
+    });
 }
 
 #[test]
@@ -316,12 +417,7 @@ fn request_action_denies_unauthorized_apps_before_reservation_or_deployment() {
         Err(error) if error == Error::server("application is not permitted")
     ));
 
-    handle.join().expect("mock server");
-    assert_eq!(requests.load(Ordering::SeqCst), 5);
-    assert_eq!(deployments.load(Ordering::SeqCst), 0);
-    assert!(run(journal::ActionJournal::new().active_actions("device"))
-        .expect("journal read")
-        .is_empty());
+    assert_no_action_dispatch(requests, deployments, handle, 5);
 }
 
 #[test]
@@ -350,10 +446,5 @@ fn request_action_blocks_matching_remote_actions_before_reservation_or_deploymen
         Err(error) if error == Error::server("a matching Relution action is already active")
     ));
 
-    handle.join().expect("mock server");
-    assert_eq!(requests.load(Ordering::SeqCst), 6);
-    assert_eq!(deployments.load(Ordering::SeqCst), 0);
-    assert!(run(journal::ActionJournal::new().active_actions("device"))
-        .expect("journal read")
-        .is_empty());
+    assert_no_action_dispatch(requests, deployments, handle, 6);
 }

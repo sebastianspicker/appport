@@ -6,13 +6,66 @@ use crate::domain::{
     catalog::{AppPermission, CatalogEntry, InstalledApp, PermissionSubject},
     device::AssignedDevice,
 };
-use serde::Deserialize;
+use serde::{
+    de::{IgnoredAny, SeqAccess, Visitor},
+    Deserialize, Deserializer,
+};
+use std::{fmt, marker::PhantomData};
 #[derive(Deserialize)]
 pub struct Page<T> {
     #[serde(alias = "items")]
     pub results: Vec<T>,
     #[serde(default, alias = "nonpagedCount")]
     pub total: Option<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(bound(deserialize = "T: Deserialize<'de>"))]
+pub struct PaginatedPage<T> {
+    #[serde(alias = "items", deserialize_with = "deserialize_page_results")]
+    pub results: Vec<T>,
+    #[serde(default, alias = "nonpagedCount")]
+    pub total: Option<u64>,
+}
+
+fn deserialize_page_results<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    deserializer.deserialize_seq(PageResultsVisitor(PhantomData))
+}
+
+struct PageResultsVisitor<T>(PhantomData<fn() -> T>);
+
+impl<'de, T> Visitor<'de> for PageResultsVisitor<T>
+where
+    T: Deserialize<'de>,
+{
+    type Value = Vec<T>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "no more than {} page results", super::PAGE_SIZE)
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut results = Vec::with_capacity(super::PAGE_SIZE);
+        while results.len() < super::PAGE_SIZE {
+            match sequence.next_element()? {
+                Some(result) => results.push(result),
+                None => return Ok(results),
+            }
+        }
+        if sequence.next_element::<IgnoredAny>()?.is_some() {
+            return Err(serde::de::Error::custom(
+                "Relution page exceeded the configured item limit",
+            ));
+        }
+        Ok(results)
+    }
 }
 #[derive(Deserialize)]
 pub struct User {
@@ -149,11 +202,15 @@ pub struct Deployment {
 }
 
 impl Page<Deployment> {
-    pub(crate) fn into_deployment_response(self) -> DeploymentResponse {
-        if self.results.len() == 1 && self.results[0].successful {
-            DeploymentResponse::Accepted
-        } else {
-            DeploymentResponse::NotAccepted
+    pub(crate) fn into_deployment_response(
+        self,
+    ) -> Result<DeploymentResponse, crate::error::Error> {
+        match self.results.as_slice() {
+            [Deployment { successful: true }] => Ok(DeploymentResponse::Accepted),
+            [Deployment { successful: false }] => Ok(DeploymentResponse::NotAccepted),
+            _ => Err(crate::error::Error::server(
+                "Relution returned an ambiguous deployment response",
+            )),
         }
     }
 }
@@ -221,7 +278,8 @@ impl DeviceAction {
 #[cfg(test)]
 mod tests {
     use super::{
-        Catalog, Deployment, Device, DeviceAction, Group, Inventory, Page, Permission, User,
+        Catalog, Deployment, Device, DeviceAction, Group, Inventory, Page, PaginatedPage,
+        Permission, User,
     };
     use crate::domain::{
         action::{DeploymentResponse, RemoteAction, RemoteActionDetails},
@@ -392,9 +450,43 @@ mod tests {
             }
             .into_deployment_response()
         };
-        assert_eq!(response(&[true]), DeploymentResponse::Accepted);
-        assert_eq!(response(&[false]), DeploymentResponse::NotAccepted);
-        assert_eq!(response(&[true, true]), DeploymentResponse::NotAccepted);
-        assert_eq!(response(&[]), DeploymentResponse::NotAccepted);
+        assert_eq!(response(&[true]).unwrap(), DeploymentResponse::Accepted);
+        assert_eq!(response(&[false]).unwrap(), DeploymentResponse::NotAccepted);
+        for ambiguous in [
+            &[][..],
+            &[true, true][..],
+            &[true, false][..],
+            &[false, true][..],
+            &[false, false][..],
+        ] {
+            assert_eq!(
+                response(ambiguous).unwrap_err(),
+                crate::error::Error::server("Relution returned an ambiguous deployment response")
+            );
+        }
+    }
+
+    #[test]
+    fn paginated_results_accept_one_hundred_items_and_reject_the_next() {
+        for field in ["results", "items"] {
+            let accepted = format!(
+                r#"{{"{field}":[{}]}}"#,
+                std::iter::repeat_n("{}", 100).collect::<Vec<_>>().join(",")
+            );
+            let page: PaginatedPage<serde_json::Value> =
+                serde_json::from_str(&accepted).expect("bounded page");
+            assert_eq!(page.results.len(), 100);
+
+            let rejected = format!(
+                r#"{{"{field}":[{}]}}"#,
+                std::iter::repeat_n("{}", 101).collect::<Vec<_>>().join(",")
+            );
+            let error = serde_json::from_str::<PaginatedPage<serde_json::Value>>(&rejected)
+                .err()
+                .expect("oversized page must fail");
+            assert!(error
+                .to_string()
+                .contains("Relution page exceeded the configured item limit"));
+        }
     }
 }

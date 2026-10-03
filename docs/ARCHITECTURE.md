@@ -169,9 +169,10 @@ The action service follows this sequence:
 5. Follow the Relution action and verify the exact package identity and target
    version in inventory before returning success.
 
-If the POST fails, only session-expired and device-match failures are recorded as a
-rejected submission. Every other failure, and any missing, ambiguous, or timed-out
-outcome, ends in the non-retryable `unknown` state and is never resent.
+If the POST fails, only session-expired and device-match failures and an explicit
+single-result rejection are recorded as a rejected submission. Every other failure,
+including a successful HTTP response with an ambiguous result count, and any missing
+or timed-out outcome, ends in the non-retryable `unknown` state and is never resent.
 The journal's internal `Reserved` state is shown in the UI as `queued`.
 
 The catalog and action services share a process-level SQLite journal in WAL mode.
@@ -227,8 +228,10 @@ utility, embedded configuration, and source revision by digest or fingerprint.
 - Fixed current-user directories hold bounded logs and support bundles. Windows ACL
   checks and reparse-point detection protect access to these files.
 
-HTTP response bodies, page counts, and icons all have explicit limits. The transport
-rejects redirects and request paths that would escape the embedded Relution origin.
+HTTP response bodies, page counts, page item counts, aggregate paginated response
+bytes, and icons all have explicit limits. A paginated read accepts at most 100 items
+per page, 100 pages, and 64 MiB of JSON across the request. The transport rejects
+redirects and request paths that would escape the embedded Relution origin.
 
 ## Build and packaging
 

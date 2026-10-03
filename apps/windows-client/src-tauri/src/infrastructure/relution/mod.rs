@@ -13,6 +13,7 @@ mod response;
 use transport::{encode, network, status};
 
 const MAX_JSON_BYTES: usize = 10 * 1024 * 1024;
+const MAX_PAGINATED_JSON_BYTES: usize = 64 * 1024 * 1024;
 const PAGE_SIZE: usize = 100;
 const MAX_PAGES: usize = 100;
 

@@ -154,7 +154,7 @@ fn finish_measurement(
     request_count: usize,
     row_ids: Vec<String>,
 ) -> Measurement {
-    let requests_per_refresh = app_count + 3;
+    let requests_per_refresh = app_count + app_count.div_ceil(100) + 2;
     assert_eq!(
         request_count,
         requests_per_refresh * (WARMUPS + REPETITIONS)
@@ -174,11 +174,27 @@ fn benchmark_server(
     Arc<std::sync::atomic::AtomicUsize>,
     thread::JoinHandle<()>,
 ) {
-    let body = Arc::new(catalog_body(app_count));
-    let expected = (app_count + 3) * (WARMUPS + REPETITIONS);
+    let bodies = Arc::new(
+        (0..app_count.div_ceil(100))
+            .map(|page| catalog_page_body(app_count, page * 100))
+            .collect::<Vec<_>>(),
+    );
+    let expected = (app_count + app_count.div_ceil(100) + 2) * (WARMUPS + REPETITIONS);
     concurrent_server(expected, move |request| {
         if request.contains("/content/apps/baseInfo") {
-            return Response::json(200, body.as_str());
+            let offset = request
+                .split("offset=")
+                .nth(1)
+                .and_then(|value| {
+                    value
+                        .chars()
+                        .take_while(char::is_ascii_digit)
+                        .collect::<String>()
+                        .parse::<usize>()
+                        .ok()
+                })
+                .expect("catalog offset");
+            return Response::json(200, bodies[offset / 100].as_str());
         }
         if request.contains("/security/users/user/groups") {
             return Response::json(200, r#"{"groups":[]}"#);
@@ -195,8 +211,8 @@ fn benchmark_server(
     })
 }
 
-fn catalog_body(app_count: usize) -> String {
-    let entries = (0..app_count)
+fn catalog_page_body(app_count: usize, offset: usize) -> String {
+    let entries = (offset..(offset + 100).min(app_count))
         .map(|index| (format!("app-{index:04}"), "1".to_owned()))
         .collect::<Vec<_>>();
     let entries = entries

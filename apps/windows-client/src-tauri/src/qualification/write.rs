@@ -4,9 +4,12 @@ use super::{
     ActionFixture, QualificationCheck, QualificationCredentials, QualificationPlan,
 };
 use crate::{
-    application::{actions::ActionService, catalog::CatalogService},
+    application::{
+        actions::{ActionService, ExpectedActionTarget},
+        catalog::CatalogService,
+    },
     domain::{
-        action::{ActionState, AppAction, Intent},
+        action::{ActionState, Intent},
         catalog::{AppInstallState, AvailableApp, CatalogView},
     },
     error::{Error, ErrorKind},
@@ -56,6 +59,7 @@ pub(super) async fn run_write_checks(
         actions,
         credentials,
         user_uuid: &prerequisites.user_b_uuid,
+        device_id: &plan.disposable_device_uuid,
         locale: &locale,
         checks,
     };
@@ -247,7 +251,7 @@ async fn cross_user_action_is_denied(
     checks: &mut Vec<QualificationCheck>,
 ) -> bool {
     let result = actions
-        .request_action(
+        .prepare_action(
             &credentials.user_a_token,
             &prerequisites.user_a_uuid,
             native_app_uuid,
@@ -260,7 +264,7 @@ async fn cross_user_action_is_denied(
     denied
 }
 
-fn cross_user_action_check(result: Result<AppAction, Error>) -> QualificationCheck {
+fn cross_user_action_check<T>(result: Result<T, Error>) -> QualificationCheck {
     if matches!(result, Err(error) if error.kind() == ErrorKind::DeviceMatchFailed) {
         passed(
             "cross_user_action",
@@ -274,25 +278,11 @@ fn cross_user_action_check(result: Result<AppAction, Error>) -> QualificationChe
     }
 }
 
-#[cfg(test)]
-fn successful_action() -> AppAction {
-    AppAction {
-        id: "action".into(),
-        device_id: "device".into(),
-        app_id: "app".into(),
-        intent: Intent::Install,
-        state: ActionState::Queued,
-        error_code: None,
-        error_message: None,
-        created_at: "0".into(),
-        updated_at: "0".into(),
-    }
-}
-
 struct ActionQualification<'a> {
     actions: &'a ActionService,
     credentials: &'a QualificationCredentials,
     user_uuid: &'a str,
+    device_id: &'a str,
     locale: &'a str,
     checks: &'a mut Vec<QualificationCheck>,
 }
@@ -306,10 +296,16 @@ impl ActionQualification<'_> {
     ) {
         let action = match self
             .actions
-            .request_action(
+            .request_action_for_target(
                 &self.credentials.user_b_token,
                 self.user_uuid,
-                &fixture.application_uuid,
+                ExpectedActionTarget {
+                    device_id: self.device_id,
+                    app_id: &fixture.application_uuid,
+                    version_id: &fixture.version_uuid,
+                    version_label: &fixture.expected_version,
+                    intent: expected_intent,
+                },
                 self.locale,
             )
             .await
@@ -398,9 +394,7 @@ fn fixture_visible(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        catalog_result, cross_user_action_check, successful_action, Error, WriteCatalogFailure,
-    };
+    use super::{catalog_result, cross_user_action_check, Error, WriteCatalogFailure};
 
     #[test]
     fn apps_lookup_failure_is_redacted_and_blocks_catalog_use() {
@@ -437,11 +431,11 @@ mod tests {
     #[test]
     fn cross_user_action_passes_only_for_the_observed_device_denial() {
         let passed_check =
-            cross_user_action_check(Err(Error::device_match_failed("device not assigned")));
+            cross_user_action_check::<()>(Err(Error::device_match_failed("device not assigned")));
         assert_eq!(passed_check.status, super::super::CheckStatus::Passed);
 
         for result in [
-            Ok(successful_action()),
+            Ok(()),
             Err(Error::server("action submission failed")),
             Err(Error::session_expired("user A session expired")),
         ] {

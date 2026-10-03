@@ -1,6 +1,6 @@
 //! Bounded response decoding, diagnostic capture, and read-only retry policy.
 
-use super::{transport, MAX_JSON_BYTES};
+use super::transport;
 use crate::error::Error;
 use crate::infrastructure::logging;
 use serde::de::DeserializeOwned;
@@ -9,6 +9,11 @@ use std::time::Duration;
 pub(super) enum RequestAttempt<T> {
     Complete(Result<T, Error>),
     Retry,
+}
+
+pub(super) struct DecodedResponse<T> {
+    pub value: T,
+    pub encoded_bytes: usize,
 }
 
 pub(super) struct ResponseDiagnostic<'a> {
@@ -38,12 +43,22 @@ pub(super) async fn response_attempt<T: DeserializeOwned>(
     read: bool,
     attempt: u32,
     diagnostic: &ResponseDiagnostic<'_>,
-) -> RequestAttempt<T> {
+    maximum: usize,
+    log_success_body: bool,
+) -> RequestAttempt<DecodedResponse<T>> {
     if logging::relution_diagnostics_enabled() {
-        return diagnostic_response_attempt(response, read, attempt, diagnostic).await;
+        return diagnostic_response_attempt(
+            response,
+            read,
+            attempt,
+            diagnostic,
+            maximum,
+            log_success_body,
+        )
+        .await;
     }
     if response.status().is_success() {
-        return RequestAttempt::Complete(decode_response(response).await);
+        return RequestAttempt::Complete(decode_response(response, maximum).await);
     }
     status_response_attempt(
         response.status(),
@@ -56,15 +71,24 @@ async fn diagnostic_response_attempt<T: DeserializeOwned>(
     read: bool,
     attempt: u32,
     diagnostic: &ResponseDiagnostic<'_>,
-) -> RequestAttempt<T> {
+    maximum: usize,
+    log_success_body: bool,
+) -> RequestAttempt<DecodedResponse<T>> {
     let status_code = response.status();
-    if status_code.is_success() && response.content_length().unwrap_or(0) > MAX_JSON_BYTES as u64 {
+    if status_code.is_success() && response.content_length().unwrap_or(0) > maximum as u64 {
         return diagnostic_success_too_large(status_code, attempt, diagnostic);
     }
-    match read_response_for_diagnostics(response, diagnostic_body_limit(status_code)).await {
-        DiagnosticBody::Complete(bytes) => {
-            diagnostic_complete_response(status_code, read, attempt, diagnostic, &bytes)
-        }
+    match read_response_for_diagnostics(response, diagnostic_body_limit(status_code, maximum)).await
+    {
+        DiagnosticBody::Complete(bytes) => diagnostic_complete_response(
+            status_code,
+            read,
+            attempt,
+            diagnostic,
+            &bytes,
+            maximum,
+            log_success_body,
+        ),
         DiagnosticBody::TooLarge if status_code.is_success() => {
             diagnostic_success_too_large(status_code, attempt, diagnostic)
         }
@@ -85,9 +109,9 @@ async fn diagnostic_response_attempt<T: DeserializeOwned>(
     }
 }
 
-fn diagnostic_body_limit(status_code: reqwest::StatusCode) -> usize {
+fn diagnostic_body_limit(status_code: reqwest::StatusCode, maximum: usize) -> usize {
     if status_code.is_success() {
-        MAX_JSON_BYTES
+        maximum
     } else {
         logging::MAX_RELUTION_DIAGNOSTIC_BODY_BYTES
     }
@@ -99,10 +123,25 @@ fn diagnostic_complete_response<T: DeserializeOwned>(
     attempt: u32,
     diagnostic: &ResponseDiagnostic<'_>,
     bytes: &[u8],
-) -> RequestAttempt<T> {
+    maximum: usize,
+    log_success_body: bool,
+) -> RequestAttempt<DecodedResponse<T>> {
     if status_code.is_success() {
-        write_diagnostic_response(diagnostic, status_code, attempt, "complete", bytes);
-        return RequestAttempt::Complete(decode_response_bytes(bytes));
+        let decoded = decode_response_bytes(bytes, maximum);
+        write_diagnostic_response(
+            diagnostic,
+            status_code,
+            attempt,
+            "complete",
+            if decoded.is_ok() && log_success_body {
+                bytes
+            } else if decoded.is_ok() {
+                b"[paginated response body omitted after bounded decoding]"
+            } else {
+                b"[response body omitted: rejected before diagnostic sanitization]"
+            },
+        );
+        return RequestAttempt::Complete(decoded);
     }
     diagnostic_error_response(status_code, read, attempt, diagnostic, bytes)
 }
@@ -202,12 +241,15 @@ pub(super) fn network_attempt<T>(
     }
 }
 
-async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, Error> {
-    if response.content_length().unwrap_or(0) > MAX_JSON_BYTES as u64 {
+async fn decode_response<T: DeserializeOwned>(
+    response: reqwest::Response,
+    maximum: usize,
+) -> Result<DecodedResponse<T>, Error> {
+    if response.content_length().unwrap_or(0) > maximum as u64 {
         return Err(Error::server("response is too large"));
     }
-    let bytes = read_response_at_most(response, MAX_JSON_BYTES).await?;
-    decode_response_bytes(&bytes)
+    let bytes = read_response_at_most(response, maximum).await?;
+    decode_response_bytes(&bytes, maximum)
 }
 
 async fn read_response_at_most(
@@ -238,11 +280,19 @@ fn extend_bounded(body: &mut Vec<u8>, chunk: &[u8], maximum: usize) -> Result<()
     Ok(())
 }
 
-fn decode_response_bytes<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
-    if bytes.len() > MAX_JSON_BYTES {
+fn decode_response_bytes<T: DeserializeOwned>(
+    bytes: &[u8],
+    maximum: usize,
+) -> Result<DecodedResponse<T>, Error> {
+    if bytes.len() > maximum {
         return Err(Error::server("response is too large"));
     }
-    serde_json::from_slice(bytes).map_err(|_| Error::server("invalid Relution response"))
+    let value =
+        serde_json::from_slice(bytes).map_err(|_| Error::server("invalid Relution response"))?;
+    Ok(DecodedResponse {
+        value,
+        encoded_bytes: bytes.len(),
+    })
 }
 
 fn can_retry_status(status_code: reqwest::StatusCode, read: bool, attempt: u32) -> bool {
@@ -255,9 +305,10 @@ pub(super) async fn retry_after(attempt: u32) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::MAX_JSON_BYTES;
     use super::{
-        decode_response_bytes, diagnostic_response_attempt, read_response_at_most, RequestAttempt,
-        ResponseDiagnostic, MAX_JSON_BYTES,
+        decode_response_bytes, diagnostic_response_attempt, read_response_at_most, DecodedResponse,
+        RequestAttempt, ResponseDiagnostic,
     };
     use crate::{
         error::Error,
@@ -273,9 +324,11 @@ mod tests {
     #[test]
     fn diagnostic_mode_uses_the_same_json_deserialization() {
         let body = br#"{"message":"forbidden","items":[1,2]}"#;
-        let decoded: serde_json::Value = decode_response_bytes(body).unwrap();
+        let decoded: DecodedResponse<serde_json::Value> =
+            decode_response_bytes(body, MAX_JSON_BYTES).unwrap();
         let direct: serde_json::Value = serde_json::from_slice(body).unwrap();
-        assert_eq!(decoded, direct);
+        assert_eq!(decoded.value, direct);
+        assert_eq!(decoded.encoded_bytes, body.len());
     }
 
     #[test]
@@ -283,7 +336,15 @@ mod tests {
         let (url, server) = chunked_server(200, vec![b'x'; MAX_JSON_BYTES + 1]);
         let result = run(async {
             let response = reqwest::Client::new().get(url).send().await.unwrap();
-            diagnostic_response_attempt::<serde_json::Value>(response, true, 0, &diagnostic()).await
+            diagnostic_response_attempt::<serde_json::Value>(
+                response,
+                true,
+                0,
+                &diagnostic(),
+                MAX_JSON_BYTES,
+                true,
+            )
+            .await
         });
         server.join().unwrap();
         assert_complete_error(result, Error::server("response is too large"));
@@ -314,6 +375,8 @@ mod tests {
                     true,
                     attempt,
                     &diagnostic(),
+                    MAX_JSON_BYTES,
+                    true,
                 )
                 .await
             });
@@ -330,7 +393,10 @@ mod tests {
         ResponseDiagnostic::new("GET", "/api/management/v1/devices/device/actions")
     }
 
-    fn assert_complete_error(result: RequestAttempt<serde_json::Value>, expected: Error) {
+    fn assert_complete_error(
+        result: RequestAttempt<DecodedResponse<serde_json::Value>>,
+        expected: Error,
+    ) {
         match result {
             RequestAttempt::Complete(Err(error)) => assert_eq!(error, expected),
             RequestAttempt::Complete(Ok(_)) => panic!("expected an error response"),

@@ -42,6 +42,6 @@ impl RelutionClient {
                 json!({"appUuid":app_id,"versionUuid":version_id,"deviceUuid":device_id}),
             )
             .await?;
-        Ok(response.into_deployment_response())
+        response.into_deployment_response()
     }
 }

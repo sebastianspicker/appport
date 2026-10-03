@@ -101,8 +101,11 @@ relution-appport-qualification.exe `
 The plan names the disposable applications, packages, device, expected versions,
 and cleanup responsibility for the run. The utility records only SHA-256 fingerprints
 for these identifiers. It exercises the same catalog and action services as the
-desktop application. After a write run, restore the disposable resources and create
-the separate cleanup report identified by the plan.
+desktop application. Before each deployment it resolves the device and application
+again and requires the device, application, release UUID, release label, and intent to
+match the approved plan before reserving or sending the action. After a write run,
+restore the disposable resources and create the separate cleanup report identified by
+the plan.
 
 Bind the live result to the same candidate by running `pnpm alpha:evidence` again
 with the original MSI, qualification utility, and Windows self-check, plus
