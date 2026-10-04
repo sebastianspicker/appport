@@ -14,6 +14,13 @@ target/
 /design-preview/
 /output/product-design-exploration-*/
 
+# Internal files not published
+/DESIGN_BRIEF.md
+/RELEASE_STATUS.md
+/apps/web-demo/src/test/
+/apps/windows-client/src/test/
+/apps/windows-client/src-tauri/tests/
+
 # Test and analysis output
 coverage/
 test-results/

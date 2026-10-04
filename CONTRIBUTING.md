@@ -35,8 +35,7 @@ installation or live Relution behavior.
 
 ## Working with the code
 
-React features live beside their tests. Rust unit tests stay with their modules;
-integration tests go in `apps/windows-client/src-tauri/tests`.
+React features live beside their tests. Rust unit tests stay with their modules.
 
 The React interface imports Tauri only through `src/native-bridge`. When changing
 a native command, update its Rust handler and `invoke_handler()` entry, `COMMAND_NAMES`,

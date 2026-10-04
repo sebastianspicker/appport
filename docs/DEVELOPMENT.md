@@ -71,9 +71,8 @@ When a native command changes, update every part of its contract:
 4. `apps/windows-client/wire-fixtures.json`, when a payload shape changes; and
 5. the contract tests.
 
-Keep React tests beside the feature under test and shared setup in `src/test`. Rust
-unit tests stay with their modules; integration tests go in
-`apps/windows-client/src-tauri/tests`.
+Keep React tests beside the feature under test and shared setup in `src/testing`. Rust
+unit tests stay with their modules.
 
 ## Quality rules
 
@@ -191,8 +190,7 @@ only after native inventory confirmation. The receipt omits a final version beca
 the action response does not provide one.
 
 The UI bundles Atkinson Hyperlegible Next for text and Atkinson Hyperlegible Mono for
-versions, identifiers, and labels, with system fallbacks. Design decisions are recorded
-in [DESIGN_BRIEF.md](../DESIGN_BRIEF.md). Font sources and OFL notices are documented in
+versions, identifiers, and labels, with system fallbacks. Font sources and OFL notices are documented in
 `apps/windows-client/src/ui/fonts/README.md`. No font is fetched at runtime.
 
 A browser test with a synthetic native bridge can cover layout, keyboard use, and

@@ -7,11 +7,11 @@ import {
   deferred,
   nativeBootstrap,
   resetNativeMockDefaults,
-} from "../test/nativeMock";
+} from "../testing/nativeMock";
 import { useCatalog } from "./useCatalog";
 
 vi.mock("../native-bridge/native", async () => {
-  const { createNativeMock } = await import("../test/nativeMock");
+  const { createNativeMock } = await import("../testing/nativeMock");
   return { native: createNativeMock() };
 });
 

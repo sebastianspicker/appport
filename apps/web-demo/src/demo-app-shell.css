@@ -3,7 +3,7 @@
 /*
  * Rating-plate tokens, kept in step with the Windows client
  * (apps/windows-client/src/ui/foundation.css). The demo may not import desktop
- * source, so the values are repeated here. See DESIGN_BRIEF.md.
+ * source, so the values are repeated here.
  */
 :root {
   --font-text:

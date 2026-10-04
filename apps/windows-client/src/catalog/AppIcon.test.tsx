@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { native } from "../native-bridge/native";
 import { AppIcon, resetIconSession } from "./AppIcon";
 import { setIconCatalogRevision } from "./iconPool";
-import { deferred } from "../test/nativeMock";
+import { deferred } from "../testing/nativeMock";
 
 vi.mock("../native-bridge/native", () => ({ native: { icon: vi.fn() } }));
 const observers = new Map<Element, IntersectionObserverCallback>();

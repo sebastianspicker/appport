@@ -12,13 +12,13 @@ import {
   nativeBootstrap,
   resetNativeMockDefaults,
   supportDetails,
-} from "../test/nativeMock";
+} from "../testing/nativeMock";
 import { native } from "../native-bridge/native";
 
 const writeText = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText }));
 vi.mock("../native-bridge/native", async () => {
-  const { createNativeMock } = await import("../test/nativeMock");
+  const { createNativeMock } = await import("../testing/nativeMock");
   return { native: createNativeMock() };
 });
 

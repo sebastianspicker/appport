@@ -41,7 +41,7 @@ hot-reload connection. Use the production preview when checking the tour.
 
 The interface uses English or German based on your browser language and follows
 your system's light or dark theme. It shares the Windows client's visual system
-(see [DESIGN_BRIEF.md](../../DESIGN_BRIEF.md)) and bundles its own copy of the
+and bundles its own copy of the
 Atkinson Hyperlegible fonts under the SIL Open Font License.
 
 ## Check a change

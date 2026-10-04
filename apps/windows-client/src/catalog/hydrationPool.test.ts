@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { native } from "../native-bridge/native";
 import type { AppAction } from "../native-bridge/types";
-import { deferred } from "../test/nativeMock";
+import { deferred } from "../testing/nativeMock";
 import { HydrationPool } from "./hydrationPool";
 
 vi.mock("../native-bridge/native", () => ({ native: { action: vi.fn() } }));

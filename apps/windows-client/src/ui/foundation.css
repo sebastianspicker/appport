@@ -3,7 +3,7 @@
 /*
  * Rating-plate tokens. Language is set in Atkinson Hyperlegible Next; machine
  * strings (versions, IDs, device names, labels) in Atkinson Hyperlegible Mono.
- * Yellow is a mark, never a text color. See DESIGN_BRIEF.md.
+ * Yellow is a mark, never a text color.
  */
 :root {
   --font-text:

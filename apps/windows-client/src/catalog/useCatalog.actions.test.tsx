@@ -7,12 +7,12 @@ import {
   catalogSnapshot,
   deferred,
   resetNativeMockDefaults,
-} from "../test/nativeMock";
+} from "../testing/nativeMock";
 import type { Catalog } from "./model";
 import { useCatalog } from "./useCatalog";
 
 vi.mock("../native-bridge/native", async () => {
-  const { createNativeMock } = await import("../test/nativeMock");
+  const { createNativeMock } = await import("../testing/nativeMock");
   return { native: createNativeMock() };
 });
 

@@ -2,7 +2,7 @@
 
 Version `0.1.0-alpha.4` is built and tested against one dedicated Relution
 qualification tenant. Its MSI is unsigned and cannot be distributed as a production
-installer. The [release status](../RELEASE_STATUS.md) tracks the remaining work.
+installer.
 
 Live tenant access and deployment tests require approval from the tenant operator.
 The tests use ordinary Relution users and managed devices in that tenant, so arrange

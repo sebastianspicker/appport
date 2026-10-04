@@ -46,7 +46,6 @@ const sourceEntries = [
   ".prettierrc.json",
   "CONTRIBUTING.md",
   "README.md",
-  "RELEASE_STATUS.md",
   "SECURITY.md",
   "apps/windows-client",
   "docs",

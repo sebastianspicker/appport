@@ -56,7 +56,7 @@ refresh instructions.
 ## Project status
 
 The current version is `0.1.0-alpha.4`. This alpha is intended for testing; Windows
-builds are unsigned and not ready for distribution. [Release status](RELEASE_STATUS.md)
+builds are unsigned and not ready for distribution.
 lists the Windows and live Relution checks still needed.
 
 Each Windows build is configured for one Relution organization, with its server
