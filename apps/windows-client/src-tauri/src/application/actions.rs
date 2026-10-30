@@ -4,10 +4,10 @@ use crate::{
     application::catalog::CatalogService,
     domain::{
         action::{
-            action_details_match, baseline, correlation_candidates, inventory_matches,
-            remote_action_blocks_request, remote_state, request_intent, select_correlation,
-            to_action, Action, ActionRequest, AppAction, DeploymentResponse, RemoteAction,
-            Reservation, State, Transition,
+            baseline, correlation_candidates, inventory_matches, remote_actions_block,
+            remote_state, request_intent, select_correlation, to_action, unknown_release_due,
+            Action, ActionRequest, AppAction, DeploymentResponse, RemoteAction, Reservation, State,
+            Transition,
         },
         catalog::AvailableApp,
     },
@@ -183,6 +183,12 @@ impl ActionService {
         if device.id != action.device_id {
             return Err(Error::device_match_failed("device not assigned"));
         }
+        if action.state == State::Unknown {
+            if self.resolve_unknown(token, action_id, &action).await? {
+                self.catalog.invalidate_apps(generation).await?;
+            }
+            return self.saved_action(action_id).await;
+        }
         if action.state.terminal() {
             return Ok(to_action(action));
         }
@@ -271,6 +277,33 @@ impl ActionService {
         }
         Ok(false)
     }
+    /// Leaves `unknown` only on evidence: the exact target in inventory, or, once the release
+    /// delay has passed, no matching Relution action that would also block a new request.
+    async fn resolve_unknown(&self, token: &str, id: &str, action: &Action) -> Result<bool, Error> {
+        if self.target_installed(token, action).await? {
+            self.journal
+                .transition(id, State::Unknown, Transition::InventoryConfirmed)
+                .await?;
+            return Ok(true);
+        }
+        if !unknown_release_due(action, epoch()) {
+            return Ok(false);
+        }
+        let remote_actions = self.client.device_actions(token, &action.device_id).await?;
+        if remote_actions_block(
+            &remote_actions,
+            &action.app_id,
+            &action.version_id,
+            action.package_id.as_deref(),
+            action.correlation.as_deref(),
+        ) {
+            return Ok(false);
+        }
+        self.journal
+            .transition(id, State::Unknown, Transition::UnknownReleased)
+            .await?;
+        Ok(true)
+    }
     async fn target_installed(&self, token: &str, action: &Action) -> Result<bool, Error> {
         let items = self.client.installed_apps(token, &action.device_id).await?;
         Ok(items.iter().any(|item| {
@@ -308,14 +341,13 @@ impl ActionService {
 }
 
 fn has_blocking_remote_action(actions: &[RemoteAction], app: &AvailableApp) -> bool {
-    actions.iter().any(|action| {
-        action_details_match(
-            action.details.as_ref(),
-            &app.id,
-            &app.released_version_id,
-            app.package_identifier.as_deref(),
-        ) && remote_action_blocks_request(remote_state(&action.state))
-    })
+    remote_actions_block(
+        actions,
+        &app.id,
+        &app.released_version_id,
+        app.package_identifier.as_deref(),
+        None,
+    )
 }
 
 #[cfg(test)]
@@ -325,3 +357,7 @@ mod actions_tests;
 #[cfg(test)]
 #[path = "actions_submission_tests.rs"]
 mod submission_tests;
+
+#[cfg(test)]
+#[path = "actions_unknown_tests.rs"]
+mod unknown_tests;

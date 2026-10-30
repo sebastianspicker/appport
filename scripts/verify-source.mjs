@@ -16,7 +16,9 @@ if (requestedGate && selectedCommands.length === 0) {
   throw new Error(`Unknown source gate: ${requestedGate}`);
 }
 
-const gates = runGateCommands(root, selectedCommands);
+const gates = runGateCommands(root, selectedCommands, (name, output) => {
+  process.stderr.write(`--- ${name} output ---\n${output.trimEnd()}\n`);
+});
 
 for (const gate of gates) {
   const status = gate.exitStatus === 0 ? "passed" : "failed";

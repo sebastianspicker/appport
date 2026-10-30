@@ -28,7 +28,19 @@ export function ActionControl(props: ActionControlProps) {
     writesEnabled,
   } = props;
   const copy = copyFor(locale);
-  if (state === "unknown" || state === "succeeded") return null;
+  if (state === "succeeded") return null;
+  if (state === "unknown")
+    return (
+      <button
+        className="action-button secondary"
+        disabled={polling === "polling"}
+        onClick={() => {
+          onResume(application.id);
+        }}
+      >
+        {copy.checkStatus}
+      </button>
+    );
   if (polling === "paused")
     return (
       <button

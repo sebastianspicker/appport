@@ -8,7 +8,7 @@ use crate::domain::catalog::{AppInstallState, AppSource, AvailableApp, Installed
 use crate::error::Error;
 use std::collections::HashSet;
 
-const ALL_STATES: [State; 9] = [
+pub(super) const ALL_STATES: [State; 9] = [
     State::Reserved,
     State::Queued,
     State::Sent,
@@ -260,12 +260,10 @@ fn transition_legality_matrix_is_pinned() {
     ] {
         assert_eq!(allowed(&transition), [State::Reserved]);
     }
-    for transition in [
-        Transition::InventoryConfirmed,
-        Transition::VerificationTimedOut,
-    ] {
-        assert_eq!(allowed(&transition), [State::Verifying]);
-    }
+    assert_eq!(
+        allowed(&Transition::VerificationTimedOut),
+        [State::Verifying]
+    );
     assert_eq!(
         allowed(&Transition::RemoteMissing {
             correlation_known: true

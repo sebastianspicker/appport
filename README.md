@@ -57,7 +57,8 @@ refresh instructions.
 
 The current version is `0.1.0-alpha.4`. This alpha is intended for testing; Windows
 builds are unsigned and not ready for distribution.
-lists the Windows and live Relution checks still needed.
+[Known issues](ALPHA_KNOWN_ISSUES.md) lists what testers should expect, and
+[Operations](docs/OPERATIONS.md) covers the Windows and live Relution checks.
 
 Each Windows build is configured for one Relution organization, with its server
 origin, organization UUID, and Appport application UUID set at build time. The

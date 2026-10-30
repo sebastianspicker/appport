@@ -113,6 +113,22 @@ impl ActionJournal {
             .await
     }
 
+    /// Moves an action's timestamps into the past so tests can exercise time-based policy.
+    #[cfg(test)]
+    pub(crate) async fn backdate(&self, id: &str, seconds: i64) -> Result<(), Error> {
+        let id = id.to_owned();
+        self.run_blocking(move |connection| {
+            connection
+                .execute(
+                    "UPDATE actions SET created_at=created_at-?2, updated_at=updated_at-?2 WHERE id=?1",
+                    rusqlite::params![id, seconds],
+                )
+                .map(|_| ())
+                .map_err(|_| Error::unknown("action journal could not be updated"))
+        })
+        .await
+    }
+
     async fn run_blocking<T, F>(&self, operation: F) -> Result<T, Error>
     where
         T: Send + 'static,
@@ -317,6 +333,7 @@ enum OwnedTransition {
     RemoteMissing {
         correlation_known: bool,
     },
+    UnknownReleased,
 }
 
 impl From<Transition<'_>> for OwnedTransition {
@@ -339,6 +356,7 @@ impl From<Transition<'_>> for OwnedTransition {
             Transition::RemoteMissing { correlation_known } => {
                 Self::RemoteMissing { correlation_known }
             }
+            Transition::UnknownReleased => Self::UnknownReleased,
         }
     }
 }
@@ -363,6 +381,7 @@ impl OwnedTransition {
             Self::RemoteMissing { correlation_known } => Transition::RemoteMissing {
                 correlation_known: *correlation_known,
             },
+            Self::UnknownReleased => Transition::UnknownReleased,
         }
     }
 }

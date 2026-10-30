@@ -171,6 +171,70 @@ describe("catalog action workflow", () => {
     expectTerminalReload(result.current.catalog, loadsBefore);
   });
 
+  it("rechecks an unknown action on request and shows its released result", async () => {
+    vi.mocked(native.action)
+      .mockResolvedValueOnce(appAction("unknown"))
+      .mockResolvedValueOnce(
+        appAction("failed", {
+          errorCode: "UNKNOWN_RELEASED",
+          errorMessage: "You can request it again.",
+        }),
+      );
+    const { result } = await renderCatalog(
+      availableApp("firefox", "firefox", {
+        activeActionId: "action-42",
+        activeActionState: "unknown",
+        installState: "available",
+      }),
+    );
+    expect(result.current.catalog.actions.get("firefox")?.state).toBe(
+      "unknown",
+    );
+    expect(result.current.catalog.polling.has("firefox")).toBe(false);
+    const loadsBefore = catalogLoads();
+
+    act(() => {
+      result.current.catalog.resumeAction("firefox");
+    });
+    expect(result.current.catalog.polling.get("firefox")).toBe("polling");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    await settle();
+
+    expect(native.action).toHaveBeenCalledTimes(2);
+    expect(result.current.catalog.actions.get("firefox")?.state).toBe("failed");
+    expect(result.current.catalog.polling.has("firefox")).toBe(false);
+    // The released lock is visible only in a refreshed catalog.
+    expect(catalogLoads()).toBe(loadsBefore + 1);
+  });
+
+  it("retries hydration when a status check finds no hydrated action", async () => {
+    vi.mocked(native.action)
+      .mockRejectedValueOnce(new Error("temporary IPC failure"))
+      .mockResolvedValueOnce(appAction("unknown"));
+    const { result } = await renderCatalog(
+      availableApp("firefox", "firefox", {
+        activeActionId: "action-42",
+        activeActionState: "unknown",
+        installState: "available",
+      }),
+    );
+    expect(result.current.catalog.actions.has("firefox")).toBe(false);
+    const loadsBefore = catalogLoads();
+
+    act(() => {
+      result.current.catalog.resumeAction("firefox");
+    });
+    await settle();
+
+    expect(catalogLoads()).toBe(loadsBefore + 1);
+    expect(native.action).toHaveBeenCalledTimes(2);
+    expect(result.current.catalog.actions.get("firefox")?.state).toBe(
+      "unknown",
+    );
+  });
+
   it("reloads the catalog after a terminal hydrated result", async () => {
     vi.mocked(native.action).mockResolvedValue(appAction("succeeded"));
     const { result } = await renderCatalog(

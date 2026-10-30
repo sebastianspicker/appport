@@ -159,6 +159,24 @@ async function pollAction(
   );
 }
 
+/** Reads an unresolved action once more, then follows it like any other poll. */
+async function recheckAction(
+  context: ActivePollContext,
+  action: AppAction,
+  actionGeneration: number,
+  sessionGeneration: number,
+) {
+  const next = await pollNextAction(
+    context,
+    action,
+    action,
+    actionGeneration,
+    sessionGeneration,
+  );
+  if (next)
+    await pollAction(context, next, actionGeneration, sessionGeneration);
+}
+
 function useActionPoller({
   actionGenerations,
   generation,
@@ -176,35 +194,45 @@ function useActionPoller({
     [actionGenerations, generation, mounted],
   );
 
+  const pollContext = useMemo(
+    () => ({ isCurrent, load, pollTimers, setActions, setPolling }),
+    [isCurrent, load, pollTimers, setActions, setPolling],
+  );
+
   const poll = useCallback(
     async (
       action: AppAction,
       actionGeneration: number,
       sessionGeneration: number,
-    ) =>
-      pollAction(
-        { isCurrent, load, pollTimers, setActions, setPolling },
-        action,
-        actionGeneration,
-        sessionGeneration,
-      ),
-    [isCurrent, load, pollTimers, setActions, setPolling],
+    ) => pollAction(pollContext, action, actionGeneration, sessionGeneration),
+    [pollContext],
   );
 
-  const beginPolling = useCallback(
-    (action: AppAction) => {
+  const startPolling = useCallback(
+    (action: AppAction, run: typeof pollAction) => {
       pollTimers.clear(action.appId);
       const { actionGeneration, sessionGeneration } = nextActionGeneration(
         action.appId,
         { actionGenerations, generation },
       );
       setPolling((existing) => new Map(existing).set(action.appId, "polling"));
-      void poll(action, actionGeneration, sessionGeneration);
+      void run(pollContext, action, actionGeneration, sessionGeneration);
     },
-    [actionGenerations, generation, poll, pollTimers, setPolling],
+    [actionGenerations, generation, pollContext, pollTimers, setPolling],
   );
 
-  return { beginPolling, isCurrent, poll };
+  const beginPolling = useCallback(
+    (action: AppAction) => startPolling(action, pollAction),
+    [startPolling],
+  );
+
+  // Native status checks reconcile `unknown`, so a user-requested check can resolve it.
+  const beginRecheck = useCallback(
+    (action: AppAction) => startPolling(action, recheckAction),
+    [startPolling],
+  );
+
+  return { beginPolling, beginRecheck, isCurrent, poll };
 }
 
 function useActionStarter({
@@ -278,14 +306,18 @@ function useActionStarter({
 function useResumeAction(
   actions: ReadonlyMap<string, AppAction>,
   beginPolling: (action: AppAction) => void,
+  beginRecheck: (action: AppAction) => void,
+  load: () => Promise<void>,
 ) {
   return useCallback(
     (appId: string) => {
       const action = actions.get(appId);
-      if (!action || isTerminalActionState(action.state)) return;
-      beginPolling(action);
+      // Without a hydrated action, a catalog load retries hydration, which re-reads it.
+      if (!action) void load();
+      else if (action.state === "unknown") beginRecheck(action);
+      else if (!isTerminalActionState(action.state)) beginPolling(action);
     },
-    [actions, beginPolling],
+    [actions, beginPolling, beginRecheck, load],
   );
 }
 
@@ -309,7 +341,7 @@ export function useActionWorkflow({
   );
   const actionGenerations = useRef(new Map<string, number>());
   const pendingStarts = useRef(new Map<string, symbol>());
-  const { beginPolling, isCurrent, poll } = useActionPoller({
+  const { beginPolling, beginRecheck, isCurrent, poll } = useActionPoller({
     actionGenerations,
     generation,
     load,
@@ -357,7 +389,12 @@ export function useActionWorkflow({
     setBusyApps,
     setPolling,
   });
-  const resumeAction = useResumeAction(actions, beginPolling);
+  const resumeAction = useResumeAction(
+    actions,
+    beginPolling,
+    beginRecheck,
+    load,
+  );
   const resetActions = useCallback(() => {
     pollTimers.clear();
     for (const [appId, value] of actionGenerations.current)

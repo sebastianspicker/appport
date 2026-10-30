@@ -88,3 +88,26 @@ fn every_error_kind_maps_to_its_public_code_and_unchanged_message() {
         assert_eq!((error.code, error.message.as_str()), (code, message));
     }
 }
+
+#[cfg(not(windows))]
+#[test]
+fn native_errors_are_logged_with_their_detail() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let detail = format!("logged detail {nonce}");
+    native_error(Error::new(ErrorKind::Server, detail.clone()));
+
+    let log = std::env::temp_dir()
+        .join("Relution")
+        .join("Appport")
+        .join("client.log");
+    let contents = std::fs::read_to_string(log).expect("client log");
+    let line = contents
+        .lines()
+        .find(|line| line.ends_with(&format!("command failed: server: {detail}")))
+        .expect("logged native error");
+    let (timestamp, _) = line.split_once(' ').expect("timestamped line");
+    assert!(timestamp.parse::<u64>().expect("unix seconds") > 0);
+}

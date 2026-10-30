@@ -33,5 +33,7 @@ export async function completeTerminalAction(
 ) {
   pollTimers.clear(action.appId);
   setPolling((existing) => withoutKey(existing, action.appId));
-  if (action.state === "succeeded") await load();
+  // Success and a released `unknown` both change what the refreshed catalog allows.
+  if (action.state === "succeeded" || action.errorCode === "UNKNOWN_RELEASED")
+    await load();
 }

@@ -119,6 +119,7 @@ it("never offers a new request for an unknown submission", async () => {
     screen.queryByRole("button", { name: "Request installation" }),
   ).toBeNull();
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
   expect(native.act).toHaveBeenCalledTimes(1);
 });
 

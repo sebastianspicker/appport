@@ -343,6 +343,11 @@ impl DesktopService {
     }
 }
 
+/// Records a failed native command so the client log in a support bundle carries its detail.
+pub(crate) fn log_command_error(error: &Error) {
+    logging::write(format!("command failed: {error}"));
+}
+
 /// Opens the fixed Relution origin embedded in this build.
 pub(crate) fn open_relution_portal() -> Result<(), Error> {
     let config = relution::RelutionConfig::embedded()?;

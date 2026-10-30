@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { runGateCommands } from "./alpha-evidence/commands.mjs";
 import {
   sourceGateCommands,
   sourceGateCompositionFailures,
@@ -38,4 +39,27 @@ test("source gate composition rejects weakened static quality", () => {
       "quality:source:static must invoke quality:duplicates:source",
     ],
   );
+});
+
+test("gate runner reports the output of failed gates only", () => {
+  const failures = [];
+  const node = process.execPath;
+  const gates = runGateCommands(
+    root,
+    [
+      ["passing", node, ["-e", "console.log('quiet')"]],
+      ["failing", node, ["-e", "console.error('gate broke'); process.exit(3)"]],
+    ],
+    (name, output) => failures.push([name, output.trim()]),
+  );
+
+  assert.deepEqual(
+    gates.map(({ name, exitStatus }) => [name, exitStatus]),
+    [
+      ["passing", 0],
+      ["failing", 3],
+    ],
+  );
+  assert.deepEqual(failures, [["failing", "gate broke"]]);
+  assert.equal(Object.hasOwn(gates[1], "output"), false);
 });

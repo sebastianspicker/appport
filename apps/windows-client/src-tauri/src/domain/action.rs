@@ -5,6 +5,9 @@ use crate::error::Error;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
+/// Seconds an `unknown` action must stay unchanged before it can be released for a new request.
+pub const UNKNOWN_RELEASE_AFTER_SECONDS: i64 = 900;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
@@ -195,6 +198,8 @@ pub enum Transition<'a> {
     RemoteMissing {
         correlation_known: bool,
     },
+    /// No matching Relution action would block a new request, so `unknown` stops locking the app.
+    UnknownReleased,
 }
 impl Transition<'_> {
     pub fn target(&self) -> State {
@@ -206,6 +211,7 @@ impl Transition<'_> {
             }
             Self::RemoteObserved { state, .. } => *state,
             Self::InventoryConfirmed => State::Succeeded,
+            Self::UnknownReleased => State::Failed,
         }
     }
     pub fn detail(&self) -> (Option<&str>, Option<&str>, Option<&str>) {
@@ -239,6 +245,11 @@ impl Transition<'_> {
                 }),
                 Some("The submission status could not be confirmed. Do not retry."),
             ),
+            Self::UnknownReleased => (
+                None,
+                Some("UNKNOWN_RELEASED"),
+                Some("Relution shows no active request for this application. You can request it again."),
+            ),
             Self::SubmissionAccepted | Self::InventoryConfirmed => (None, None, None),
         }
     }
@@ -247,7 +258,9 @@ impl Transition<'_> {
             Self::SubmissionAccepted | Self::SubmissionRejected | Self::SubmissionUncertain => {
                 state == State::Reserved
             }
-            Self::InventoryConfirmed | Self::VerificationTimedOut => state == State::Verifying,
+            Self::InventoryConfirmed => matches!(state, State::Verifying | State::Unknown),
+            Self::VerificationTimedOut => state == State::Verifying,
+            Self::UnknownReleased => state == State::Unknown,
             Self::RemoteObserved { state: target, .. } => {
                 matches!(
                     state,
@@ -389,6 +402,23 @@ pub fn remote_action_blocks_request(state: State) -> bool {
         State::Queued | State::Sent | State::Deferred | State::Verifying | State::Unknown
     )
 }
+/// Whether a matching or correlated remote action would block a new request for this target.
+pub fn remote_actions_block(
+    actions: &[RemoteAction],
+    app_id: &str,
+    version_id: &str,
+    package_id: Option<&str>,
+    correlation: Option<&str>,
+) -> bool {
+    actions.iter().any(|action| {
+        (correlation == Some(action.id.as_str())
+            || action_details_match(action.details.as_ref(), app_id, version_id, package_id))
+            && remote_action_blocks_request(remote_state(&action.state))
+    })
+}
+pub fn unknown_release_due(action: &Action, now: i64) -> bool {
+    action.state == State::Unknown && action.updated_at + UNKNOWN_RELEASE_AFTER_SECONDS <= now
+}
 pub fn select_correlation(action: &Action, candidates: Vec<RemoteAction>) -> Option<RemoteAction> {
     match action.correlation.as_deref() {
         Some(correlation) => candidates
@@ -412,3 +442,7 @@ fn same_uuid(left: &str, right: &str) -> bool {
 #[cfg(test)]
 #[path = "action_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "action_unknown_tests.rs"]
+mod unknown_tests;

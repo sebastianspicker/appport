@@ -1,6 +1,10 @@
 //! Reparse-safe local event and Relution diagnostic logging.
 
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 mod relution_diagnostics;
 
@@ -32,8 +36,15 @@ pub fn write(event: impl std::fmt::Display) {
     }
     use std::io::Write;
     if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "{text}");
+        let _ = writeln!(file, "{} {text}", unix_seconds());
     }
+}
+
+fn unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or_default()
 }
 
 fn log_path() -> Option<PathBuf> {

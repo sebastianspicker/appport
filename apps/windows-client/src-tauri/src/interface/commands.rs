@@ -46,6 +46,7 @@ pub(crate) struct NativeError {
 }
 
 fn native_error(error: Error) -> NativeError {
+    desktop::log_command_error(&error);
     let code = match error.kind() {
         ErrorKind::Offline => "OFFLINE",
         ErrorKind::SessionExpired => "SESSION_EXPIRED",

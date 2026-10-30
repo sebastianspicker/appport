@@ -217,7 +217,7 @@ function TaskActionFeedback({
           state={action.state}
         />
       )}
-      {(!action || polling === "paused") && (
+      {(!action || polling === "paused" || action.state === "unknown") && (
         <ActionControl
           application={application}
           busy={catalog.busyApps.has(application.id)}

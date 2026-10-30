@@ -47,7 +47,9 @@ fn service(client: Arc<RelutionClient>) -> ActionService {
     ActionService::new(Arc::clone(&client), Arc::new(CatalogService::new(client)))
 }
 
-fn service_with_test_evidence(client: Arc<RelutionClient>) -> (ActionService, Arc<CatalogService>) {
+pub(super) fn service_with_test_evidence(
+    client: Arc<RelutionClient>,
+) -> (ActionService, Arc<CatalogService>) {
     let catalog = Arc::new(CatalogService::with_test_device_evidence(
         Arc::clone(&client),
         DeviceEvidence {

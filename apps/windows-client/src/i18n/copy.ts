@@ -105,8 +105,9 @@ export const text = {
     polling: "Checking action status:",
     pollingPaused: "Status checks paused. Resume with this action ID:",
     resumePolling: "Resume status checks",
+    checkStatus: "Check status",
     unknownAction:
-      "The final result is unknown. Do not retry. Give this action ID to IT:",
+      "The final result is unknown. Do not request it again; check the status later or give this action ID to IT:",
     confirmAction: "Confirm {intent}",
     confirmInstall: "Install",
     confirmUpdate: "Update",
@@ -297,8 +298,9 @@ export const text = {
     polling: "Aktionsstatus wird geprüft:",
     pollingPaused: "Statusprüfung pausiert. Mit dieser Aktions-ID fortsetzen:",
     resumePolling: "Statusprüfung fortsetzen",
+    checkStatus: "Status prüfen",
     unknownAction:
-      "Das Endergebnis ist unbekannt. Nicht erneut starten. Diese Aktions-ID an die IT weitergeben:",
+      "Das Endergebnis ist unbekannt. Nicht erneut anfordern; den Status später prüfen oder diese Aktions-ID an die IT weitergeben:",
     confirmAction: "{intent} bestätigen",
     confirmInstall: "Installieren",
     confirmUpdate: "Aktualisieren",

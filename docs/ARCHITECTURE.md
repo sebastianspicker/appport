@@ -172,7 +172,14 @@ The action service follows this sequence:
 If the POST fails, only session-expired and device-match failures and an explicit
 single-result rejection are recorded as a rejected submission. Every other failure,
 including a successful HTTP response with an ambiguous result count, and any missing
-or timed-out outcome, ends in the non-retryable `unknown` state and is never resent.
+or timed-out outcome, ends in the `unknown` state and is never resent automatically.
+Each later status check of an `unknown` action re-reads inventory and records success
+when the exact package and target version are installed. Once the action has been
+unchanged for 15 minutes and Relution lists no matching or correlated action that
+would also block a new request, the action becomes `failed` with the code
+`UNKNOWN_RELEASED`, and the user can request the application again. While Relution
+lists a matching action as executed or in an unrecognized state, the action stays
+`unknown`, because a new request would be refused for the same reason.
 The journal's internal `Reserved` state is shown in the UI as `queued`.
 
 The catalog and action services share a process-level SQLite journal in WAL mode.
@@ -204,6 +211,11 @@ After the user confirms the request for the current session, native code writes 
 size-limited ZIP to a fixed directory for the current user. Appport does not upload
 the ZIP. Credentials, raw Relution responses, inventory, the action journal, and
 user-selected paths are excluded.
+
+The bounded client log, which the ZIP includes, records each failed native command
+with a Unix timestamp, its error kind, and its fixed internal detail. Those details
+never contain tokens or response bodies, and the logger also redacts bearer and
+access-token values.
 
 ## Qualification utility
 
