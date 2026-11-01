@@ -18,8 +18,27 @@ export function commandOutput(root, executable, args) {
   return commandRaw(root, executable, args).trim();
 }
 
+/**
+ * Starts a command without a shell, except pnpm on Windows: there it is a .cmd shim,
+ * which Node starts only through a shell. Arguments are joined unescaped, so any
+ * argument with spaces or shell metacharacters is refused.
+ */
+export function spawnCommand(executable, args, options) {
+  if (process.platform !== "win32" || executable !== "pnpm")
+    return spawnSync(executable, args, options);
+  const unsafe = args.find((argument) => !/^[\w:./=-]+$/.test(argument));
+  if (unsafe !== undefined)
+    throw new Error(
+      `refusing to pass ${JSON.stringify(unsafe)} through a shell`,
+    );
+  return spawnSync([executable, ...args].join(" "), {
+    ...options,
+    shell: true,
+  });
+}
+
 export function commandRaw(root, executable, args) {
-  const result = spawnSync(executable, args, {
+  const result = spawnCommand(executable, args, {
     cwd: root,
     encoding: "utf8",
     env: process.env,
@@ -34,7 +53,7 @@ export function commandRaw(root, executable, args) {
 
 function runGate(root, name, executable, args, onFailure) {
   const started = process.hrtime.bigint();
-  const result = spawnSync(executable, args, {
+  const result = spawnCommand(executable, args, {
     cwd: root,
     encoding: "utf8",
     env: { ...process.env, ...sourceVerificationEnvironment },

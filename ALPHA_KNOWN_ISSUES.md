@@ -45,7 +45,8 @@ in the background either way.
 
 **The whole software list can fail to load.** If the service returns a single entry
 Appport can't read, the list shows "Service unavailable" instead of the entries it
-could read.
+could read. An installed application whose version Appport can't compare no longer
+causes this: Appport hides only that application and names it in its log.
 *What to do:* try again later, and send us a support bundle (see below). It tells us
 which entry caused it.
 

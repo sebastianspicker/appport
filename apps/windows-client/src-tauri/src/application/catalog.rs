@@ -49,6 +49,7 @@ pub struct CatalogService {
 }
 
 impl CatalogService {
+    #[cfg(test)]
     pub fn new(client: Arc<RelutionClient>) -> Self {
         Self::with_journal(client, ActionJournal::new())
     }

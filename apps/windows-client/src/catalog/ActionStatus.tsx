@@ -1,16 +1,19 @@
+import type { ActionState } from "../native-bridge/types";
+import { isRetryable } from "./actionState";
+
 export function ActionStatus({
   label,
   state,
   status,
 }: {
   label: string;
-  state: string | null | undefined;
+  state: ActionState | null | undefined;
   status: string;
 }) {
   const tone =
     state === "succeeded"
       ? "success"
-      : state === "failed" || state === "cancelled"
+      : isRetryable(state)
         ? "danger"
         : "neutral";
   const icon =

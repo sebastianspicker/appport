@@ -159,10 +159,9 @@ const fn unix_no_follow_nonblocking_flags() -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        open_regular_input, parse_input_paths, read_bounded_regular, read_open_bounded_regular,
-        InputPaths, MAX_JSON_BYTES,
-    };
+    #[cfg(unix)]
+    use super::{open_regular_input, read_open_bounded_regular};
+    use super::{parse_input_paths, read_bounded_regular, InputPaths, MAX_JSON_BYTES};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
     use std::{fs, path::PathBuf};

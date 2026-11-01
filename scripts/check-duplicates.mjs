@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { spawnCommand } from "./alpha-evidence/commands.mjs";
 
 const cohorts = Object.freeze({
   demo: ["apps/web-demo"],
@@ -20,20 +20,17 @@ if (!Object.hasOwn(cohorts, cohort)) {
 }
 
 const root = resolve(import.meta.dirname, "..");
-const result = spawnSync(
-  process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+const result = spawnCommand(
+  "pnpm",
   [
     "exec",
     "jscpd",
     "--config",
-    `jscpd.${cohort}.json`,
+    "jscpd.json",
     "--no-colors",
     ...cohorts[cohort],
   ],
-  {
-    cwd: root,
-    stdio: "inherit",
-  },
+  { cwd: root, stdio: "inherit" },
 );
 
 if (result.error) throw result.error;

@@ -169,8 +169,9 @@ The action service follows this sequence:
 5. Follow the Relution action and verify the exact package identity and target
    version in inventory before returning success.
 
-If the POST fails, only session-expired and device-match failures and an explicit
-single-result rejection are recorded as a rejected submission. Every other failure,
+If the POST fails, only refusals Relution sends before acting (session expired,
+access denied, or device mismatch) and an explicit single-result rejection are
+recorded as a rejected submission. Every other failure,
 including a successful HTTP response with an ambiguous result count, and any missing
 or timed-out outcome, ends in the `unknown` state and is never resent automatically.
 Each later status check of an `unknown` action re-reads inventory and records success

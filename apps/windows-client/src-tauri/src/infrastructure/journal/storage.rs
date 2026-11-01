@@ -41,7 +41,14 @@ pub(super) fn reserve_in(
     let inserted = connection.execute(
         "INSERT INTO actions(id,tenant,device_id,app_id,version_id,package_id,intent,baseline,state,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'reserved',?9,?9)",
         params![reservation.id,reservation.tenant,reservation.device,reservation.app,reservation.version,reservation.package,reservation.intent.as_str(),reservation.baseline,timestamp],
-    ).map_err(|_| Error::server("an active application action already exists"))?;
+    ).map_err(|error| match error {
+        rusqlite::Error::SqliteFailure(failure, _)
+            if failure.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            Error::server("an active application action already exists")
+        }
+        _ => Error::unknown("action journal is unavailable"),
+    })?;
     if inserted != 1 {
         return Err(Error::unknown("action journal reservation did not persist"));
     }
@@ -62,7 +69,8 @@ pub(super) fn transition_in(
     let (correlation, code, message) = event.detail();
     let changed = connection
         .execute(
-            "UPDATE actions SET state=?2, correlation=COALESCE(?3,correlation), error_code=?4, error_message=?5, updated_at=?6 WHERE id=?1 AND state=?7 AND (?3 IS NULL OR correlation IS NULL OR correlation=?3)",
+            // updated_at records the last state change, so repeated polls do not reset state timers.
+            "UPDATE actions SET state=?2, correlation=COALESCE(?3,correlation), error_code=?4, error_message=?5, updated_at=CASE WHEN ?2=?7 THEN updated_at ELSE ?6 END WHERE id=?1 AND state=?7 AND (?3 IS NULL OR correlation IS NULL OR correlation=?3)",
             params![id, target.as_str(), correlation, code, message, timestamp, expected.as_str()],
         )
         .map_err(|_| Error::unknown("action journal could not be updated"))?;

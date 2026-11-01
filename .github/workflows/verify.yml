@@ -116,21 +116,10 @@ jobs:
         shell: pwsh
         run: |
           @'
-          const env = process.env;
-          const fail = (message) => { throw new Error(message); };
-          let origin;
-          try { origin = new URL(env.APPPORT_RELUTION_API_BASE_URL ?? ""); } catch { fail("invalid origin"); }
-          const placeholder = /(^|\.)(localhost|invalid|example\.com|example\.test)$/i;
-          if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash || placeholder.test(origin.hostname)) fail("origin is not an approved fixed HTTPS qualification origin");
-          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          if (!uuid.test(env.APPPORT_RELUTION_ORGANIZATION_UUID ?? "") || !uuid.test(env.APPPORT_NATIVE_APP_UUID ?? "")) fail("UUID input is not canonical");
-          if (env.APPPORT_RELUTION_ORGANIZATION_UUID.toLowerCase() === env.APPPORT_NATIVE_APP_UUID.toLowerCase()) fail("UUID inputs must differ");
-          if (!['read_only', 'write_qualification'].includes(env.APPPORT_QUALIFICATION_PROFILE)) fail("invalid profile");
-          const expectedWrites = env.APPPORT_QUALIFICATION_PROFILE === 'write_qualification' ? 'true' : 'false';
-          if (env.APPPORT_RELUTION_WRITES_ENABLED !== expectedWrites) fail("write flag does not match profile");
-          if (env.APPPORT_RELUTION_DIAGNOSTICS !== 'false') fail("candidate diagnostics must be exactly false");
-          if (env.APPPORT_QUALIFICATION_TENANT_APPROVED !== 'true' || env.APPPORT_RELUTION_TENANT_CLASS !== 'qualification') fail("tenant is not explicitly approved as qualification-only");
-          if (env.APPPORT_QUALIFICATION_PROFILE === 'write_qualification' && env.APPPORT_DISPOSABLE_RESOURCES_APPROVED !== 'true') fail("disposable resources are not approved");
+          const { inspectConfiguration } = await import("./scripts/alpha-evidence/configuration.mjs");
+          const { failures, diagnosticsEnabled } = inspectConfiguration();
+          if (diagnosticsEnabled) failures.push("candidate diagnostics must be exactly false");
+          if (failures.length) throw new Error(failures.join("; "));
           '@ | node --input-type=module
       - run: pnpm rust:fmt
       - run: cargo clippy --manifest-path apps/windows-client/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --all-targets --all-features -- -D warnings

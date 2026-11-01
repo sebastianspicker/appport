@@ -11,7 +11,7 @@ use crate::{
         device::same_uuid,
     },
     error::Error,
-    infrastructure::{local::uuid_key, relution::RelutionClient},
+    infrastructure::{local::uuid_key, logging, relution::RelutionClient},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -49,10 +49,12 @@ pub(super) async fn authorize_catalog_inputs(
                 .as_deref()
                 .is_some_and(|id| same_uuid(id, &app.id))
         });
-        if let CatalogInventoryClassification::Visible(app) =
-            classify_catalog_inventory(app, installed)?
-        {
-            rows.push(*app);
+        let app_id = app.id.clone();
+        match classify_catalog_inventory(app, installed) {
+            Ok(CatalogInventoryClassification::Visible(app)) => rows.push(*app),
+            Ok(CatalogInventoryClassification::InstalledCurrent) => {}
+            // One unreadable installed version hides that row, not the whole catalog.
+            Err(error) => logging::write(format!("catalog row {app_id} skipped: {error}")),
         }
     }
     rows.sort_by_key(|app| app.name.to_lowercase());

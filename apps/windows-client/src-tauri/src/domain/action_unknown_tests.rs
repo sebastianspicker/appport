@@ -26,7 +26,6 @@ fn remote(id: &str, state: &str, details: Option<RemoteActionDetails>) -> Remote
     RemoteAction {
         id: id.into(),
         state: state.into(),
-        created_at: 1,
         details,
     }
 }

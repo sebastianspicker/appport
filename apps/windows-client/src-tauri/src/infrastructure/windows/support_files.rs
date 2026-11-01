@@ -61,7 +61,7 @@ fn is_reparse_point(path: &Path) -> Result<bool, SupportError> {
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
-        return Ok(metadata.file_attributes() & 0x400 != 0);
+        Ok(metadata.file_attributes() & 0x400 != 0)
     }
     #[cfg(not(windows))]
     Ok(false)

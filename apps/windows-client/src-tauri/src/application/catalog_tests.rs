@@ -228,26 +228,35 @@ fn catalog_permissions_fail_closed_but_allow_direct_group_and_recursive_assignme
     );
 }
 
+/// Authorizes directly permitted `entries` against `inventory`: one catalog, group,
+/// and inventory read plus one permission read per entry.
+fn authorized_with_inventory(
+    entries: &'static [(&'static str, &'static str)],
+    inventory: &'static str,
+) -> AuthorizedCatalog {
+    let (base, requests, handle) = server(3 + entries.len(), move |request| {
+        catalog_read_response(request, entries, r#"{"groups":[]}"#, inventory)
+            .unwrap_or_else(direct_user_permission)
+    });
+    let result = run(CatalogService::new(client(base)).authorized_catalog(
+        "token",
+        "user",
+        &device(),
+        "en-US",
+    ))
+    .expect("catalog");
+    handle.join().expect("mock server");
+    assert_eq!(requests.load(Ordering::SeqCst), 3 + entries.len());
+    result
+}
+
 #[test]
 fn catalog_suppresses_current_installs_and_exposes_updates() {
-    let (base, requests, handle) = server(5, |request| {
-        if let Some(response) = catalog_read_response(
-            request,
-            &[("current", "1"), ("update", "2")],
-            r#"{"groups":[]}"#,
-            r#"{"results":[{"identifier":"current.package","name":"current","appUuid":"current","versionUuid":"current-1","versionToShow":"1","versionName":null,"hasUpdateAvailable":false},{"identifier":"update.package","name":"update","appUuid":"update","versionUuid":"update-1","versionToShow":"1","versionName":null,"hasUpdateAvailable":false}]}"#,
-        ) {
-            return response;
-        }
-        direct_user_permission()
-    });
-    let service = CatalogService::new(client(base));
+    let result = authorized_with_inventory(
+        &[("current", "1"), ("update", "2")],
+        r#"{"results":[{"identifier":"current.package","name":"current","appUuid":"current","versionUuid":"current-1","versionToShow":"1","versionName":null,"hasUpdateAvailable":false},{"identifier":"update.package","name":"update","appUuid":"update","versionUuid":"update-1","versionToShow":"1","versionName":null,"hasUpdateAvailable":false}]}"#,
+    );
 
-    let result =
-        run(service.authorized_catalog("token", "user", &device(), "en-US")).expect("catalog");
-
-    handle.join().expect("mock server");
-    assert_eq!(requests.load(Ordering::SeqCst), 5);
     assert_eq!(result.assigned_eligible_count, 2);
     assert_eq!(result.rows.len(), 1);
     assert_eq!(result.rows[0].id, "update");
@@ -255,6 +264,17 @@ fn catalog_suppresses_current_installs_and_exposes_updates() {
         result.rows[0].install_state,
         AppInstallState::UpdateAvailable
     );
+}
+
+#[test]
+fn an_unclassifiable_installed_version_hides_only_its_own_row() {
+    let result = authorized_with_inventory(
+        &[("odd", "1"), ("fresh", "1")],
+        r#"{"results":[{"identifier":"odd.package","name":"odd","appUuid":"odd","versionUuid":null,"versionToShow":"2.1-beta","versionName":null,"hasUpdateAvailable":null}]}"#,
+    );
+
+    assert_eq!(result.rows.len(), 1);
+    assert_eq!(result.rows[0].id, "fresh");
 }
 
 #[test]

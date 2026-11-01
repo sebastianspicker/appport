@@ -1,6 +1,7 @@
 import { copyFor, type Locale } from "../i18n/copy";
 import type { ConfirmationHandler } from "./confirmation";
-import type { AvailableApp } from "../native-bridge/types";
+import type { ActionState, AvailableApp } from "../native-bridge/types";
+import { isRetryable } from "./actionState";
 import { Icon } from "../ui/Icon";
 
 export function ActionButton({
@@ -12,7 +13,7 @@ export function ActionButton({
   application: AvailableApp;
   locale: Locale;
   onConfirm: ConfirmationHandler;
-  state: string | null | undefined;
+  state: ActionState | null | undefined;
 }) {
   const copy = copyFor(locale);
   return (
@@ -36,11 +37,11 @@ export function ActionButton({
 
 function actionLabel(
   application: AvailableApp,
-  state: string | null | undefined,
+  state: ActionState | null | undefined,
   retry: string,
   update: string,
   install: string,
 ) {
-  if (state === "failed" || state === "cancelled") return retry;
+  if (isRetryable(state)) return retry;
   return application.installedVersionId ? update : install;
 }

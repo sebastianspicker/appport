@@ -46,6 +46,7 @@ impl ActionService {
         }
     }
 
+    #[cfg(test)]
     pub async fn request_action(
         &self,
         token: &str,
@@ -229,10 +230,13 @@ impl ActionService {
                     .await?;
                 Err(Error::server("Relution did not accept the deployment"))
             }
-            // Only a refusal that proves the POST did not land is a rejection. Every
-            // other kind, including kinds added later, stays uncertain.
+            // Only a refusal that proves the POST did not land is a rejection: 401 and 403
+            // are both answered before Relution acts. Every other kind, including kinds
+            // added later, stays uncertain.
             Err(error) => match error.kind() {
-                ErrorKind::SessionExpired | ErrorKind::DeviceMatchFailed => {
+                ErrorKind::SessionExpired
+                | ErrorKind::Authorization
+                | ErrorKind::DeviceMatchFailed => {
                     self.journal
                         .transition(id, State::Reserved, Transition::SubmissionRejected)
                         .await?;
@@ -331,7 +335,8 @@ impl ActionService {
     }
     async fn expire_verification(&self, id: &str) -> Result<(), Error> {
         let action = self.saved_journal_action(id).await?;
-        if action.state == State::Verifying && action.created_at + 900 < epoch() {
+        // Counted from entering verification: Relution may execute long after the request.
+        if action.state == State::Verifying && action.updated_at + 900 < epoch() {
             self.journal
                 .transition(id, State::Verifying, Transition::VerificationTimedOut)
                 .await?;

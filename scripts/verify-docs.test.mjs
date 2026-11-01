@@ -24,6 +24,15 @@ test("extracts root and package-scoped pnpm scripts", () => {
   );
 });
 
+test("extracts every pnpm script from code blocks and chained commands", () => {
+  assert.deepEqual(
+    documentedPnpmScripts(
+      "```sh\npnpm install --frozen-lockfile\npnpm demo:build\n```\nRun `pnpm first && pnpm second`.",
+    ).map(({ script }) => script),
+    ["install", "demo:build", "first", "second"],
+  );
+});
+
 test("reports missing root and package-scoped scripts", () => {
   const commands = documentedPnpmScripts(
     "Run `pnpm missing` and `pnpm --dir apps/web-demo absent`.",

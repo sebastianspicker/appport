@@ -123,11 +123,8 @@ function isSecureRootOrigin(url) {
 
 function isPlaceholderHost(url) {
   const host = url.hostname.toLowerCase();
-  return (
-    host.endsWith(".invalid") ||
-    ["localhost", "example.com", "example.test"].some(
-      (placeholder) => host === placeholder || host.endsWith(`.${placeholder}`),
-    )
+  return ["localhost", "invalid", "example.com", "example.test"].some(
+    (placeholder) => host === placeholder || host.endsWith(`.${placeholder}`),
   );
 }
 

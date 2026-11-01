@@ -2,14 +2,14 @@ import { copyFor, type Locale } from "../i18n/copy";
 import { ActionButton } from "./ActionButton";
 import type { ConfirmationHandler } from "./confirmation";
 import { isTerminalActionState } from "./actionState";
-import type { AvailableApp } from "../native-bridge/types";
+import type { ActionState, AvailableApp } from "../native-bridge/types";
 import type { PollingState, ResumeAction } from "./model";
 
 type ActionControlProps = {
   application: AvailableApp;
   busy: boolean;
   locale: Locale;
-  state: string | null | undefined;
+  state: ActionState | null | undefined;
   onConfirm: ConfirmationHandler;
   polling?: PollingState;
   onResume: ResumeAction;

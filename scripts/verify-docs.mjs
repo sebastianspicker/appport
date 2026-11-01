@@ -49,7 +49,8 @@ function verifyPackageScripts(markdownFiles, markdownContents) {
 
 export function documentedPnpmScripts(contents) {
   const commands = [];
-  for (const command of contents.split("`")) {
+  // Inline code, each line of a code block, and each command joined by a shell operator.
+  for (const command of contents.split(/`|\n|&&|\|\||;/)) {
     const [executable, ...arguments_] = command.trim().split(/\s+/);
     if (executable !== "pnpm") continue;
     const { directory, script } = pnpmScript(arguments_);

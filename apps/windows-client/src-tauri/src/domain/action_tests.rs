@@ -46,11 +46,10 @@ fn details(app: Option<&str>, version: Option<&str>, package: Option<&str>) -> R
     }
 }
 
-fn remote(id: &str, created_at: i64, details: Option<RemoteActionDetails>) -> RemoteAction {
+fn remote(id: &str, details: Option<RemoteActionDetails>) -> RemoteAction {
     RemoteAction {
         id: id.into(),
         state: "NEW".into(),
-        created_at,
         details,
     }
 }
@@ -58,7 +57,6 @@ fn remote(id: &str, created_at: i64, details: Option<RemoteActionDetails>) -> Re
 fn matching(id: &str) -> RemoteAction {
     remote(
         id,
-        1_000,
         Some(details(Some("app-1"), Some("ver-1"), Some("Pkg.Id"))),
     )
 }
@@ -459,21 +457,21 @@ fn baseline_splits_on_commas_and_skips_empty_entries() {
 }
 
 #[test]
-fn correlation_candidates_filter_baseline_age_and_details() {
+fn correlation_candidates_filter_baseline_and_details_but_not_server_time() {
     let journal = action(None);
     let base = baseline(&journal);
+    // Relution's creationDate is server time, so a skewed PC clock must not hide a new action.
     let candidates = vec![
         matching("new-1"),
         matching("old-1"),
-        remote("edge-ok", 995, Some(details(Some("app-1"), None, None))),
-        remote("too-old", 994, Some(details(Some("app-1"), None, None))),
-        remote("other-app", 1_000, Some(details(Some("app-2"), None, None))),
-        remote("no-details", 1_000, None),
-        remote("later", 5_000, Some(details(None, Some("VER-1"), None))),
+        remote("app-only", Some(details(Some("app-1"), None, None))),
+        remote("other-app", Some(details(Some("app-2"), None, None))),
+        remote("no-details", None),
+        remote("version-only", Some(details(None, Some("VER-1"), None))),
     ];
     assert_eq!(
         ids(correlation_candidates(candidates, &base, &journal)),
-        ["new-1", "edge-ok", "later"]
+        ["new-1", "app-only", "version-only"]
     );
 }
 

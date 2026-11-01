@@ -60,7 +60,9 @@ function verifyFrontendFeatureImports(failures) {
       for (const specifier of importSpecifiers(read(path))) {
         const otherFeature = features.find(
           (candidate) =>
-            candidate !== feature && specifier.includes(`/${candidate}/`),
+            candidate !== feature &&
+            // Only imports that leave this feature: "../session", "../session/x".
+            new RegExp(`(^|/)\\.\\./${candidate}(/|$)`).test(specifier),
         );
         if (otherFeature) {
           failures.push(
@@ -323,13 +325,17 @@ export function rustCode(source) {
   return code;
 }
 
-function importSpecifiers(source) {
-  return source
-    .split("\n")
-    .map(
-      (line) => /^\s*import(?:.+?\sfrom\s*)?["']([^"']+)["']/.exec(line)?.[1],
-    )
-    .filter(Boolean);
+/**
+ * Module specifiers of static imports (also when wrapped over several lines),
+ * re-exports, dynamic imports, and side-effect imports. Matches in comments are
+ * reported too, which fails closed.
+ */
+export function importSpecifiers(source) {
+  const pattern =
+    /\b(?:import|export)\b[^;"'`]*?\bfrom\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']|^\s*import\s*["']([^"']+)["']/gm;
+  return [...source.matchAll(pattern)].map(
+    (match) => match[1] ?? match[2] ?? match[3],
+  );
 }
 
 function sourceFiles(directory, extension) {

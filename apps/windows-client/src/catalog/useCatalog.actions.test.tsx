@@ -8,6 +8,7 @@ import {
   deferred,
   resetNativeMockDefaults,
 } from "../testing/nativeMock";
+import { copyFor } from "../i18n/copy";
 import type { Catalog } from "./model";
 import { useCatalog } from "./useCatalog";
 
@@ -169,6 +170,46 @@ describe("catalog action workflow", () => {
     await settle();
 
     expectTerminalReload(result.current.catalog, loadsBefore);
+  });
+
+  it("points a refused request to the administrator", async () => {
+    vi.mocked(native.act).mockRejectedValue({
+      code: "AUTHORIZATION_DENIED",
+      message: "authorization: account or token lacks required Relution access",
+    });
+    const { result } = await renderCatalog(availableApp());
+
+    await act(async () => {
+      await result.current.catalog.startAction(availableApp());
+    });
+
+    expect(result.current.catalog.actionFailures.get("firefox")).toBe(
+      copyFor("en").authorizationDenied[1],
+    );
+  });
+
+  it("finishes instead of pausing when the last poll returns a final state", async () => {
+    vi.mocked(native.act).mockResolvedValue(appAction("queued"));
+    let polls = 0;
+    vi.mocked(native.action).mockImplementation(async () => {
+      polls += 1;
+      return appAction(polls < 150 ? "queued" : "failed");
+    });
+    const { result } = await renderCatalog(availableApp());
+
+    await act(async () => {
+      await result.current.catalog.startAction(availableApp());
+    });
+    for (let poll = 0; poll < 150; poll += 1)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+    await settle();
+
+    expect(polls).toBe(150);
+    expect(result.current.catalog.actions.get("firefox")?.state).toBe("failed");
+    // A paused, failed action would show a Resume button that cannot do anything.
+    expect(result.current.catalog.polling.has("firefox")).toBe(false);
   });
 
   it("rechecks an unknown action on request and shows its released result", async () => {

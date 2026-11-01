@@ -15,7 +15,7 @@ impl SessionGate {
         self.0.write().await
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(windows)))]
     pub(crate) fn has_admitted_write(&self) -> bool {
         self.0.try_write().is_err()
     }

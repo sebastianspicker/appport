@@ -93,7 +93,6 @@ fn active_and_unmapped_remote_actions_block_a_new_reservation() {
     let action = |id: &str, state: &str| RemoteAction {
         id: id.into(),
         state: state.into(),
-        created_at: 1,
         details: Some(RemoteActionDetails {
             app_id: Some("app".into()),
             version_id: Some("version".into()),

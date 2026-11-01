@@ -16,6 +16,7 @@ const MATCHING_INVENTORY: &str = r#"{"results":[{"identifier":"app.package","nam
 const NO_INVENTORY: &str = r#"{"results":[]}"#;
 const PENDING_REMOTE: &str = r#"{"results":[{"uuid":"remote","state":"PENDING","creationDate":1,"details":{"appUuid":"app","versionUuid":"version","appInternalName":"app.package"}}]}"#;
 const FAILED_REMOTE: &str = r#"{"results":[{"uuid":"remote","state":"ERROR","creationDate":1,"details":{"appUuid":"app","versionUuid":"version","appInternalName":"app.package"}}]}"#;
+const EXECUTED_REMOTE: &str = r#"{"results":[{"uuid":"remote","state":"EXECUTED","creationDate":1,"details":{"appUuid":"app","versionUuid":"version","appInternalName":"app.package"}}]}"#;
 
 fn reservation(id: &str) -> Reservation<'_> {
     Reservation {
@@ -35,6 +36,26 @@ fn persist_unknown(age_seconds: i64) {
     run(journal.reserve(reservation("action"))).expect("reserve");
     run(journal.transition("action", State::Reserved, Transition::SubmissionUncertain))
         .expect("uncertain submission");
+    run(journal.backdate("action", age_seconds)).expect("backdate");
+}
+
+fn persist_accepted(age_seconds: i64, verifying: bool) {
+    let journal = ActionJournal::new();
+    run(journal.reserve(reservation("action"))).expect("reserve");
+    run(journal.transition("action", State::Reserved, Transition::SubmissionAccepted))
+        .expect("accepted submission");
+    if verifying {
+        run(journal.transition(
+            "action",
+            State::Queued,
+            Transition::RemoteObserved {
+                state: State::Verifying,
+                correlation: "remote",
+                error_code: None,
+            },
+        ))
+        .expect("verifying");
+    }
     run(journal.backdate("action", age_seconds)).expect("backdate");
 }
 
@@ -163,5 +184,32 @@ fn old_unknown_action_stays_locked_while_a_matching_relution_action_is_active() 
     assert_eq!(
         new_request_allowed().unwrap_err(),
         Error::server("an active application action already exists")
+    );
+}
+
+#[test]
+fn verification_timer_starts_when_relution_reports_execution() {
+    let _environment = journal_environment();
+    let _sandbox = JournalSandbox::new();
+    persist_accepted(20 * 60, false);
+
+    let (state, _) = get_unknown_action(3, NO_INVENTORY, EXECUTED_REMOTE);
+
+    assert_eq!(state, ActionState::Verifying);
+    assert_eq!(saved().state, State::Verifying);
+}
+
+#[test]
+fn verification_times_out_fifteen_minutes_after_it_began_despite_repeated_polls() {
+    let _environment = journal_environment();
+    let _sandbox = JournalSandbox::new();
+    persist_accepted(16 * 60, true);
+
+    let (state, _) = get_unknown_action(3, NO_INVENTORY, EXECUTED_REMOTE);
+
+    assert_eq!(state, ActionState::Unknown);
+    assert_eq!(
+        saved().error_code.as_deref(),
+        Some("INVENTORY_VERIFICATION_TIMEOUT")
     );
 }

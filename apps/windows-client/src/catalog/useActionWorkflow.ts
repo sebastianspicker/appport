@@ -2,7 +2,11 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useActionHydrator } from "./useActionHydrator";
 import { copyFor, type Locale } from "../i18n/copy";
-import type { AppAction, AvailableApp } from "../native-bridge/types";
+import type {
+  AppAction,
+  AvailableApp,
+  ClientProblem,
+} from "../native-bridge/types";
 import { native } from "../native-bridge/native";
 import { problemFor } from "../native-bridge/problem";
 import {
@@ -75,6 +79,15 @@ function pauseIfCurrent(
 ) {
   if (current)
     setPolling((existing) => new Map(existing).set(action.appId, "paused"));
+}
+
+function startFailureMessage(problem: ClientProblem, locale: Locale) {
+  const copy = copyFor(locale);
+  // A refused permission is not worth retrying: point to the administrator instead.
+  if (problem === "authorization-denied") return copy.authorizationDenied[1];
+  return problem === "unknown"
+    ? copy.actionStartFailed[1]
+    : copy.actionStartFailed[0];
 }
 
 function nextActionGeneration(
@@ -151,6 +164,19 @@ async function pollAction(
     );
     if (!next) return;
     current = next;
+  }
+  // The last poll can return a final state; pausing it would leave a dead Resume button.
+  if (
+    context.isCurrent(action.appId, actionGeneration, sessionGeneration) &&
+    isTerminalActionState(current.state)
+  ) {
+    await completeTerminalAction(
+      current,
+      context.pollTimers,
+      context.setPolling,
+      context.load,
+    );
+    return;
   }
   pauseIfCurrent(
     action,
@@ -275,9 +301,7 @@ function useActionStarter({
         setActionFailures((existing) =>
           new Map(existing).set(
             application.id,
-            problemFor(error) === "unknown"
-              ? copyFor(locale).actionStartFailed[1]
-              : copyFor(locale).actionStartFailed[0],
+            startFailureMessage(problemFor(error), locale),
           ),
         );
       } finally {

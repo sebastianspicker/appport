@@ -164,7 +164,7 @@ fn command_in(
 ) -> Result<std::process::Command, Error> {
     if !matches!(
         tool,
-        "whoami.exe" | "icacls.exe" | "reg.exe" | "schtasks.exe" | "explorer.exe"
+        "whoami.exe" | "icacls.exe" | "schtasks.exe" | "explorer.exe"
     ) {
         return Err(Error::unknown(
             "requested Windows system tool is not allowlisted",

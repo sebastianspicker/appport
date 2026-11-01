@@ -35,6 +35,7 @@ struct OpenedJournal {
 
 enum JournalLocation {
     Default,
+    #[cfg(test)]
     Fixed(PathBuf),
 }
 
@@ -171,6 +172,7 @@ impl JournalLocation {
     fn path(&self) -> Result<PathBuf, Error> {
         match self {
             Self::Default => default_path(),
+            #[cfg(test)]
             Self::Fixed(path) => Ok(path.clone()),
         }
     }

@@ -1,11 +1,6 @@
 use crate::error::Error;
 use std::path::Path;
 
-#[cfg(windows)]
-use super::system_tools;
-#[cfg(windows)]
-use std::process::Stdio;
-
 pub(super) const PROTOCOL: &str = "relution-appport";
 
 #[cfg(windows)]
@@ -28,34 +23,56 @@ pub(super) fn register(_: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+// Current-user registry access through the Win32 API, not reg.exe and its text output.
+#[cfg(windows)]
+fn current_user() -> winreg::RegKey {
+    winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+}
+
+/// Writes a `REG_SZ` value under HKCU; `None` writes the key's default value.
 #[cfg(windows)]
 pub(super) fn write_registry_string(
     path: &str,
     name: Option<&str>,
     value: &str,
 ) -> Result<(), Error> {
-    let key = format!("HKCU\\{path}");
-    let mut command = system_tools::command("reg.exe")
-        .map_err(|_| Error::unknown("protocol registry unavailable"))?;
-    command.args(["add", &key]);
-    if let Some(name) = name {
-        command.args(["/v", name]);
-    } else {
-        command.arg("/ve");
+    current_user()
+        .create_subkey(path)
+        .and_then(|(key, _)| key.set_value(name.unwrap_or_default(), &value))
+        .map_err(|_| Error::unknown("registry value could not be written"))
+}
+
+#[cfg(windows)]
+pub(super) fn read_registry_string(path: &str, name: &str) -> Option<String> {
+    current_user()
+        .open_subkey(path)
+        .and_then(|key| key.get_value(name))
+        .ok()
+}
+
+/// Deletes one HKCU value. A missing key or value counts as already deleted.
+#[cfg(windows)]
+pub(super) fn delete_registry_value(path: &str, name: &str) -> Result<(), Error> {
+    match current_user()
+        .open_subkey_with_flags(path, winreg::enums::KEY_SET_VALUE)
+        .and_then(|key| key.delete_value(name))
+    {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            Err(Error::unknown("registry value could not be deleted"))
+        }
+        _ => Ok(()),
     }
-    let status = command
-        .args(["/t", "REG_SZ", "/d"])
-        .arg(value)
-        .arg("/f")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|_| Error::unknown("protocol registry unavailable"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(Error::unknown("protocol registration failed"))
-    }
+}
+
+/// Deletes one HKCU key that has no subkeys; never a whole tree.
+#[cfg(windows)]
+pub(super) fn delete_registry_key(path: &str) -> bool {
+    current_user().delete_subkey(path).is_ok()
+}
+
+#[cfg(windows)]
+pub(super) fn registry_key_exists(path: &str) -> bool {
+    current_user().open_subkey(path).is_ok()
 }
 
 #[cfg(test)]

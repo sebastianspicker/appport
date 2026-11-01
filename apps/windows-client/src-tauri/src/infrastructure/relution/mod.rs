@@ -134,7 +134,8 @@ impl RelutionClient {
             })
             .collect();
         if matches.len() != 1 {
-            return Err(Error::device_match_failed(
+            // Not a device error: the UI would tell the user to check device assignment.
+            return Err(Error::authorization(
                 "Relution identity is not a single active organization user",
             ));
         }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  importSpecifiers,
   requiredLayoutFailures,
   rustSourceFailures,
 } from "./verify-architecture.mjs";
@@ -354,4 +355,23 @@ test("rejects interface use of adapter crates", () => {
     ]);
   }
   assert.deepEqual(rustSourceFailures(path, "use tauri::Manager;"), []);
+});
+
+test("finds wrapped, re-exported, dynamic, and side-effect imports", () => {
+  const source = [
+    "import {",
+    "  invoke,",
+    '} from "@tauri-apps/api/core";',
+    'import type { View } from "../session";',
+    'export { start } from "../support/start";',
+    'const lazy = await import("./lazy");',
+    'import "./catalog.css";',
+  ].join("\n");
+  assert.deepEqual(importSpecifiers(source), [
+    "@tauri-apps/api/core",
+    "../session",
+    "../support/start",
+    "./lazy",
+    "./catalog.css",
+  ]);
 });

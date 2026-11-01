@@ -1,5 +1,10 @@
 import { copyFor, type Locale } from "../i18n/copy";
-import type { AppAction, AvailableApp } from "../native-bridge/types";
+import type {
+  ActionState,
+  AppAction,
+  AvailableApp,
+} from "../native-bridge/types";
+import { isRetryable } from "./actionState";
 import { Icon } from "../ui/Icon";
 import { ActionStatus } from "./ActionStatus";
 import type { PollingState } from "./model";
@@ -10,7 +15,7 @@ type ActionSummaryProps = {
   application: AvailableApp;
   locale: Locale;
   polling?: PollingState;
-  state: string | null | undefined;
+  state: ActionState | null | undefined;
 };
 
 export function ActionSummary({
@@ -122,7 +127,7 @@ function ResolvedAction({
 }: {
   action?: AppAction;
   locale: Locale;
-  state: string;
+  state: ActionState;
   status: string;
 }) {
   const label = actionStateLabel(state, action?.intent, locale);
@@ -140,17 +145,14 @@ function ResolvedAction({
 }
 
 function isFailureWithMessage(
-  state: string,
+  state: ActionState,
   action: AppAction | undefined,
 ): action is AppAction & { errorMessage: string } {
-  return (
-    (state === "failed" || state === "cancelled") &&
-    Boolean(action?.errorMessage)
-  );
+  return isRetryable(state) && Boolean(action?.errorMessage);
 }
 
 function actionStateLabel(
-  state: string,
+  state: ActionState,
   intent: AppAction["intent"] | undefined,
   locale: Locale,
 ) {

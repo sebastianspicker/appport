@@ -79,10 +79,6 @@ impl SessionCoordinator {
         }
     }
 
-    pub fn credential(&self) -> Option<(String, String, String)> {
-        self.store.credential()
-    }
-
     pub fn credential_with_generation(&self) -> Option<(String, String, String, u64)> {
         self.store.credential().map(|(token, username, user_uuid)| {
             (token, username, user_uuid, self.active_generation)
@@ -184,7 +180,7 @@ mod tests {
     fn clearing_an_absent_credential_is_idempotent() {
         let mut session = SessionCoordinator::load();
         assert!(session.sign_out().credential_removed);
-        assert!(session.credential().is_none());
+        assert!(session.credential_with_generation().is_none());
     }
 
     #[test]
@@ -196,7 +192,7 @@ mod tests {
             session.finish_sign_in(first, "stale".into(), "user".into(), "uuid".into()),
             Err(SignInCompletionError::StaleCredential)
         ));
-        assert!(session.credential().is_none());
+        assert!(session.credential_with_generation().is_none());
         assert!(session
             .finish_sign_in(second, "current".into(), "user".into(), "uuid".into())
             .is_ok());
@@ -238,7 +234,7 @@ mod tests {
             session.finish_sign_in(operation, "stale".into(), "user".into(), "uuid".into()),
             Err(SignInCompletionError::StaleCredential)
         ));
-        assert!(session.credential().is_none());
+        assert!(session.credential_with_generation().is_none());
     }
 
     #[test]
@@ -252,12 +248,12 @@ mod tests {
         let first = session.sign_out_with_clear_result(Err(Error::unknown("delete failed")));
         assert!(!first.credential_removed);
         assert!(first.token_revocation_required);
-        assert!(session.credential().is_none());
+        assert!(session.credential_with_generation().is_none());
 
         let second = session.sign_out_with_clear_result(Ok(()));
         assert!(second.credential_removed);
         assert!(second.token_revocation_required);
-        assert!(session.credential().is_none());
+        assert!(session.credential_with_generation().is_none());
 
         let third = session.sign_out_with_clear_result(Ok(()));
         assert!(!third.token_revocation_required);

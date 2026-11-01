@@ -169,7 +169,6 @@ pub struct AppAction {
 pub struct RemoteAction {
     pub id: String,
     pub state: String,
-    pub created_at: i64,
     pub details: Option<RemoteActionDetails>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -385,8 +384,9 @@ pub fn correlation_candidates(
     actions
         .into_iter()
         .filter(|candidate| {
+            // The pre-submission baseline excludes older actions. Relution's creationDate is
+            // not compared with the local clock: the clocks and possibly the units differ.
             !baseline.contains(candidate.id.as_str())
-                && candidate.created_at >= action.created_at - 5
                 && action_details_match(
                     candidate.details.as_ref(),
                     &action.app_id,

@@ -48,6 +48,7 @@ pub(crate) struct SupportBundleRequest {
 pub(crate) enum SupportError {
     ConsentRequired,
     GenerationActive,
+    #[cfg(not(windows))]
     Unsupported,
     Containment,
     InvalidRequest,
@@ -60,6 +61,7 @@ impl SupportError {
         match self {
             Self::ConsentRequired => "SUPPORT_CONSENT_REQUIRED",
             Self::GenerationActive => "SUPPORT_GENERATION_ACTIVE",
+            #[cfg(not(windows))]
             Self::Unsupported => "SUPPORT_UNSUPPORTED",
             Self::Containment => "SUPPORT_CONTAINMENT_REJECTED",
             Self::InvalidRequest => "SUPPORT_INVALID_REQUEST",
@@ -72,6 +74,7 @@ impl SupportError {
         match self {
             Self::ConsentRequired => "explicit consent is required",
             Self::GenerationActive => "a bundle is already being generated",
+            #[cfg(not(windows))]
             Self::Unsupported => "support bundles are only available on Windows",
             Self::Containment => "support bundle storage is unavailable",
             Self::InvalidRequest => "invalid bundle request",
@@ -98,12 +101,14 @@ impl std::error::Error for SupportError {}
 static GENERATION: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Debug)]
-pub(crate) struct SupportGenerationPermit(MutexGuard<'static, ()>);
+pub(crate) struct SupportGenerationPermit {
+    _guard: MutexGuard<'static, ()>,
+}
 
 pub(crate) fn try_begin_generation() -> Result<SupportGenerationPermit, SupportError> {
     let lock = GENERATION.get_or_init(|| Mutex::new(()));
     lock.try_lock()
-        .map(SupportGenerationPermit)
+        .map(|guard| SupportGenerationPermit { _guard: guard })
         .map_err(|_| SupportError::GenerationActive)
 }
 

@@ -225,7 +225,12 @@ fn sign_out_during_authentication_prevents_late_registration() {
             authentication.await.unwrap().err().unwrap().kind(),
             ErrorKind::SessionExpired
         );
-        assert!(state.session.lock().await.credential().is_none());
+        assert!(state
+            .session
+            .lock()
+            .await
+            .credential_with_generation()
+            .is_none());
     });
     server.join().unwrap();
 }
@@ -293,4 +298,20 @@ fn sign_out_during_support_reads_does_not_publish_stale_consent() {
         assert!(!session.consume_support_confirmation(current));
     });
     server.join().unwrap();
+}
+
+#[test]
+fn an_unmatched_username_is_an_authorization_failure_not_a_device_failure() {
+    let (base, _, server) = server(1, |request| {
+        assert!(request.contains("/security/users/baseInfo/query"));
+        Response::json(
+            200,
+            r#"{"results":[{"uuid":"user","name":"Someone Else","organizationUuid":"tenant","activated":true}]}"#,
+        )
+    });
+    let error = run(client(base, false).connect("User", "synthetic"))
+        .err()
+        .expect("sign-in must fail");
+    server.join().unwrap();
+    assert_eq!(error.kind(), ErrorKind::Authorization);
 }

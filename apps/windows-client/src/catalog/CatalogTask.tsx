@@ -5,7 +5,8 @@ import { Icon } from "../ui/Icon";
 import { AppIcon } from "./AppIcon";
 import { ActionSummary } from "./ActionSummary";
 import { ActionControl } from "./ActionControl";
-import type { AvailableApp } from "../native-bridge/types";
+import type { ActionState, AvailableApp } from "../native-bridge/types";
+import { isRetryable } from "./actionState";
 import type { Catalog, View } from "./model";
 
 export type CatalogTaskState = {
@@ -142,8 +143,8 @@ export function SuccessReceipt({
   );
 }
 
-function allowsNewRequest(state: string | null | undefined) {
-  return !state || state === "failed" || state === "cancelled";
+function allowsNewRequest(state: ActionState | null | undefined) {
+  return !state || isRetryable(state);
 }
 
 function canSubmitTask(catalog: Catalog, application: AvailableApp) {

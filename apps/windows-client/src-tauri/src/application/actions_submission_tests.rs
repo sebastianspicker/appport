@@ -111,7 +111,7 @@ fn single_post_server(reply: Reply) -> (url::Url, thread::JoinHandle<usize>) {
 }
 
 #[test]
-fn only_session_expiry_and_device_mismatch_reject_a_submission() {
+fn only_refusals_before_processing_reject_a_submission() {
     let _environment = journal_environment();
     let _sandbox = JournalSandbox::new();
     let client = client(url::Url::parse("http://127.0.0.1:9/").expect("unused URL"));
@@ -122,7 +122,7 @@ fn only_session_expiry_and_device_mismatch_reject_a_submission() {
         let error = Error::new(kind, "sample detail");
         let result = run(service.record_submission(&id, Err(error.clone())));
         match kind {
-            ErrorKind::SessionExpired | ErrorKind::DeviceMatchFailed => {
+            ErrorKind::SessionExpired | ErrorKind::Authorization | ErrorKind::DeviceMatchFailed => {
                 assert_eq!(result, Err(error), "{kind:?}");
                 assert_eq!(
                     saved(&id),
@@ -157,7 +157,7 @@ fn a_single_failed_deployment_post_is_classified_by_kind_and_never_retried() {
         (
             Reply::Status(403, "{}"),
             ErrorKind::Authorization,
-            State::Unknown,
+            State::Failed,
         ),
         (
             Reply::Status(401, "{}"),

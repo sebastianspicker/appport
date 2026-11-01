@@ -140,13 +140,15 @@ pub(crate) fn collect_platform_data() -> PlatformCollectorData {
 }
 
 #[cfg(windows)]
-fn read_smbios_type1() -> Result<SmbiosType1, &'static str> {
+pub(super) fn read_smbios_type1() -> Result<SmbiosType1, &'static str> {
     use windows::Win32::System::SystemInformation::{
         GetSystemFirmwareTable, FIRMWARE_TABLE_PROVIDER,
     };
+    // The Win32 provider constant 'RSMB'. The little-endian reversal rule applies to
+    // firmware table IDs, not to this provider signature.
     let provider = FIRMWARE_TABLE_PROVIDER(u32::from_be_bytes(*b"RSMB"));
     let size = unsafe { GetSystemFirmwareTable(provider, 0, None) } as usize;
-    if size < 9 || size > MAX_SMBIOS_BYTES + 8 {
+    if !(9..=MAX_SMBIOS_BYTES + 8).contains(&size) {
         return Err("smbios_unavailable");
     }
     let mut raw = vec![0_u8; size];
@@ -270,7 +272,7 @@ fn valid_adapter_pointer(
     use windows::Win32::NetworkManagement::IpHelper::IP_ADAPTER_ADDRESSES_LH;
 
     let address = pointer as usize;
-    address % std::mem::align_of::<IP_ADAPTER_ADDRESSES_LH>() == 0
+    address.is_multiple_of(std::mem::align_of::<IP_ADAPTER_ADDRESSES_LH>())
         && address >= start
         && address
             .checked_add(std::mem::size_of::<IP_ADAPTER_ADDRESSES_LH>())
@@ -288,7 +290,7 @@ fn bounded_wide_string(pointer: *mut u16, start: usize, end: usize, max_units: u
         return "unnamed".to_owned();
     }
     let address = pointer as usize;
-    if address % std::mem::align_of::<u16>() != 0 || address < start || address >= end {
+    if !address.is_multiple_of(std::mem::align_of::<u16>()) || address < start || address >= end {
         return "unnamed".to_owned();
     }
     let mut units = Vec::with_capacity(max_units);
@@ -306,9 +308,11 @@ fn bounded_wide_string(pointer: *mut u16, start: usize, end: usize, max_units: u
         units.push(unit);
     }
     let value = String::from_utf16_lossy(&units);
-    (!value.trim().is_empty())
-        .then_some(value)
-        .unwrap_or_else(|| "unnamed".to_owned())
+    if value.trim().is_empty() {
+        "unnamed".to_owned()
+    } else {
+        value
+    }
 }
 
 #[cfg(not(windows))]
@@ -324,10 +328,11 @@ pub(crate) fn collect_network_summary() -> NetworkSummary {
 #[cfg(test)]
 mod tests {
     use super::{
-        bounded_network_summary, collect_network_summary, collect_platform_data,
-        format_windows_release, parse_smbios_type1, validate_matched_relution_ip,
-        NetworkAdapterSummary, MAX_NETWORK_ADAPTERS,
+        bounded_network_summary, format_windows_release, parse_smbios_type1,
+        validate_matched_relution_ip, NetworkAdapterSummary, MAX_NETWORK_ADAPTERS,
     };
+    #[cfg(not(windows))]
+    use super::{collect_network_summary, collect_platform_data};
 
     #[test]
     fn formats_windows_release() {

@@ -15,6 +15,7 @@ use tauri::Manager;
 /// Lists each native command once; expands to `COMMAND_NAMES` and `invoke_handler()`.
 macro_rules! native_commands {
     ($($command:ident),+ $(,)?) => {
+        #[cfg(test)]
         pub(crate) const COMMAND_NAMES: &[&str] = &[$(stringify!($command)),+];
 
         /// Registers the commands of `COMMAND_NAMES`, in the same order, with the Tauri runtime.

@@ -34,6 +34,28 @@ test("qualification evidence accepts only a ready read-only configuration", () =
   assert.match(inspection.fingerprintSha256, /^[a-f0-9]{64}$/);
 });
 
+test("qualification evidence rejects placeholder origins and degenerate UUIDs", () => {
+  for (const origin of [
+    "https://invalid",
+    "https://tenant.invalid",
+    "https://localhost",
+    "https://tenant.example.com",
+  ]) {
+    const inspection = inspectConfiguration({
+      ...ready,
+      APPPORT_RELUTION_API_BASE_URL: origin,
+    });
+    assert.deepEqual(inspection.failures, [
+      "invalid qualification-tenant origin",
+    ]);
+  }
+  const zeroUuid = inspectConfiguration({
+    ...ready,
+    APPPORT_NATIVE_APP_UUID: "00000000-0000-0000-0000-000000000000",
+  });
+  assert.deepEqual(zeroUuid.failures, ["invalid native application UUID"]);
+});
+
 test("qualification evidence fails closed on readiness and binding-relevant mismatches", () => {
   const failures = configurationFailures({
     origin: "https://qualification.example.net",

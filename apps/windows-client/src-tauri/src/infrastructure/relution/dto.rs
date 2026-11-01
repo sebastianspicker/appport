@@ -15,8 +15,6 @@ use std::{fmt, marker::PhantomData};
 pub struct Page<T> {
     #[serde(alias = "items")]
     pub results: Vec<T>,
-    #[serde(default, alias = "nonpagedCount")]
-    pub total: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -246,8 +244,6 @@ impl Inventory {
 pub struct DeviceAction {
     pub uuid: String,
     pub state: String,
-    #[serde(rename = "creationDate")]
-    pub creation_date: i64,
     #[serde(default)]
     pub details: Option<ActionDetails>,
 }
@@ -266,7 +262,6 @@ impl DeviceAction {
         RemoteAction {
             id: self.uuid,
             state: self.state,
-            created_at: self.creation_date,
             details: self.details.map(|details| RemoteActionDetails {
                 app_id: details.app_uuid,
                 version_id: details.version_uuid,
@@ -301,7 +296,7 @@ mod tests {
 
     #[test]
     fn page_accepts_relution_member_alias_and_server_metadata() {
-        let page: Page<Group> = serde_json::from_str(
+        let page: PaginatedPage<Group> = serde_json::from_str(
             r#"{"items":[{"uuid":"member"}],"nonpagedCount":1,"version":4,"errors":[],"status":"OK","message":"members"}"#,
         )
         .unwrap();
@@ -311,7 +306,7 @@ mod tests {
 
     #[test]
     fn device_page_accepts_relution_extensions() {
-        let page: Page<Device> = serde_json::from_str(
+        let page: PaginatedPage<Device> = serde_json::from_str(
             r#"{"results":[{"uuid":"30000000-0000-4000-8000-000000000003","deviceId":"ABCDEF0123456789ABCDEF0123456789","name":"TEST-WIN-042","serialNumber":"SYNTHETIC-42","userUuid":"40000000-0000-4000-8000-000000000004","organizationUuid":"10000000-0000-4000-8000-000000000001","platform":"WINDOWS","status":"COMPLIANT","manufacturer":"Example Vendor","windowsAvailableUpdateCount":0}],"total":1,"errors":[],"status":"OK","message":"devices"}"#,
         )
         .unwrap();
@@ -421,7 +416,6 @@ mod tests {
                 RemoteAction {
                     id: "a".into(),
                     state: "PENDING".into(),
-                    created_at: 7,
                     details: Some(RemoteActionDetails {
                         app_id: Some("app".into()),
                         version_id: Some("version".into()),
@@ -431,7 +425,6 @@ mod tests {
                 RemoteAction {
                     id: "b".into(),
                     state: "ERROR".into(),
-                    created_at: 8,
                     details: None,
                 },
             ]
@@ -446,7 +439,6 @@ mod tests {
                     .iter()
                     .map(|&successful| Deployment { successful })
                     .collect(),
-                total: None,
             }
             .into_deployment_response()
         };

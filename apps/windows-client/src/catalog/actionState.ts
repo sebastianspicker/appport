@@ -1,12 +1,22 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { AppAction } from "../native-bridge/types";
+import type { ActionState, AppAction } from "../native-bridge/types";
 import type { PollingState } from "./model";
 import type { PollTimerRegistry } from "./usePollTimerRegistry";
 
-const terminalStates = new Set(["succeeded", "failed", "cancelled", "unknown"]);
+const terminalStates: ReadonlySet<ActionState> = new Set([
+  "succeeded",
+  "failed",
+  "cancelled",
+  "unknown",
+]);
 
-export function isTerminalActionState(state: string) {
+export function isTerminalActionState(state: ActionState) {
   return terminalStates.has(state);
+}
+
+/** Failed and cancelled requests may be sent again. */
+export function isRetryable(state: ActionState | null | undefined) {
+  return state === "failed" || state === "cancelled";
 }
 
 export function withoutKey<Value>(

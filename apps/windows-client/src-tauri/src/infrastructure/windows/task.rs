@@ -24,7 +24,6 @@ pub fn remove_background_check() -> Result<(), Error> {
 #[cfg(windows)]
 struct QualificationResources {
     registry_path: String,
-    registry_key: String,
     task_name: String,
     task_file_name: String,
     task_file_path: PathBuf,
@@ -59,7 +58,6 @@ fn qualification_resources() -> Result<QualificationResources, Error> {
         .map_err(|_| Error::unknown("qualification executable unavailable"))?;
     let task_file_path = task_scheduler::local_data_directory()?.join(&task_file_name);
     Ok(QualificationResources {
-        registry_key: format!(r"HKCU\{registry_path}"),
         registry_path,
         task_name: format!(r"\AppportQualificationSelfCheck-{suffix}"),
         task_file_path,
@@ -76,28 +74,15 @@ fn stage_qualification_resources(resources: &QualificationResources) -> Result<(
         "URL:Appport qualification self-check",
     )?;
     task_protocol::write_registry_string(&resources.registry_path, Some("URL Protocol"), "")?;
-    require_registry_present(&resources.registry_key)?;
+    task_protocol::registry_key_exists(&resources.registry_path)
+        .then_some(())
+        .ok_or_else(|| Error::unknown("qualification registry state missing"))?;
 
     let sid = task_scheduler::current_user_sid()?;
     let xml = task_scheduler::background_task_xml(&resources.executable, &sid)?;
     let task_file = task_scheduler::write_background_task_named(&xml, &resources.task_file_name)?;
     task_scheduler::create_scheduled_task(&resources.task_name, &task_file)?;
     require_task_present(&resources.task_name)
-}
-
-#[cfg(windows)]
-fn require_registry_present(registry_key: &str) -> Result<(), Error> {
-    let query = system_tools::command("reg.exe")
-        .map_err(|_| Error::unknown("qualification registry query failed"))?
-        .args(["query", registry_key])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|_| Error::unknown("qualification registry query failed"))?;
-    query
-        .success()
-        .then_some(())
-        .ok_or_else(|| Error::unknown("qualification registry state missing"))
 }
 
 #[cfg(windows)]
@@ -117,17 +102,7 @@ fn require_task_present(task_name: &str) -> Result<(), Error> {
 
 #[cfg(windows)]
 fn cleanup_qualification_resources(resources: &QualificationResources) -> CleanupState {
-    let registry_removed = system_tools::command("reg.exe")
-        .and_then(|mut command| {
-            command
-                .args(["delete", &resources.registry_key, "/f"])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .map_err(|_| Error::unknown("qualification registry cleanup failed"))
-        })
-        .map(|status| status.success())
-        .unwrap_or(false);
+    let registry_removed = task_protocol::delete_registry_key(&resources.registry_path);
     let task_removed = system_tools::command("schtasks.exe")
         .and_then(|mut command| {
             command
@@ -151,17 +126,7 @@ fn cleanup_qualification_resources(resources: &QualificationResources) -> Cleanu
 
 #[cfg(windows)]
 fn qualification_resources_absent(resources: &QualificationResources) -> bool {
-    let registry_absent = !system_tools::command("reg.exe")
-        .and_then(|mut command| {
-            command
-                .args(["query", &resources.registry_key])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .map_err(|_| Error::unknown("qualification registry query failed"))
-        })
-        .map(|status| status.success())
-        .unwrap_or(true);
+    let registry_absent = !task_protocol::registry_key_exists(&resources.registry_path);
     let task_absent = !system_tools::command("schtasks.exe")
         .and_then(|mut command| {
             command
