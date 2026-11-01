@@ -13,6 +13,11 @@ reports; see [Personal tokens](CONFIGURATION.md#personal-tokens).
 
 ## Build the Windows candidate
 
+The `Verify` workflow's Windows qualification job is manual-only on `main`.
+Configure the approved qualification environment before dispatching it; missing
+or invalid inputs deliberately fail validation. Dependabot PRs run source and
+demo checks without creating a tenant-bound Windows candidate.
+
 Use a clean checkout on Windows 11 x64 with Node.js 26.5.x, pnpm 11.6.0, Rust 1.96.0,
 and the MSVC toolchain. Confirm that the release version is `0.1.0-alpha.4` in the
 root package, desktop package, Cargo files, and Tauri configuration. The WiX version
@@ -145,7 +150,7 @@ until the user or operator deletes them; Appport never uploads them.
 
 ## Deploy the browser demo
 
-The `Demo Pages` workflow runs `pnpm demo:verify`, uploads
+Manually dispatch `Demo Pages` on `main` to run `pnpm demo:verify`, upload
 `apps/web-demo/dist`, and deploys that directory to GitHub Pages. The artifact check
 rejects network access, credentials, persistence, native commands, source maps,
 symlinks, and invalid asset paths. This workflow publishes only the synthetic demo

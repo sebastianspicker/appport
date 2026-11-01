@@ -33,6 +33,18 @@ or `scripts/verify-demo-artifact.mjs`. The source check does not include the dem
 Mention any checks you could not run. Local tests cannot establish Windows
 installation or live Relution behavior.
 
+General source and demo CI runs automatically only for pull requests authored
+by `dependabot[bot]`, and can also be dispatched manually. JavaScript security
+audits run separately on pushes, all pull requests and a weekly schedule;
+Dependabot also monitors the Cargo lockfile. Windows qualification builds and
+Pages deployment require manual dispatch on `main`. Qualification still needs
+the approved environment inputs; a dependency PR does not authorize a build
+bound to a real tenant.
+
+The documentation gate checks indexed public Markdown. Keep internal audit
+records and local design drafts ignored; adding them to the Git index would
+make them part of the publication surface and its checks.
+
 ## Working with the code
 
 React features live beside their tests. Rust unit tests stay with their modules.

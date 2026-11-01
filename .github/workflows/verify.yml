@@ -2,8 +2,6 @@ name: Verify
 
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       qualification_profile:
@@ -24,11 +22,14 @@ concurrency:
 
 jobs:
   source:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     name: Ubuntu source gates
     runs-on: ubuntu-latest
     steps:
       # actions/checkout v6.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
       # actions/setup-node v6.
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -57,11 +58,14 @@ jobs:
       - run: pnpm verify:source
 
   demo:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     name: Browser demo gates
     runs-on: ubuntu-latest
     steps:
       # actions/checkout v6.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
       # actions/setup-node v6.
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -72,6 +76,7 @@ jobs:
       - run: pnpm demo:verify
 
   windows:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     name: Windows MSVC candidate
     runs-on: windows-latest
     needs: source
@@ -92,6 +97,8 @@ jobs:
     steps:
       # actions/checkout v6.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
       # actions/setup-node v6.
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38

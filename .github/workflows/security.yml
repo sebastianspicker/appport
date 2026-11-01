@@ -1,0 +1,27 @@
+name: JavaScript dependency security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "29 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 26.5.0
+      - name: Audit the locked workspace without running lifecycle scripts
+        run: pnpm audit --audit-level low

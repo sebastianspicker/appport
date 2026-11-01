@@ -67,8 +67,8 @@ To publish it from your repository:
    source. [GitHub's workflow guide](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
    explains this setup.
 2. Put the workflow and demo source on `main`.
-3. Run Demo Pages from the Actions tab on `main`, or push a change to a path listed
-   in the workflow. Manual runs on other branches are skipped.
+3. Run Demo Pages manually from the Actions tab on `main`. Pushes and pull requests
+   do not deploy it; manual runs on other branches are skipped.
 4. Open the URL shown by the deployment job. The upstream repository's expected
    address is <https://sebastianspicker.github.io/appport/>.
 

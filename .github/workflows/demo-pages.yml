@@ -1,22 +1,6 @@
 name: Demo Pages
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/demo-pages.yml"
-      - "apps/web-demo/**"
-      - "apps/windows-client/src-tauri/tauri.conf.json"
-      - "eslint.config.mjs"
-      - "jscpd.demo.json"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "quality-duplication-baseline.json"
-      - "scripts/check-duplicates.mjs"
-      - "scripts/check-source-size.mjs"
-      - "scripts/verify-demo-artifact.mjs"
-      - "stylelint.config.mjs"
   workflow_dispatch:
 
 permissions:
@@ -29,11 +13,13 @@ concurrency:
 jobs:
   build:
     name: Build isolated demo
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       # actions/checkout v6.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
       # actions/setup-node v6.
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -50,6 +36,7 @@ jobs:
           path: apps/web-demo/dist
 
   deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     name: Deploy demo
     needs: build
     permissions:

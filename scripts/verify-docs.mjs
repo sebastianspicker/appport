@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { extname, join, relative, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 
 import { documentationLinkFailures } from "./documentation-links.mjs";
 
@@ -10,9 +11,7 @@ const failures = [];
 const allowedPnpmCommands = new Set(["install", "exec", "dlx", "add"]);
 
 function verifyDocumentation() {
-  const markdownFiles = walk(root).filter(
-    (path) => extname(path) === ".md" && !isExcluded(path),
-  );
+  const markdownFiles = trackedMarkdownFiles(root);
   const markdownContents = new Map(
     markdownFiles.map((path) => [path, readText(path)]),
   );
@@ -191,18 +190,16 @@ function readJson(path) {
   return JSON.parse(readText(path));
 }
 
-function walk(directory) {
-  if (!exists(directory)) return [];
-  const paths = [];
-  for (const entry of fileSystem.readdirSync(directory, {
-    withFileTypes: true,
-  })) {
-    const path = join(directory, entry.name);
-    if (isExcluded(path)) continue;
-    if (entry.isDirectory()) paths.push(...walk(path));
-    else if (entry.isFile()) paths.push(path);
-  }
-  return paths;
+export function trackedMarkdownFiles(directory) {
+  const indexed = execFileSync("git", ["ls-files", "--cached", "-z"], {
+    cwd: directory,
+    encoding: "utf8",
+  });
+  return indexed
+    .split("\0")
+    .filter((path) => path && extname(path) === ".md")
+    .map((path) => resolve(directory, path))
+    .filter((path) => !isExcluded(path) && exists(path));
 }
 
 function exists(path) {

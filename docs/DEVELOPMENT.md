@@ -105,16 +105,19 @@ independent; no Rust code classifies errors by message prefix (such as
 `native-bridge` imports `@tauri-apps/api`; feature folders stay independent; and
 workflows keep their safety invariants (invoked pnpm scripts exist, actions are
 SHA-pinned, permissions are `contents: read` except the Pages deploy, the demo job
-is independent, Pages deploys only `apps/web-demo/dist` from `main`, and any Pages
-path filter includes `apps/web-demo/**` and its own workflow file). Layer rules read
+is independent, and Pages deploys only `apps/web-demo/dist` by manual dispatch
+from `main`). Layer rules read
 the crate paths a file references, including every member of grouped
 `use crate::{...}` imports, and ignore comments and string literals.
 
 `pnpm tooling:test` exercises the source-size check, architecture rules,
 documentation links, demo isolation, workflow safety invariants, and command
 composition.
-GitHub Actions runs the desktop and demo checks as separate jobs for pull requests
-and pushes to `main`.
+GitHub Actions runs the desktop and demo checks as separate jobs for
+Dependabot-authored pull requests and manual dispatch. JavaScript dependency
+security checks also run on ordinary pull requests, main pushes and a weekly
+schedule. Windows qualification requires manual dispatch on `main` and the
+approved qualification environment; it is not automatic PR validation.
 
 ## Run the interfaces locally
 

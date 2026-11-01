@@ -4,6 +4,15 @@ Appport is a software catalog for Relution-managed Windows 11 PCs. Users can fin
 applications they have permission to install on their assigned device and request
 installs or updates. Relution handles the deployment.
 
+<details>
+<summary>Status and limitations</summary>
+
+**Project status:** Appport is an independent experimental project for software requests on Relution-managed Windows PCs. Developed independently alongside my main professional work. The work-in-progress alpha is a design reference for evaluation, not a ready-to-use deployment product. Windows builds are unsigned, and live Relution behavior still needs qualification in the intended environment.
+
+**Disclaimer.** A catalog entry or successful local check is not deployment approval. Operators must validate permissions, device matching and installation outcomes. Reuse or adaptation requires appropriate licensing permission; this repository currently grants none.
+
+</details>
+
 [Browser demo](https://sebastianspicker.github.io/appport/) ·
 [Run locally](#try-it-locally) ·
 [Documentation](#documentation)
@@ -12,6 +21,16 @@ Try the interface in your browser without an account. The demo uses fictional
 software, users, and devices; its actions install nothing and reset when you reload
 the page. If the hosted demo is unavailable, use the local commands below or see
 [GitHub Pages setup](apps/web-demo/README.md#github-pages).
+
+The Windows client follows this flow; the browser demo simulates it:
+
+```mermaid
+flowchart LR
+    User["User on an assigned PC"] --> Appport["Appport: permitted software"]
+    Appport --> Request["Install or update request"]
+    Request --> Relution["Relution deploys the application"]
+    Relution --> Result["Appport checks device inventory for the result"]
+```
 
 ## Screenshot tour
 

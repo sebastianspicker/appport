@@ -15,6 +15,14 @@ and what to do when you hit it.
 
 ## What doesn't work yet, or may not
 
+**The Linux verification dependency graph still contains an upstream GLib advisory.**
+The Tauri GTK/WebKit stack currently resolves `glib 0.18.5`, affected by
+[RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html).
+The fixed `0.20` line is outside that stack's current dependency requirements;
+a compatible upstream upgrade has not been verified. Appport's supported client
+is Windows, but this advisory remains unresolved in the cross-platform lockfile.
+Do not treat successful portable checks as evidence that the advisory is fixed.
+
 **Update notifications may not appear.** Appport checks for updates in the
 background and should show a Windows notification when one is available. We haven't
 yet confirmed this on an installed copy.

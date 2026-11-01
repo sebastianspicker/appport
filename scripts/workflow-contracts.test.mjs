@@ -110,8 +110,8 @@ test("only the Pages deploy job may add Pages permissions", () => {
 test("verification rejects a dependent or missing demo job", () => {
   const dependent = mutate(
     verifyWorkflow,
-    "  demo:\n    name:",
-    "  demo:\n    needs: source\n    name:",
+    "  demo:\n",
+    "  demo:\n    needs: source\n",
   );
   assert.deepEqual(verificationWorkflowFailures(dependent, scripts), [
     "verify demo job must remain independent",
@@ -129,39 +129,53 @@ test("verification rejects a demo job that skips demo:verify", () => {
   ]);
 });
 
-test("Pages rejects pull-request triggers and non-main branches", () => {
-  const pullRequest = mutate(
-    pagesWorkflow,
-    "  workflow_dispatch:\n",
-    "  pull_request:\n  workflow_dispatch:\n",
-  );
-  assert.deepEqual(demoPagesWorkflowFailures(pullRequest, scripts), [
-    "Pages workflow must run only for pushes and manual dispatch",
-  ]);
-  const branches = mutate(
-    pagesWorkflow,
-    "branches: [main]",
-    "branches: [main, dev]",
-  );
-  assert.deepEqual(demoPagesWorkflowFailures(branches, scripts), [
-    "Pages workflow push trigger must target main only",
+test("Pages rejects automatic triggers", () => {
+  for (const event of ["push", "pull_request", "pull_request_target"]) {
+    const fixture = mutate(
+      pagesWorkflow,
+      "  workflow_dispatch:\n",
+      `  ${event}:\n  workflow_dispatch:\n`,
+    );
+    assert.deepEqual(demoPagesWorkflowFailures(fixture, scripts), [
+      "Pages workflow must run only by manual dispatch",
+    ]);
+  }
+});
+
+test("Pages build and deployment require manual main-branch execution", () => {
+  const condition =
+    "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'";
+  const fixture = mutate(pagesWorkflow, condition, "always()");
+  assert.deepEqual(demoPagesWorkflowFailures(fixture, scripts), [
+    "Pages build must require manual dispatch on main",
   ]);
 });
 
-test("Pages push paths must keep the demo sources and the workflow itself", () => {
-  const failure = [
-    "Pages workflow push paths must include apps/web-demo/** and .github/workflows/demo-pages.yml",
-  ];
-  for (const path of [
-    '      - "apps/web-demo/**"\n',
-    '      - ".github/workflows/demo-pages.yml"\n',
-  ]) {
-    const fixture = mutate(pagesWorkflow, path, "");
-    assert.deepEqual(demoPagesWorkflowFailures(fixture, scripts), failure);
-  }
-  const unfiltered = pagesWorkflow.replace(/ {4}paths:\n(?: {6}- .*\n)+/, "");
-  assert.notEqual(unfiltered, pagesWorkflow);
-  assert.deepEqual(demoPagesWorkflowFailures(unfiltered, scripts), []);
+test("general CI requires the PR author and Windows qualification is manual", () => {
+  const actor = mutate(
+    verifyWorkflow,
+    "github.event.pull_request.user.login",
+    "github.actor",
+  );
+  assert.deepEqual(verificationWorkflowFailures(actor, scripts), [
+    "verify job source has an unsafe trigger condition",
+  ]);
+  const windows = mutate(
+    verifyWorkflow,
+    "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'",
+    "always()",
+  );
+  assert.deepEqual(verificationWorkflowFailures(windows, scripts), [
+    "verify job windows has an unsafe trigger condition",
+  ]);
+  const push = mutate(
+    verifyWorkflow,
+    "  pull_request:\n",
+    "  push:\n  pull_request:\n",
+  );
+  assert.deepEqual(verificationWorkflowFailures(push, scripts), [
+    "verify workflow must allow only pull requests and manual dispatch",
+  ]);
 });
 
 test("Pages rejects a build that skips verification or uploads another path", () => {

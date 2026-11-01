@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -5,7 +6,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { documentationLinkFailures } from "./documentation-links.mjs";
 
-import { documentedPnpmScripts, missingPnpmScripts } from "./verify-docs.mjs";
+import {
+  documentedPnpmScripts,
+  missingPnpmScripts,
+  trackedMarkdownFiles,
+} from "./verify-docs.mjs";
 
 test("extracts root and package-scoped pnpm scripts", () => {
   assert.deepEqual(
@@ -53,6 +58,24 @@ test("rejects broken files, anchors, and escaped documentation references", () =
         "README.md links outside the repository",
       ],
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("public documentation discovery excludes ignored and untracked local records", () => {
+  const root = mkdtempSync(join(tmpdir(), "appport-public-docs-"));
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    writeFileSync(join(root, ".gitignore"), "ALPHA_AUDIT_LEDGER.md\n");
+    writeFileSync(join(root, "README.md"), "# Public documentation\n");
+    execFileSync("git", ["add", "README.md"], { cwd: root });
+    writeFileSync(
+      join(root, "ALPHA_AUDIT_LEDGER.md"),
+      "Internal `pnpm gone`\n",
+    );
+    writeFileSync(join(root, "private-draft.md"), "Internal working draft\n");
+    assert.deepEqual(trackedMarkdownFiles(root), [join(root, "README.md")]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

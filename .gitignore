@@ -16,6 +16,13 @@ target/
 /output/product-design-exploration-*/
 
 # Internal files not published
+/ALPHA_AUDIT_REPORT.md
+/ALPHA_PR_DESCRIPTION.md
+/ALPHA_AUDIT_LEDGER.md
+/ALPHA_IMPLEMENTATION_LEDGER.md
+/*_LEDGER.md
+/output/
+/reports/
 /DESIGN_BRIEF.md
 /RELEASE_STATUS.md
 /apps/web-demo/src/test/

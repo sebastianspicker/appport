@@ -2,14 +2,28 @@ import { parse } from "yaml";
 
 const commitPin = /@[0-9a-f]{40}$/;
 const pagesDeployPermissions = ["contents", "id-token", "pages"];
-const pagesTriggerPaths = [
-  "apps/web-demo/**",
-  ".github/workflows/demo-pages.yml",
-];
+const botOrDispatch =
+  "github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')";
+const manualMain =
+  "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'";
 
 export function verificationWorkflowFailures(workflowText, scripts) {
   const workflow = parse(workflowText);
   const failures = commonWorkflowFailures(workflow, scripts, "verify workflow");
+  if (
+    Object.keys(workflow.on ?? {})
+      .sort()
+      .join() !== "pull_request,workflow_dispatch"
+  ) {
+    failures.push(
+      "verify workflow must allow only pull requests and manual dispatch",
+    );
+  }
+  for (const [name, job] of jobsOf(workflow)) {
+    const expected = name === "windows" ? manualMain : botOrDispatch;
+    if (job.if !== expected)
+      failures.push(`verify job ${name} has an unsafe trigger condition`);
+  }
   const demo = workflow.jobs?.demo;
   if (!demo) {
     failures.push("verify workflow is missing an independent demo job");
@@ -120,32 +134,14 @@ function isPagesDeployPermissions(permissions) {
 }
 
 function verifyPagesTriggers(failures, trigger) {
-  const events = Object.keys(trigger ?? {}).sort();
-  if (events.join() !== "push,workflow_dispatch") {
-    failures.push(
-      "Pages workflow must run only for pushes and manual dispatch",
-    );
-  }
-  const branches = trigger?.push?.branches;
-  if (!Array.isArray(branches) || branches.join() !== "main") {
-    failures.push("Pages workflow push trigger must target main only");
-  }
-  verifyPagesTriggerPaths(failures, trigger?.push?.paths);
-}
-
-function verifyPagesTriggerPaths(failures, paths) {
-  if (
-    paths !== undefined &&
-    (!Array.isArray(paths) ||
-      !pagesTriggerPaths.every((path) => paths.includes(path)))
-  ) {
-    failures.push(
-      `Pages workflow push paths must include ${pagesTriggerPaths.join(" and ")}`,
-    );
+  if (Object.keys(trigger ?? {}).join() !== "workflow_dispatch") {
+    failures.push("Pages workflow must run only by manual dispatch");
   }
 }
 
 function verifyPagesBuild(failures, build) {
+  if (build?.if !== manualMain)
+    failures.push("Pages build must require manual dispatch on main");
   if (!runCommands(build).includes("pnpm demo:verify")) {
     failures.push("Pages build job must run pnpm demo:verify");
   }
@@ -159,6 +155,8 @@ function verifyPagesBuild(failures, build) {
 }
 
 function verifyPagesDeploy(failures, deploy) {
+  if (deploy?.if !== manualMain)
+    failures.push("Pages deploy must require manual dispatch on main");
   const deploysPages = stepsOf(deploy).some((step) =>
     step.uses?.startsWith("actions/deploy-pages@"),
   );
