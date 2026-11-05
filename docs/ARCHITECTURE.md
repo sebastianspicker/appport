@@ -10,25 +10,60 @@ The repository also includes a public browser demo. It resembles the desktop UI,
 but runs entirely from synthetic fixtures and in-memory state. It has its own source
 tree and build.
 
+What runs where, and how the parts talk:
+
 ```mermaid
 flowchart LR
-    User[Managed Windows user] --> WebView[React WebView]
-    WebView --> Bridge[Typed native bridge]
-    Bridge --> Interface[Tauri interface]
-    Interface --> Services[Application services]
-    Services --> Policy[Domain policy]
-    Services --> Relution[Relution adapter]
-    Services --> Windows[Windows adapters]
-    Services --> Journal[SQLite action journal]
-    Relution --> SaaS[Relution SaaS]
-
-    Visitor[Demo visitor] --> Demo[Browser demo]
-    Demo --> Fixtures[Synthetic in-memory data]
+    user((Windows user))
+    subgraph pc [Managed Windows PC]
+        subgraph webview [WebView]
+            ui[React UI]
+            bridge[native-bridge]
+        end
+        subgraph rust [Rust process]
+            cmds[interface commands]
+            desktop[DesktopService]
+        end
+        subgraph bgproc [Background run]
+            bg[background check]
+        end
+        journal[(SQLite journal)]
+        cred[(Credential Manager)]
+        task[Scheduled task]
+    end
+    relution[Relution SaaS]
+    user -->|clicks| ui
+    ui --> bridge
+    bridge -->|"Tauri invoke"| cmds
+    cmds --> desktop
+    desktop -->|"HTTPS REST"| relution
+    desktop -->|reserve, transition| journal
+    desktop -->|session| cred
+    task -.->|"starts exe"| bg
+    bg -->|"HTTPS REST"| relution
+    bg -.->|toast| user
+    classDef focus fill:#fde68a,stroke:#b45309,color:#1f2937
+    class desktop focus
 ```
 
-The desktop WebView and browser demo both use a content security policy with
-`connect-src 'none'`. All product network requests come from native Rust and go to
-the single HTTPS Relution origin embedded during the build.
+Everything inside the PC box is one MSI install for one user. The React UI never
+talks to the network: the desktop WebView and browser demo both use a content
+security policy with `connect-src 'none'`, so the only way out is `native-bridge` →
+Tauri `invoke` → Rust. All product network requests come from native Rust and go to
+the single HTTPS Relution origin embedded during the build. The scheduled task
+starts the same executable as a separate, windowless process in background mode.
+That process opens the stored session, loads the catalog through `CatalogService`
+directly (not `DesktopService`), and shows a toast for new updates. The browser
+demo is not in this picture: it is a separate Vite app with in-memory fixtures and
+no Rust side.
+
+Where in the code:
+
+- [apps/windows-client/src/native-bridge/native.ts](../apps/windows-client/src/native-bridge/native.ts): every `invoke` the UI can make
+- [apps/windows-client/src-tauri/src/interface/commands.rs](../apps/windows-client/src-tauri/src/interface/commands.rs): the matching Tauri command handlers
+- [apps/windows-client/src-tauri/src/application/desktop.rs](../apps/windows-client/src-tauri/src/application/desktop.rs): `DesktopService`, which runs every signed-in workflow
+- [apps/windows-client/src-tauri/src/lib.rs](../apps/windows-client/src-tauri/src/lib.rs): startup, launch modes, and adapter construction
+- [apps/windows-client/src-tauri/src/application/background.rs](../apps/windows-client/src-tauri/src/application/background.rs): the background update check
 
 ## Repository layout
 
@@ -134,6 +169,57 @@ To build the catalog, Appport:
 Only Available and Update Available applications reach the UI. Installed-current
 applications remain an internal classification.
 
+What happens between clicking Sign in and seeing the list:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant ui as React UI
+    participant cmd as commands.rs
+    participant desk as DesktopService
+    participant cat as CatalogService
+    participant rel as Relution API
+    U->>ui: Username + token, Sign in
+    ui->>cmd: invoke connect
+    cmd->>desk: connect_token
+    desk->>rel: resolve active user
+    rel-->>desk: user UUID
+    Note over desk: Save to Credential Manager,<br/>register scheduled check
+    desk-->>ui: ConnectOutcome
+    ui->>cmd: invoke load_catalog
+    cmd->>desk: load_catalog(view)
+    desk->>cat: load_catalog(generation)
+    par concurrent reads
+        cat->>rel: query user's Windows devices
+    and
+        cat->>rel: GET apps/baseInfo
+    and
+        cat->>rel: GET user groups
+    end
+    cat->>rel: query installedApps (matched device)
+    cat->>rel: GET permissions/RELEASE (4 at a time)
+    cat-->>desk: rows + catalogRevision
+    desk-->>ui: CatalogSnapshot for the view
+```
+
+Steps 2–6 run once per sign-in. Steps 7–9 run on every view change, but the
+Relution reads in steps 10–14 only happen when the 60-second snapshot has expired
+or the user refreshes or retries. Before step 16, `DesktopService` filters the full
+snapshot down to the Available or Updates rows, so both tabs share one cached
+snapshot. The generation passed in step 9 is checked again before step 16: if the
+user signs out during a slow load, the result is dropped instead of showing up in
+the next session.
+
+Where in the code:
+
+- [apps/windows-client/src/session/useSession.ts](../apps/windows-client/src/session/useSession.ts): sign-in form handler (step 2)
+- [apps/windows-client/src/catalog/useCatalogLoading.ts](../apps/windows-client/src/catalog/useCatalogLoading.ts): catalog loads (step 7)
+- [apps/windows-client/src-tauri/src/application/session.rs](../apps/windows-client/src-tauri/src/application/session.rs): `SessionCoordinator` and credential generations
+- [apps/windows-client/src-tauri/src/application/catalog.rs](../apps/windows-client/src-tauri/src/application/catalog.rs): `CatalogService::load_catalog` and the snapshot cache
+- [apps/windows-client/src-tauri/src/infrastructure/relution/transport.rs](../apps/windows-client/src-tauri/src/infrastructure/relution/transport.rs): the Relution read endpoints
+- [apps/windows-client/src-tauri/src/domain/device.rs](../apps/windows-client/src-tauri/src/domain/device.rs): `match_device`
+
 `load_catalog` returns bootstrap counts, rows for the requested view, and one opaque
 `catalogRevision` from the same snapshot. A snapshot is tied to the current credential
 generation and locale, and expires after 60 seconds on a monotonic clock. Moving
@@ -169,6 +255,56 @@ The action service follows this sequence:
 5. Follow the Relution action and verify the exact package identity and target
    version in inventory before returning success.
 
+What happens when the user confirms Install or Update:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant ui as React UI
+    participant desk as DesktopService
+    participant act as ActionService
+    participant jr as SQLite journal
+    participant rel as Relution API
+    U->>ui: Install, then Confirm
+    ui->>desk: invoke request_action(appId)
+    desk->>act: prepare_action
+    act->>rel: reload app, permissions, device
+    act->>rel: GET devices/{id}/actions
+    act-->>desk: PreparedAction
+    Note over desk: Generation check,<br/>session gate permit
+    desk->>act: submit_action
+    act->>jr: reserve (Reserved)
+    act->>rel: POST .../deployments (once)
+    rel-->>act: accepted, rejected or unclear
+    act->>jr: queued, failed or unknown
+    desk-->>ui: AppAction
+    loop every 2 s until a final state
+        ui->>desk: invoke get_action(actionId)
+        desk->>act: get_action
+        act->>rel: GET device actions, installedApps
+        act->>jr: transition
+        desk-->>ui: AppAction
+    end
+```
+
+Steps 3–6 are the preflight. They change nothing remotely, and if a matching
+Relution action is already active the request is refused there. The local
+reservation in step 8 happens before the single POST in step 9. This means a crash
+between the two leaves a `Reserved` row, which the next start turns into `unknown`
+instead of sending again. From step 7 onwards the work runs detached, so closing the
+window cannot cancel a POST that is already being sent. The polling loop (steps
+13–17) stops at `unknown` too. From there the user can ask for one more check, which
+re-reads inventory.
+
+Where in the code:
+
+- [apps/windows-client/src/catalog/useActionWorkflow.ts](../apps/windows-client/src/catalog/useActionWorkflow.ts): starting (step 2) and polling (step 13) an action
+- [apps/windows-client/src/catalog/ConfirmationDialog.tsx](../apps/windows-client/src/catalog/ConfirmationDialog.tsx): the confirmation step
+- [apps/windows-client/src-tauri/src/application/actions.rs](../apps/windows-client/src-tauri/src/application/actions.rs): `prepare_action`, `submit_action`, `get_action`
+- [apps/windows-client/src-tauri/src/infrastructure/relution/actions.rs](../apps/windows-client/src-tauri/src/infrastructure/relution/actions.rs): the deployment POST and device-action reads
+- [apps/windows-client/src-tauri/src/infrastructure/journal.rs](../apps/windows-client/src-tauri/src/infrastructure/journal.rs): `reserve`, `transition`, startup recovery
+
 If the POST fails, only refusals Relution sends before acting (session expired,
 access denied, or device mismatch) and an explicit single-result rejection are
 recorded as a rejected submission. Every other failure,
@@ -182,6 +318,45 @@ would also block a new request, the action becomes `failed` with the code
 lists a matching action as executed or in an unrecognized state, the action stays
 `unknown`, because a new request would be refused for the same reason.
 The journal's internal `Reserved` state is shown in the UI as `queued`.
+
+The states a journal action can go through:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Reserved: reserve
+    Reserved --> Queued: POST accepted
+    Reserved --> Failed: POST rejected
+    Reserved --> Unknown: POST unclear or app restarted
+    state "Following Relution" as remote {
+        Queued
+        Sent
+        Deferred
+        Verifying
+    }
+    remote --> Failed: Relution reports failure
+    remote --> Cancelled: Relution reports cancel
+    remote --> Unknown: action missing or unclear
+    Verifying --> Succeeded: inventory confirmed
+    Verifying --> Unknown: 15 min unchanged
+    Unknown --> Succeeded: inventory confirmed
+    Unknown --> Failed: UNKNOWN_RELEASED
+    Succeeded --> [*]
+    Failed --> [*]
+    Cancelled --> [*]
+```
+
+Each arrow is one `Transition` in `domain/action.rs`, and the journal applies it only
+if the row is still in an allowed source state (compare-and-set). Inside "Following
+Relution", the state mirrors whatever Relution reports for the correlated action.
+`Succeeded` is only reachable from `Verifying` or `Unknown`, and only when inventory
+shows the exact package and version. `Failed` and `Cancelled` let the user request
+the app again; `Unknown` locks it until inventory or the 15-minute release rule
+resolves it.
+
+Where in the code:
+
+- [apps/windows-client/src-tauri/src/domain/action.rs](../apps/windows-client/src-tauri/src/domain/action.rs): `State`, `Transition`, `allowed_from`
+- [apps/windows-client/src-tauri/src/infrastructure/journal/storage.rs](../apps/windows-client/src-tauri/src/infrastructure/journal/storage.rs): the SQL behind reserve, transition, and recovery
 
 The catalog and action services share a process-level SQLite journal in WAL mode.
 A unique index prevents two active reservations for the same device and application,
@@ -254,6 +429,51 @@ inputs. The Windows product is packaged as one MSI. The qualification utility is
 separate executable from the same Rust crate. Passing source checks, producing a
 candidate MSI, and completing tests against a Relution tenant are three distinct
 results.
+
+How the GitHub workflows check, build, and publish:
+
+```mermaid
+flowchart LR
+    trigger(["PR or manual run"])
+    dispatch(["Manual run on main"])
+    subgraph verify [verify.yml]
+        source["source: verify:source"]
+        demo["demo: demo:verify"]
+        windows["windows: MSI candidate"]
+    end
+    evidence[["unsigned candidate artifact"]]
+    subgraph pages [demo-pages.yml]
+        pbuild["build: demo:verify"]
+        pdeploy["deploy: GitHub Pages"]
+    end
+    audit["security.yml: pnpm audit"]
+    trigger --> source
+    trigger --> demo
+    source -->|"needs, main only"| windows
+    windows -->|"self-check, alpha:evidence"| evidence
+    dispatch --> pbuild
+    pbuild -->|"web-demo/dist"| pdeploy
+    trigger -.->|"also push, weekly"| audit
+    classDef focus fill:#fde68a,stroke:#b45309,color:#1f2937
+    class windows focus
+```
+
+The Verify jobs run on manual dispatch and on Dependabot pull requests. Other pull
+requests run only the dependency audit, so contributors run `pnpm verify:source`
+locally (see [Development](DEVELOPMENT.md)). The `windows` job runs only for a manual
+run on `main`, inside the `qualification` environment. It builds the unsigned MSI and
+the qualification utility, installs, self-checks and uninstalls the MSI on the
+runner, and uploads the evidence as a workflow artifact. Nothing is published as a
+release. Live Relution tests are a separate manual step described in
+[Operations](OPERATIONS.md).
+
+Where in the code:
+
+- [.github/workflows/verify.yml](../.github/workflows/verify.yml): source, demo, and Windows candidate jobs
+- [.github/workflows/demo-pages.yml](../.github/workflows/demo-pages.yml): demo deployment
+- [.github/workflows/security.yml](../.github/workflows/security.yml): dependency audit
+- [scripts/verify-source.mjs](../scripts/verify-source.mjs): the gates behind `pnpm verify:source`
+- [scripts/create-alpha-evidence.mjs](../scripts/create-alpha-evidence.mjs): candidate evidence
 
 The browser demo builds to `apps/web-demo/dist`, and its GitHub Pages workflow
 uploads only that directory. It does not authenticate, persist data, call native

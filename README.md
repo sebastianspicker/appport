@@ -4,6 +4,8 @@ Appport is a software catalog for Relution-managed Windows 11 PCs. Users can fin
 applications they have permission to install on their assigned device and request
 installs or updates. Relution handles the deployment.
 
+> _Claude was used to polish and proof-read the code and documentation of this repository._
+
 <details>
 <summary>Status and limitations</summary>
 
