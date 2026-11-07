@@ -5,6 +5,7 @@ export type Locale = "en" | "de";
 export const text = {
   en: {
     catalogToolbar: "Search and filter software",
+    softwareNavigation: "Software",
     clearFilters: "Clear filters",
     resultCount: "{count} application",
     resultsCount: "{count} applications",
@@ -108,9 +109,6 @@ export const text = {
     checkStatus: "Check status",
     unknownAction:
       "The final result is unknown. Do not request it again; check the status later or give this action ID to IT:",
-    confirmAction: "Confirm {intent}",
-    confirmInstall: "Install",
-    confirmUpdate: "Update",
     targetVersion: "Target version",
     cancel: "Cancel",
     confirm: "Confirm",
@@ -184,6 +182,7 @@ export const text = {
   },
   de: {
     catalogToolbar: "Software suchen und filtern",
+    softwareNavigation: "Softwarebereiche",
     clearFilters: "Filter zurücksetzen",
     resultCount: "{count} Anwendung",
     resultsCount: "{count} Anwendungen",
@@ -301,9 +300,6 @@ export const text = {
     checkStatus: "Status prüfen",
     unknownAction:
       "Das Endergebnis ist unbekannt. Nicht erneut anfordern; den Status später prüfen oder diese Aktions-ID an die IT weitergeben:",
-    confirmAction: "{intent} bestätigen",
-    confirmInstall: "Installieren",
-    confirmUpdate: "Aktualisieren",
     targetVersion: "Zielversion",
     cancel: "Abbrechen",
     confirm: "Bestätigen",

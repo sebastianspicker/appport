@@ -4,7 +4,10 @@ use super::{
 };
 use crate::{
     application::catalog::CatalogService,
-    domain::catalog::{AvailableApp, CatalogView},
+    domain::{
+        catalog::{AvailableApp, CatalogView},
+        device::same_uuid,
+    },
     error::{Error, ErrorKind},
     infrastructure::relution::{ConnectedIdentity, RelutionClient},
     infrastructure::windows::platform,
@@ -83,8 +86,9 @@ async fn matches_expected_device(
     let device = catalog
         .current_device_uncached(&credentials.user_b_token, &user_b.user_uuid)
         .await;
-    if device.as_ref().map(|device| device.id.as_str())
-        == Ok(credentials.expected_device_uuid.as_str())
+    if device
+        .as_ref()
+        .is_ok_and(|device| same_uuid(&device.id, &credentials.expected_device_uuid))
     {
         checks.push(passed(
             "user_b_device_match",

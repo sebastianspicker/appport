@@ -38,7 +38,7 @@ export function nativeBootstrap(
 ): NativeBootstrap {
   return {
     user: { displayName: "Ada" },
-    device: { name: "PC", status: "COMPLIANT", lastSeenAt: null },
+    device: { name: "PC", status: "COMPLIANT" },
     assignedEligibleCount: 1,
     availableCount: 0,
     updates: { count: 0, keys: [] },

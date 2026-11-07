@@ -5,7 +5,7 @@ use super::{
 };
 use crate::domain::{
     catalog::{AppPermission, CatalogEntry, InstalledApp},
-    device::AssignedDevice,
+    device::{same_uuid, AssignedDevice},
 };
 use crate::error::Error;
 use reqwest::{header, Method};
@@ -100,22 +100,27 @@ impl RelutionClient {
             .map(dto::Permission::into_app_permission)
             .collect())
     }
-    pub(crate) async fn group_members(
+    /// Pages the recursive member list only until the user is found.
+    pub(crate) async fn group_contains_user(
         &self,
         token: &str,
         group_id: &str,
-    ) -> Result<Vec<String>, Error> {
+        user_uuid: &str,
+    ) -> Result<bool, Error> {
         let members: Vec<dto::Group> = self
-            .get_pages(
+            .get_pages_until(
                 &format!(
                     "/api/management/v1/security/groups/{}/members",
                     encode(group_id)
                 ),
                 token,
                 vec![("recursive", "true")],
+                |member: &dto::Group| same_uuid(&member.uuid, user_uuid),
             )
             .await?;
-        Ok(members.into_iter().map(|member| member.uuid).collect())
+        Ok(members
+            .iter()
+            .any(|member| same_uuid(&member.uuid, user_uuid)))
     }
     pub(super) async fn get_pages<T: DeserializeOwned>(
         &self,
@@ -123,9 +128,18 @@ impl RelutionClient {
         t: &str,
         q: Vec<(&str, &str)>,
     ) -> Result<Vec<T>, Error> {
+        self.get_pages_until(p, t, q, |_| false).await
+    }
+    async fn get_pages_until<T: DeserializeOwned>(
+        &self,
+        p: &str,
+        t: &str,
+        q: Vec<(&str, &str)>,
+        found: impl Fn(&T) -> bool,
+    ) -> Result<Vec<T>, Error> {
         let mut out = vec![];
         let mut budget = PaginationBudget::default();
-        for n in 0..MAX_PAGES {
+        for _ in 0..MAX_PAGES {
             let mut x = q.clone();
             x.extend([("getItems", "true"), ("getNonpagedCount", "true")]);
             let page: response::DecodedResponse<dto::PaginatedPage<T>> = self
@@ -137,15 +151,15 @@ impl RelutionClient {
                     x.into_iter()
                         .chain([
                             ("limit", &PAGE_SIZE.to_string()[..]),
-                            ("offset", &(n * PAGE_SIZE).to_string()[..]),
+                            ("offset", &out.len().to_string()[..]),
                         ])
                         .collect(),
                     ResponsePolicy::paginated(budget.response_limit()?),
                 )
                 .await?;
-            match budget.append_page(&mut out, page)? {
-                true => return Ok(out),
-                false => continue,
+            let before = out.len();
+            if budget.append_page(&mut out, page)? || out[before..].iter().any(&found) {
+                return Ok(out);
             }
         }
         pagination_limit_error()
@@ -158,10 +172,10 @@ impl RelutionClient {
     ) -> Result<Vec<T>, Error> {
         let mut out = vec![];
         let mut budget = PaginationBudget::default();
-        for n in 0..MAX_PAGES {
+        for _ in 0..MAX_PAGES {
             let mut b = b.clone();
             b["limit"] = json!(PAGE_SIZE);
-            b["offset"] = json!(n * PAGE_SIZE);
+            b["offset"] = json!(out.len());
             let page: response::DecodedResponse<dto::PaginatedPage<T>> = self
                 .request_decoded(
                     Method::POST,
@@ -216,7 +230,7 @@ impl RelutionClient {
         q: Vec<(&str, &str)>,
         policy: ResponsePolicy,
     ) -> Result<response::DecodedResponse<T>, Error> {
-        let read = m == Method::GET;
+        let read = m == Method::GET || policy.retry_post;
         for attempt in 0..response::request_attempts(read) {
             match self
                 .request_attempt(
@@ -334,7 +348,11 @@ impl PaginationBudget {
         let total = response.value.total;
         let page_len = response.value.results.len();
         items.extend(response.value.results);
-        Ok(page_len < PAGE_SIZE || total.is_some_and(|total| items.len() as u64 >= total))
+        // A server may cap `limit` below PAGE_SIZE, so only `total` can say a short page is the last.
+        Ok(match total {
+            Some(total) => page_len == 0 || items.len() as u64 >= total,
+            None => page_len < PAGE_SIZE,
+        })
     }
 }
 
@@ -370,6 +388,8 @@ struct RequestInput<'a> {
 struct ResponsePolicy {
     maximum: usize,
     log_success_body: bool,
+    /// Paginated POSTs are read-only queries, so they get the read retry policy.
+    retry_post: bool,
 }
 
 impl ResponsePolicy {
@@ -377,6 +397,7 @@ impl ResponsePolicy {
         Self {
             maximum: MAX_JSON_BYTES,
             log_success_body: true,
+            retry_post: false,
         }
     }
 
@@ -384,6 +405,7 @@ impl ResponsePolicy {
         Self {
             maximum,
             log_success_body: false,
+            retry_post: true,
         }
     }
 }
@@ -402,84 +424,5 @@ fn append_query(url: &mut Url, query: &[(&str, &str)], tenant: &str) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        dto, response::DecodedResponse, Error, PaginationBudget, MAX_JSON_BYTES,
-        MAX_PAGINATED_JSON_BYTES, PAGE_SIZE,
-    };
-
-    fn page(
-        start: usize,
-        count: usize,
-        total: Option<u64>,
-        encoded_bytes: usize,
-    ) -> DecodedResponse<dto::PaginatedPage<usize>> {
-        DecodedResponse {
-            value: dto::PaginatedPage {
-                results: (start..start + count).collect(),
-                total,
-            },
-            encoded_bytes,
-        }
-    }
-
-    #[test]
-    fn pagination_rejects_aggregate_bytes_before_retaining_the_page() {
-        let mut budget = PaginationBudget::default();
-        let mut items = Vec::new();
-        assert!(!budget
-            .append_page(
-                &mut items,
-                page(
-                    0,
-                    PAGE_SIZE,
-                    Some((PAGE_SIZE * 2) as u64),
-                    MAX_PAGINATED_JSON_BYTES - 1
-                ),
-            )
-            .unwrap());
-
-        assert_eq!(
-            budget
-                .append_page(
-                    &mut items,
-                    page(PAGE_SIZE, PAGE_SIZE, Some((PAGE_SIZE * 2) as u64), 2),
-                )
-                .unwrap_err(),
-            Error::server("Relution pagination exceeded the response byte limit")
-        );
-        assert_eq!(items.len(), PAGE_SIZE);
-    }
-
-    #[test]
-    fn pagination_keeps_the_per_response_limit_within_the_aggregate_budget() {
-        assert_eq!(
-            PaginationBudget::default().response_limit().unwrap(),
-            MAX_JSON_BYTES
-        );
-        assert_eq!(
-            PaginationBudget {
-                encoded_bytes: MAX_PAGINATED_JSON_BYTES - 1,
-            }
-            .response_limit()
-            .unwrap(),
-            1
-        );
-    }
-
-    #[test]
-    fn pagination_preserves_one_hundred_full_pages_and_ten_thousand_items() {
-        let mut budget = PaginationBudget::default();
-        let mut items = Vec::new();
-        for page_number in 0..100 {
-            let complete = budget
-                .append_page(
-                    &mut items,
-                    page(page_number * PAGE_SIZE, PAGE_SIZE, Some(10_000), 1),
-                )
-                .unwrap();
-            assert_eq!(complete, page_number == 99);
-        }
-        assert_eq!(items, (0..10_000).collect::<Vec<_>>());
-    }
-}
+#[path = "transport_tests.rs"]
+mod tests;

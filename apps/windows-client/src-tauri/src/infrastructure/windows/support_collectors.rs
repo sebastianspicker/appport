@@ -147,11 +147,14 @@ pub(super) fn read_smbios_type1() -> Result<SmbiosType1, &'static str> {
     // The Win32 provider constant 'RSMB'. The little-endian reversal rule applies to
     // firmware table IDs, not to this provider signature.
     let provider = FIRMWARE_TABLE_PROVIDER(u32::from_be_bytes(*b"RSMB"));
+    // SAFETY: With no buffer the API only reports the required size and writes nothing.
     let size = unsafe { GetSystemFirmwareTable(provider, 0, None) } as usize;
     if !(9..=MAX_SMBIOS_BYTES + 8).contains(&size) {
         return Err("smbios_unavailable");
     }
     let mut raw = vec![0_u8; size];
+    // SAFETY: `raw` is a live, exclusively borrowed buffer of `size` bytes, and the
+    // API writes at most the buffer length it is given.
     let received = unsafe { GetSystemFirmwareTable(provider, 0, Some(&mut raw)) } as usize;
     if received != size {
         return Err("smbios_unavailable");
@@ -207,6 +210,9 @@ fn native_adapter_summaries() -> Result<(Vec<NetworkAdapterSummary>, bool), &'st
             return Err("network_buffer_too_large");
         }
         let mut buffer = adapter_buffer(size)?;
+        // SAFETY: `buffer` is zeroed, pointer-aligned, and at least `size` bytes; `size`
+        // is passed by exclusive reference so the API can report a larger requirement.
+        // The reserved argument is None as the API requires.
         let status = unsafe {
             GetAdaptersAddresses(
                 0,
@@ -253,6 +259,9 @@ fn collect_native_adapters(
         if !valid_adapter_pointer(current, start, end) {
             return Err("network_ip_helper_malformed");
         }
+        // SAFETY: valid_adapter_pointer just checked that `current` is non-null, aligned,
+        // and that a whole IP_ADAPTER_ADDRESSES_LH lies inside `buffer`, which
+        // GetAdaptersAddresses filled and which is not otherwise accessed while borrowed.
         let adapter = unsafe { &*current };
         adapters.push(NetworkAdapterSummary {
             name: bounded_wide_string(adapter.FriendlyName.0, start, end, 128),
@@ -301,6 +310,8 @@ fn bounded_wide_string(pointer: *mut u16, start: usize, end: usize, max_units: u
         if unit_address + std::mem::size_of::<u16>() > end {
             break;
         }
+        // SAFETY: `pointer` is non-null, u16-aligned, and starts inside the buffer; the
+        // check above guarantees the unit at `offset` ends at or before `end`.
         let unit = unsafe { *pointer.add(offset) };
         if unit == 0 {
             break;

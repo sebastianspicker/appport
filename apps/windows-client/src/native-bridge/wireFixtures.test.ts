@@ -112,7 +112,6 @@ const userKeys: Record<keyof NativeBootstrap["user"], true> = {
 const deviceKeys: Record<keyof NativeBootstrap["device"], true> = {
   name: true,
   status: true,
-  lastSeenAt: true,
 };
 const updatesKeys: Record<keyof NativeBootstrap["updates"], true> = {
   count: true,

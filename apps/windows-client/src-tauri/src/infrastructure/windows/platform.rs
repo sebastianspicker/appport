@@ -43,6 +43,10 @@ pub fn acquire_singleton() -> Result<(), Error> {
         },
     };
     let name: Vec<u16> = "Local\\Appport".encode_utf16().chain(Some(0)).collect();
+    // SAFETY: `name` is NUL-terminated and outlives the call. GetLastError is read
+    // immediately after CreateMutexW on the same thread, and the handle is closed
+    // only on the already-running path; on success it is deliberately kept open
+    // for the process lifetime so the mutex stays held.
     unsafe {
         let handle = CreateMutexW(None, true, PCWSTR(name.as_ptr()))
             .map_err(|_| Error::unknown("singleton mutex failed"))?;
@@ -57,4 +61,26 @@ pub fn acquire_singleton() -> Result<(), Error> {
 #[cfg(not(windows))]
 pub fn acquire_singleton() -> Result<(), Error> {
     Ok(())
+}
+
+/// Best effort: brings the running instance's window (title from tauri.conf.json) forward.
+#[cfg(windows)]
+pub fn focus_existing_window() {
+    use windows::{
+        core::w,
+        Win32::UI::WindowsAndMessaging::{
+            FindWindowW, IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE,
+        },
+    };
+    // SAFETY: the title is a static NUL-terminated wide string. The HWND comes from
+    // FindWindowW just above; a window that vanished makes the calls fail, and their
+    // results are deliberately ignored.
+    unsafe {
+        if let Ok(hwnd) = FindWindowW(None, w!("Appport")) {
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
 }

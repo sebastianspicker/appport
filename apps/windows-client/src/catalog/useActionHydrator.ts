@@ -20,6 +20,7 @@ type HydrationAttempt = HydrationMarker & {
 };
 
 type HydrationContext = {
+  actions: MutableRefObject<ReadonlyMap<string, AppAction>>;
   actionGenerations: MutableRefObject<Map<string, number>>;
   beginPolling: (action: AppAction) => void;
   isCurrent: (
@@ -55,6 +56,8 @@ function beginHydrationAttempt(
   const actionId = application.activeActionId;
   const sessionGeneration = context.generation.current;
   if (!actionId) return;
+  // This session already tracks the action, so its poll loop must keep running.
+  if (context.actions.current.get(application.id)?.id === actionId) return;
   const marker = { actionId, sessionGeneration };
   if (isHydrated(hydrated, application.id, marker)) return;
   hydrated.set(application.id, marker);

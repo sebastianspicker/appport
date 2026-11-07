@@ -116,7 +116,6 @@ pub struct NativeUser {
 pub struct NativeDevice {
     pub name: String,
     pub status: String,
-    pub last_seen_at: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -219,7 +218,6 @@ impl From<catalog::CatalogBootstrap> for NativeBootstrap {
             device: NativeDevice {
                 name: value.device.name,
                 status: value.device.status,
-                last_seen_at: None,
             },
             assigned_eligible_count: value.assigned_eligible_count,
             available_count: value.available_count,
@@ -394,7 +392,6 @@ mod tests {
             device: NativeDevice {
                 name: "Device".into(),
                 status: "COMPLIANT".into(),
-                last_seen_at: None,
             },
             assigned_eligible_count: 2,
             available_count: 2,

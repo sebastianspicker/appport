@@ -175,3 +175,24 @@ fn action_target_does_not_request_an_unrelated_application_permission() {
     assert_eq!(app.id, "target");
     assert_eq!(requests.load(Ordering::SeqCst), 5);
 }
+
+#[test]
+fn group_membership_check_stops_paging_once_the_user_is_found() {
+    let (base, requests, handle) = concurrent_server(1, |_| {
+        let members = (0..99)
+            .map(|index| format!(r#"{{"uuid":"member-{index}"}}"#))
+            .chain([r#"{"uuid":"USER"}"#.to_owned()])
+            .collect::<Vec<_>>()
+            .join(",");
+        Response::json(
+            200,
+            format!(r#"{{"items":[{members}],"nonpagedCount":100000}}"#),
+        )
+    });
+
+    let contains = run(client(base).group_contains_user("token", "group", "user"));
+
+    handle.join().expect("mock server");
+    assert!(contains.expect("membership check"));
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+}

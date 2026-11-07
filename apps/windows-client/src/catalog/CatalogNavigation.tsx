@@ -17,7 +17,10 @@ export function CatalogNavigation({
   onSelect: Dispatch<View>;
 }) {
   return (
-    <nav className="catalog-navigation" aria-label="Software">
+    <nav
+      className="catalog-navigation"
+      aria-label={copyFor(locale).softwareNavigation}
+    >
       {views.map((item) => (
         <ViewButton
           key={item}

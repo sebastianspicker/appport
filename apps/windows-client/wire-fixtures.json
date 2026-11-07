@@ -24,8 +24,7 @@
     },
     "device": {
       "name": "WIN-DEVICE-01",
-      "status": "COMPLIANT",
-      "lastSeenAt": null
+      "status": "COMPLIANT"
     },
     "assignedEligibleCount": 3,
     "availableCount": 2,
@@ -238,8 +237,7 @@
       },
       "device": {
         "name": "WIN-DEVICE-01",
-        "status": "COMPLIANT",
-        "lastSeenAt": null
+        "status": "COMPLIANT"
       },
       "assignedEligibleCount": 3,
       "availableCount": 2,

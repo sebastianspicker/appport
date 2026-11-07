@@ -33,7 +33,7 @@ export interface SignOutOutcome {
 
 export interface NativeBootstrap {
   user: { displayName: string };
-  device: { name: string; status: string; lastSeenAt: string | null };
+  device: { name: string; status: string };
   assignedEligibleCount: number;
   availableCount: number;
   updates: { count: number; keys: string[] };

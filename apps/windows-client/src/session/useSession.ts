@@ -73,10 +73,12 @@ function createSignOut({ catalog, copy, setWarning }: SignOutContext) {
     const outcome = await native.signOut().catch(() => undefined);
     if (!outcome) {
       setWarning(copy.signOutFailed);
+      void catalog.load();
       return;
     }
     if (!outcome.credentialRemoved) {
       setWarning(copy.signOutIncomplete);
+      void catalog.load();
       return;
     }
     catalog.clear("session-expired");

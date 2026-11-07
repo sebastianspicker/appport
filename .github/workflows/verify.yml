@@ -157,8 +157,13 @@ jobs:
           if (-not (Test-Path -LiteralPath $utility -PathType Leaf)) { throw "Qualification utility was not built." }
           $candidateUtility = Join-Path $evidenceDirectory "relution-appport-qualification.exe"
           Copy-Item -LiteralPath $utility -Destination $candidateUtility -Force
+          $client = "apps/windows-client/src-tauri/target/x86_64-pc-windows-msvc/release/relution-appport.exe"
+          if (-not (Test-Path -LiteralPath $client -PathType Leaf)) { throw "Client executable was not built." }
+          $candidateClient = Join-Path $evidenceDirectory "relution-appport.exe"
+          Copy-Item -LiteralPath $client -Destination $candidateClient -Force
           "APPPORT_MSI=$((Resolve-Path $candidateMsi).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "APPPORT_QUALIFICATION_UTILITY=$((Resolve-Path $candidateUtility).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "APPPORT_CLIENT_EXECUTABLE=$((Resolve-Path $candidateClient).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Install, self-check, and uninstall candidate
         shell: pwsh
         run: |
@@ -208,7 +213,7 @@ jobs:
           $selfCheck | Add-Member -NotePropertyName qualificationUtilitySha256 -NotePropertyValue $qualificationUtilitySha256
           $selfCheck | ConvertTo-Json -Depth 8 | Set-Content -Path $report -Encoding utf8NoBOM
       - name: Record candidate evidence
-        run: pnpm alpha:evidence -- --msi $env:APPPORT_MSI --qualification-utility $env:APPPORT_QUALIFICATION_UTILITY --windows-self-check release-artifacts/0.1.0-alpha.4/windows-self-check.json
+        run: pnpm alpha:evidence -- --msi $env:APPPORT_MSI --qualification-utility $env:APPPORT_QUALIFICATION_UTILITY --client-executable $env:APPPORT_CLIENT_EXECUTABLE --windows-self-check release-artifacts/0.1.0-alpha.4/windows-self-check.json
       - name: Require candidate-ready unsigned evidence
         shell: pwsh
         run: |

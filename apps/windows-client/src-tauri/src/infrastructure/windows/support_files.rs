@@ -68,8 +68,8 @@ fn is_reparse_point(path: &Path) -> Result<bool, SupportError> {
 }
 
 pub(super) fn make_temp_directory(root: &Path) -> Result<PathBuf, SupportError> {
-    for attempt in 0..32 {
-        let candidate = root.join(format!(".support-tmp-{attempt}"));
+    for _ in 0..32 {
+        let candidate = root.join(format!(".support-tmp-{:016x}", rand::random::<u64>()));
         match fs::create_dir(&candidate) {
             Ok(()) => {
                 secure_current_user(&candidate)?;
@@ -214,7 +214,8 @@ fn sanitize_log(raw: &[u8]) -> (String, bool) {
     let mut changed = false;
     let mut kept = Vec::new();
     for line in String::from_utf8_lossy(raw).lines() {
-        let lower = line.to_ascii_lowercase();
+        // The app's own fixed error texts ("action journal is unavailable") stay diagnosable.
+        let lower = line.to_ascii_lowercase().replace("action journal ", " ");
         if SECRET_MARKERS.iter().any(|marker| lower.contains(marker)) {
             changed = true;
             continue;
@@ -227,26 +228,26 @@ fn sanitize_log(raw: &[u8]) -> (String, bool) {
 }
 
 fn redact_profile_path(line: &str) -> (String, bool) {
-    if let Some(redacted) = redact_profile_segment(line, &line.to_ascii_lowercase(), "\\users\\") {
-        return redacted;
-    }
-    if let Some(redacted) = redact_profile_segment(line, line, "/Users/") {
-        return redacted;
-    }
-    (line.to_owned(), false)
+    let (line, windows) = redact_profile_segment(line, &line.to_ascii_lowercase(), "\\users\\");
+    let (line, unix) = redact_profile_segment(&line, &line, "/Users/");
+    (line, windows || unix)
 }
 
-fn redact_profile_segment(line: &str, searchable: &str, marker: &str) -> Option<(String, bool)> {
-    let index = searchable.find(marker)?;
-    let start = index + marker.len();
-    let end = line[start..]
-        .find(['\\', '/'])
-        .map(|offset| start + offset)
-        .unwrap_or(line.len());
-    Some((
-        format!("{}[profile-path]{}", &line[..index], &line[end..]),
-        true,
-    ))
+fn redact_profile_segment(line: &str, searchable: &str, marker: &str) -> (String, bool) {
+    let mut redacted = String::new();
+    let mut copied = 0;
+    while let Some(offset) = searchable[copied..].find(marker) {
+        let index = copied + offset;
+        let start = index + marker.len();
+        let end = line[start..]
+            .find(['\\', '/'])
+            .map_or(line.len(), |offset| start + offset);
+        redacted.push_str(&line[copied..index]);
+        redacted.push_str("[profile-path]");
+        copied = end;
+    }
+    redacted.push_str(&line[copied..]);
+    (redacted, copied > 0)
 }
 
 pub(super) fn write_new_file(path: &Path, bytes: &[u8]) -> Result<(), SupportError> {
@@ -258,4 +259,48 @@ pub(super) fn write_new_file(path: &Path, bytes: &[u8]) -> Result<(), SupportErr
     file.write_all(bytes)
         .and_then(|()| file.sync_all())
         .map_err(|_| SupportError::AssemblyFailed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{make_temp_directory, sanitize_log};
+    use std::fs;
+
+    #[test]
+    fn every_profile_path_on_a_line_is_redacted() {
+        let (log, changed) = sanitize_log(b"C:\\Users\\anna\\a -> C:\\Users\\bob\\b /Users/carl/c");
+        assert!(changed);
+        assert_eq!(
+            log,
+            "C:[profile-path]\\a -> C:[profile-path]\\b [profile-path]/c"
+        );
+    }
+
+    #[test]
+    fn own_journal_error_texts_survive_log_sanitizing() {
+        let raw = [
+            "command failed: unknown: action journal is unavailable",
+            "journal entry 1",
+            "action journal failed, Bearer secret",
+        ]
+        .join("\n");
+        let (log, changed) = sanitize_log(raw.as_bytes());
+        assert_eq!(
+            log,
+            "command failed: unknown: action journal is unavailable"
+        );
+        assert!(changed);
+    }
+
+    #[test]
+    fn leftover_temp_directories_do_not_block_new_bundles() {
+        let root =
+            std::env::temp_dir().join(format!("appport-tmp-test-{:016x}", rand::random::<u64>()));
+        for attempt in 0..64 {
+            fs::create_dir_all(root.join(format!(".support-tmp-{attempt}"))).unwrap();
+        }
+        let created = make_temp_directory(&root).unwrap();
+        assert!(created.is_dir());
+        fs::remove_dir_all(root).unwrap();
+    }
 }

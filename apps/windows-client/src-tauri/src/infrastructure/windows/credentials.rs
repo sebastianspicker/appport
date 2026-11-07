@@ -64,6 +64,8 @@ fn migration_result(
     (current, remove_obsolete)
 }
 
+/// # Safety
+/// A non-empty `blob` must point to `blob_size` readable bytes for the duration of the call.
 #[cfg(any(windows, test))]
 unsafe fn credential_blob_bytes(blob: *const u8, blob_size: u32) -> Option<Vec<u8>> {
     let blob_size = blob_size as usize;
@@ -121,6 +123,8 @@ fn read(target_name: &str) -> Option<Vec<u8>> {
         Win32::Security::Credentials::{CredReadW, CRED_TYPE_GENERIC},
     };
 
+    // SAFETY: `target` is NUL-terminated and outlives CredReadW. A returned pointer is
+    // owned by CredentialGuard, which frees it once, and the blob is copied while it lives.
     unsafe {
         let target = wide(target_name);
         let mut credential = std::ptr::null_mut();
@@ -149,6 +153,8 @@ fn write(target_name: &str, mut bytes: Vec<u8>) -> Result<(), Error> {
         },
     };
 
+    // SAFETY: `target` and `bytes` outlive CredWriteW, which only reads through the
+    // pointers; CredentialBlobSize is the exact length of `bytes`.
     unsafe {
         let target = wide(target_name);
         let credential = CREDENTIALW {
@@ -174,6 +180,7 @@ fn delete(target_name: &str) -> Result<(), Error> {
         },
     };
 
+    // SAFETY: `target` is NUL-terminated and outlives CredDeleteW.
     unsafe {
         let target = wide(target_name);
         match CredDeleteW(PCWSTR(target.as_ptr()), CRED_TYPE_GENERIC, None) {

@@ -109,6 +109,35 @@ describe("catalog action workflow", () => {
     expectTerminalReload(result.current.catalog, loadsBefore);
   });
 
+  it("keeps polling an action this session started when the catalog refreshes", async () => {
+    vi.mocked(native.act).mockResolvedValue(appAction("queued"));
+    vi.mocked(native.action).mockResolvedValue(appAction("queued"));
+    const { result } = await renderCatalog(availableApp());
+    await act(async () => {
+      await result.current.catalog.startAction(availableApp());
+    });
+    vi.mocked(native.loadCatalog).mockImplementation(async () =>
+      catalogSnapshot([
+        availableApp("firefox", "firefox", {
+          activeActionId: "action-42",
+          activeActionState: "queued",
+        }),
+      ]),
+    );
+    await refreshCatalog(result.current.catalog);
+
+    expect(native.action).not.toHaveBeenCalled();
+    vi.mocked(native.action).mockResolvedValueOnce(appAction("succeeded"));
+    const loadsBefore = catalogLoads();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    await settle();
+
+    expect(native.action).toHaveBeenCalledTimes(1);
+    expectTerminalReload(result.current.catalog, loadsBefore);
+  });
+
   it("ignores stale and mismatched hydration results", async () => {
     const stale = deferred<AppAction>();
     vi.mocked(native.action)

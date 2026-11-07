@@ -1,5 +1,6 @@
 //! Side-effect-free catalog models and classification policy.
 
+use crate::domain::device::same_uuid;
 use crate::error::Error;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -285,9 +286,6 @@ fn compare_numeric_component(left: &str, right: &str) -> Ordering {
         Ordering::Equal => left.cmp(right),
         ordering => ordering,
     }
-}
-fn same_uuid(left: &str, right: &str) -> bool {
-    left.eq_ignore_ascii_case(right)
 }
 
 #[cfg(test)]

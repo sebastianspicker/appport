@@ -6,7 +6,12 @@ export function documentationLinkFailures(root, path, markdownContents) {
   const contents = markdownContents.get(path);
   for (const match of contents.matchAll(/!?\[[^\]\r\n]*\]\(([^()\r\n]*)\)/g)) {
     const target = match[1].trim().replace(/^<|>$/g, "");
-    verifyLink(root, failures, path, target, markdownContents);
+    try {
+      verifyLink(root, failures, path, target, markdownContents);
+    } catch (error) {
+      if (!(error instanceof URIError)) throw error;
+      failures.push(`${relative(root, path)} links to malformed ${target}`);
+    }
   }
   return failures;
 }

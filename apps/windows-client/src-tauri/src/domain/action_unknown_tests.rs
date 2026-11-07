@@ -94,7 +94,7 @@ fn matching_active_remote_actions_block_and_terminal_ones_do_not() {
         ("PENDING", true),
         ("DELIVERED", true),
         ("NOT_NOW", true),
-        ("EXECUTED", true),
+        ("EXECUTED", false),
         ("FUTURE_STATE", true),
         ("ERROR", false),
         ("CANCELLED", false),
@@ -102,6 +102,8 @@ fn matching_active_remote_actions_block_and_terminal_ones_do_not() {
         let actions = [remote("other", state, target_details())];
         assert_eq!(blocks(&actions, None), expected, "{state}");
     }
+    let executed = [remote("other", "EXECUTED", target_details())];
+    assert!(blocks(&executed, Some("other")));
     let other_app = Some(RemoteActionDetails {
         app_id: Some("app-2".into()),
         version_id: None,

@@ -1,6 +1,7 @@
 //! Side-effect-free action models, transition legality, and reconciliation policy.
 
 use crate::domain::catalog::{AppInstallState, AvailableApp, InstalledApp};
+use crate::domain::device::same_uuid;
 use crate::error::Error;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -411,9 +412,12 @@ pub fn remote_actions_block(
     correlation: Option<&str>,
 ) -> bool {
     actions.iter().any(|action| {
-        (correlation == Some(action.id.as_str())
-            || action_details_match(action.details.as_ref(), app_id, version_id, package_id))
-            && remote_action_blocks_request(remote_state(&action.state))
+        let state = remote_state(&action.state);
+        // An uncorrelated EXECUTED action may be history (installed, then uninstalled locally).
+        (correlation == Some(action.id.as_str()) && remote_action_blocks_request(state))
+            || (state != State::Verifying
+                && remote_action_blocks_request(state)
+                && action_details_match(action.details.as_ref(), app_id, version_id, package_id))
     })
 }
 pub fn unknown_release_due(action: &Action, now: i64) -> bool {
@@ -434,9 +438,6 @@ pub fn baseline(action: &Action) -> HashSet<&str> {
         .split(',')
         .filter(|value| !value.is_empty())
         .collect()
-}
-fn same_uuid(left: &str, right: &str) -> bool {
-    left.eq_ignore_ascii_case(right)
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use crate::{
         catalog::CatalogService,
         test_support::run,
     },
-    domain::action::{Intent, Reservation, State},
+    domain::action::{DeploymentResponse, Intent, Reservation, State},
     error::{Error, ErrorKind},
     infrastructure::{
         journal::ActionJournal,
@@ -184,4 +184,32 @@ fn a_single_failed_deployment_post_is_classified_by_kind_and_never_retried() {
         assert_eq!(result.is_err(), state == State::Failed, "{kind:?}");
         assert_eq!(saved(&id).0, state, "{kind:?}");
     }
+}
+
+#[test]
+fn a_journal_write_failure_after_an_accepted_post_leaves_the_action_unknown() {
+    let _environment = journal_environment();
+    let _sandbox = JournalSandbox::new();
+    let client = client(url::Url::parse("http://127.0.0.1:9/").expect("unused URL"));
+    let service = service(&client);
+    reserve("action", "app");
+    let path = std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA").expect("sandbox"))
+        .join("Relution")
+        .join("Appport")
+        .join("actions.sqlite3");
+    let connection = rusqlite::Connection::open(path).expect("journal file");
+    connection
+        .execute_batch(
+            "CREATE TRIGGER fail_accept BEFORE UPDATE ON actions WHEN NEW.state='queued'
+             BEGIN SELECT RAISE(ABORT, 'injected'); END",
+        )
+        .expect("trigger");
+
+    let result = run(service.settle_submission("action", Ok(DeploymentResponse::Accepted)));
+
+    assert!(result.is_err());
+    assert_eq!(
+        saved("action"),
+        (State::Unknown, Some("SUBMISSION_UNCERTAIN".into()))
+    );
 }

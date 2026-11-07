@@ -11,6 +11,7 @@ use crate::{
     domain::{
         action::{ActionState, Intent},
         catalog::{AppInstallState, AvailableApp, CatalogView},
+        device::same_uuid,
     },
     error::{Error, ErrorKind},
     infrastructure::relution::RelutionClient,
@@ -89,8 +90,10 @@ fn plan_matches_operator_input(
     prerequisites: &ReadPrerequisites,
     checks: &mut Vec<QualificationCheck>,
 ) -> bool {
-    let matches = plan.disposable_device_uuid == credentials.expected_device_uuid
-        && plan.disposable_device_uuid == prerequisites.device_uuid;
+    let matches = same_uuid(
+        &plan.disposable_device_uuid,
+        &credentials.expected_device_uuid,
+    ) && same_uuid(&plan.disposable_device_uuid, &prerequisites.device_uuid);
     checks.push(if matches {
         passed("qualification_plan", "disposable-resource plan validated")
     } else {
@@ -112,10 +115,7 @@ async fn fresh_device_matches(
     let matches = catalog
         .current_device_uncached(&credentials.user_b_token, &prerequisites.user_b_uuid)
         .await
-        .ok()
-        .map(|device| device.id)
-        .as_deref()
-        == Some(plan.disposable_device_uuid.as_str());
+        .is_ok_and(|device| same_uuid(&device.id, &plan.disposable_device_uuid));
     checks.push(if matches {
         passed(
             "write_device_binding",
@@ -197,11 +197,11 @@ fn fixtures_are_approved(
     let unauthorized_absent = apps
         .iter()
         .chain(updates)
-        .all(|app| app.id != plan.unauthorized.application_uuid);
+        .all(|app| !same_uuid(&app.id, &plan.unauthorized.application_uuid));
     let substituted_absent = apps
         .iter()
         .chain(updates)
-        .all(|app| app.released_version_id != plan.unauthorized.version_uuid);
+        .all(|app| !same_uuid(&app.released_version_id, &plan.unauthorized.version_uuid));
     checks.push(fixture_check(
         install_ok,
         "install_fixture",
@@ -385,64 +385,13 @@ fn fixture_visible(
     expected_state: AppInstallState,
 ) -> bool {
     apps.iter().any(|app| {
-        app.id == fixture.application_uuid
-            && app.released_version_id == fixture.version_uuid
+        same_uuid(&app.id, &fixture.application_uuid)
+            && same_uuid(&app.released_version_id, &fixture.version_uuid)
             && app.released_version_label.as_deref() == Some(fixture.expected_version.as_str())
             && app.install_state == expected_state
     })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{catalog_result, cross_user_action_check, Error, WriteCatalogFailure};
-
-    #[test]
-    fn apps_lookup_failure_is_redacted_and_blocks_catalog_use() {
-        let result: Result<(), Error> = Err(Error::server(
-            "invalid Relution response Bearer sentinel-apps-token",
-        ));
-
-        let failure = catalog_result(result, WriteCatalogFailure::Apps).unwrap_err();
-        let check = failure.check();
-
-        assert_eq!(failure, WriteCatalogFailure::Apps);
-        assert_eq!(check.name, "write_catalog");
-        assert_eq!(check.status, super::super::CheckStatus::Failed);
-        assert!(check.detail.contains("Apps catalog lookup failed"));
-        assert!(!check.detail.contains("sentinel-apps-token"));
-    }
-
-    #[test]
-    fn updates_lookup_failure_is_redacted_and_blocks_catalog_use() {
-        let result: Result<(), Error> = Err(Error::server(
-            "invalid Relution response Bearer sentinel-updates-token",
-        ));
-
-        let failure = catalog_result(result, WriteCatalogFailure::Updates).unwrap_err();
-        let check = failure.check();
-
-        assert_eq!(failure, WriteCatalogFailure::Updates);
-        assert_eq!(check.name, "write_catalog");
-        assert_eq!(check.status, super::super::CheckStatus::Failed);
-        assert!(check.detail.contains("Updates catalog lookup failed"));
-        assert!(!check.detail.contains("sentinel-updates-token"));
-    }
-
-    #[test]
-    fn cross_user_action_passes_only_for_the_observed_device_denial() {
-        let passed_check =
-            cross_user_action_check::<()>(Err(Error::device_match_failed("device not assigned")));
-        assert_eq!(passed_check.status, super::super::CheckStatus::Passed);
-
-        for result in [
-            Ok(()),
-            Err(Error::server("action submission failed")),
-            Err(Error::session_expired("user A session expired")),
-        ] {
-            assert_eq!(
-                cross_user_action_check(result).status,
-                super::super::CheckStatus::Failed
-            );
-        }
-    }
-}
+#[path = "write_tests.rs"]
+mod tests;

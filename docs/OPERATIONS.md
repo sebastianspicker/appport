@@ -58,11 +58,12 @@ From the repository root, inspect and bind the resulting files:
 ```powershell
 pnpm alpha:evidence -- --msi C:\absolute\path\Appport.msi `
   --qualification-utility C:\absolute\path\relution-appport-qualification.exe `
+  --client-executable C:\absolute\path\relution-appport.exe `
   --windows-self-check C:\absolute\path\windows-self-check.json
 ```
 
 This command reruns the source checks, validates the embedded configuration, hashes
-the MSI and qualification utility, checks their file formats and the MSI signature
+the MSI, qualification utility, and client executable, checks their file formats and the MSI signature
 state, verifies the installed self-check, and scans UTF-8 and UTF-16 strings for
 credential markers.
 
@@ -113,12 +114,13 @@ restore the disposable resources and create the separate cleanup report identifi
 the plan.
 
 Bind the live result to the same candidate by running `pnpm alpha:evidence` again
-with the original MSI, qualification utility, and Windows self-check, plus
+with the original MSI, qualification utility, client executable, and Windows self-check, plus
 `--live-report`. A write-profile run also requires `--cleanup-report`:
 
 ```powershell
 pnpm alpha:evidence -- --msi C:\absolute\path\Appport.msi `
   --qualification-utility C:\absolute\path\relution-appport-qualification.exe `
+  --client-executable C:\absolute\path\relution-appport.exe `
   --windows-self-check C:\absolute\path\windows-self-check.json `
   --live-report C:\absolute\path\live-report.json `
   --cleanup-report C:\absolute\path\cleanup-report.json

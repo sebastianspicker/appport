@@ -4,7 +4,7 @@
 mod reads;
 use reads::{join2, join3};
 
-use super::catalog_cache::{AuthorizedCatalog, CatalogCache, CATALOG_TTL};
+use super::catalog_cache::{is_refresh_invalidated, AuthorizedCatalog, CatalogCache, CATALOG_TTL};
 use crate::{
     domain::{
         action::attach_active_actions,
@@ -93,9 +93,17 @@ impl CatalogService {
         locale: &str,
         force_refresh: bool,
     ) -> Result<LoadedCatalog, Error> {
-        let catalog = self
+        let catalog = match self
             .authorized_snapshot(token, user_uuid, generation, locale, force_refresh)
-            .await?;
+            .await
+        {
+            // An action completed mid-refresh; one retry takes a fresh snapshot.
+            Err(error) if is_refresh_invalidated(&error) => {
+                self.authorized_snapshot(token, user_uuid, generation, locale, force_refresh)
+                    .await?
+            }
+            result => result?,
+        };
         let mut rows = catalog.rows;
         attach_active_actions(
             &mut rows,

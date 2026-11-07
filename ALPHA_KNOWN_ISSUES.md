@@ -54,10 +54,11 @@ which entry caused it.
 connection" and "Last MDM IP" always show "Not reported by Relution". This is a
 known gap, not a problem with your PC.
 
-**Reinstalling the same version after removing it may be refused.** If you uninstall
-an application and then request the same version again, Appport may say a matching
-request is already active. We haven't confirmed this yet. If it happens to you,
-please report it.
+**Status checks can fail on a device with a very long request history.** Appport
+reads the device's whole request history from the service on each status check, up
+to 10,000 entries. A device with more than that can no longer confirm installs.
+We don't expect a device to get there during the alpha.
+*What to do:* if status checks fail on one device every time, send a support bundle.
 
 ## How to report a problem
 

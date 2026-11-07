@@ -305,7 +305,7 @@ pub(super) async fn retry_after(attempt: u32) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::MAX_JSON_BYTES;
+    use super::super::{RelutionClient, RelutionConfig, MAX_JSON_BYTES};
     use super::{
         decode_response_bytes, diagnostic_response_attempt, read_response_at_most, DecodedResponse,
         RequestAttempt, ResponseDiagnostic,
@@ -387,6 +387,34 @@ mod tests {
                 assert_complete_error(result, status(reqwest::StatusCode::SERVICE_UNAVAILABLE));
             }
         }
+    }
+
+    #[test]
+    fn post_queries_retry_a_transient_status() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+        let server = thread::spawn(move || {
+            for (status, body) in [(503, "{}"), (200, r#"{"items":[],"nonpagedCount":0}"#)] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let _ = stream.read(&mut [0_u8; 4096]).unwrap();
+                write!(
+                    stream,
+                    "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            }
+        });
+        let client = RelutionClient::new(RelutionConfig {
+            base,
+            organization_uuid: "tenant".into(),
+            native_app_uuid: "native".into(),
+            writes_enabled: false,
+        })
+        .unwrap();
+        let devices = run(client.assigned_devices("token", "user"));
+        assert!(devices.unwrap().is_empty());
+        server.join().unwrap();
     }
 
     fn diagnostic() -> ResponseDiagnostic<'static> {

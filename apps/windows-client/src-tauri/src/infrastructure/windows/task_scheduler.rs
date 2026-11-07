@@ -62,9 +62,21 @@ pub(super) fn remove() -> Result<(), Error> {
         .status()
         .map_err(|_| Error::unknown("Task Scheduler unavailable"))?;
     if status.success() {
-        Ok(())
-    } else {
+        return Ok(());
+    }
+    // Delete also fails when the task was never registered; only a task that still exists is an error.
+    let still_registered = system_tools::command("schtasks.exe")
+        .map_err(|_| Error::unknown("Task Scheduler unavailable"))?
+        .args(["/Query", "/TN", &task_name])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|_| Error::unknown("Task Scheduler unavailable"))?
+        .success();
+    if still_registered {
         Err(Error::unknown("Task Scheduler removal failed"))
+    } else {
+        Ok(())
     }
 }
 
@@ -150,18 +162,22 @@ pub(super) fn current_user_sid() -> Result<String, Error> {
     if !output.status.success() {
         return Err(Error::unknown("Windows user identity unavailable"));
     }
-    let text = String::from_utf8(output.stdout)
-        .map_err(|_| Error::unknown("Windows user identity is malformed"))?;
-    text.split(',')
+    parse_user_sid(&output.stdout).ok_or_else(|| Error::unknown("Windows user SID is unavailable"))
+}
+
+// whoami prints the account name in the OEM code page, so only the SID column is trusted.
+#[cfg(any(windows, test))]
+fn parse_user_sid(stdout: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(stdout)
+        .split(',')
         .nth(1)
         .map(|value| value.trim().trim_matches('"').to_owned())
         .filter(|value| {
-            value.starts_with("S-1-")
-                && value
-                    .chars()
+            value.strip_prefix("S-1-").is_some_and(|rest| {
+                rest.chars()
                     .all(|character| character.is_ascii_digit() || character == '-')
+            })
         })
-        .ok_or_else(|| Error::unknown("Windows user SID is unavailable"))
 }
 
 #[cfg(windows)]
@@ -190,7 +206,9 @@ fn xml_escape(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{background_task_name, background_task_xml, valid_task_file_name, xml_escape};
+    use super::{
+        background_task_name, background_task_xml, parse_user_sid, valid_task_file_name, xml_escape,
+    };
     use std::path::Path;
 
     #[test]
@@ -227,5 +245,13 @@ mod tests {
         assert!(!valid_task_file_name("../task.xml"));
         assert!(!valid_task_file_name("nested\\task.xml"));
         assert!(!valid_task_file_name("task.txt"));
+    }
+
+    #[test]
+    fn sid_is_parsed_when_the_account_name_is_not_utf8() {
+        let mut csv = b"\"DOM\\J".to_vec();
+        csv.extend_from_slice(&[0xfc, 0xe4]);
+        csv.extend_from_slice(b"\",\"S-1-5-21-42-1001\"\r\n");
+        assert_eq!(parse_user_sid(&csv).as_deref(), Some("S-1-5-21-42-1001"));
     }
 }

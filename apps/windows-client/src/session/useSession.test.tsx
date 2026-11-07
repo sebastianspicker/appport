@@ -89,6 +89,17 @@ describe("client session operations", () => {
     expect(result.current.catalog.phase).toBe("ready");
   });
 
+  it("restarts cancelled catalog work when sign-out fails", async () => {
+    vi.mocked(native.signOut).mockRejectedValue(new Error("IPC unavailable"));
+    const { result } = await renderSignedIn();
+    const loadsBefore = vi.mocked(native.loadCatalog).mock.calls.length;
+    await act(async () => {
+      await result.current.client.signOut.signOut();
+    });
+    expect(native.loadCatalog).toHaveBeenCalledTimes(loadsBefore + 1);
+    expect(result.current.catalog.phase).toBe("ready");
+  });
+
   it("ignores a superseded connect that resolves after a newer one", async () => {
     let resolveFirst: (value: {
       backgroundCheckRegistered: boolean;

@@ -27,11 +27,16 @@ export function AppActionState(props: AppActionStateProps) {
     onResume,
     writesEnabled,
   } = props;
-  const state = action?.state ?? application.activeActionState;
+  // A finished action no longer applies once the app reappears with another active action.
+  const current =
+    action?.state === "succeeded" && action.id !== application.activeActionId
+      ? undefined
+      : action;
+  const state = current?.state ?? application.activeActionState;
   return (
     <>
       <ActionSummary
-        action={action}
+        action={current}
         application={application}
         locale={locale}
         polling={polling}

@@ -10,6 +10,7 @@ import {
   documentedPnpmScripts,
   missingPnpmScripts,
   trackedMarkdownFiles,
+  workflowVersionFailures,
 } from "./verify-docs.mjs";
 
 test("extracts root and package-scoped pnpm scripts", () => {
@@ -56,6 +57,8 @@ test("rejects broken files, anchors, and escaped documentation references", () =
       "[missing file](missing.md)",
       "[missing heading](#absent)",
       "[outside](../outside.md)",
+      "[malformed](100%.md)",
+      "[malformed anchor](#100%)",
       "[external](https://example.test/)",
     ].join("\n");
     writeFileSync(page, contents);
@@ -65,11 +68,34 @@ test("rejects broken files, anchors, and escaped documentation references", () =
         "README.md links to missing missing.md",
         "README.md links to missing anchor #absent in README.md",
         "README.md links outside the repository",
+        "README.md links to malformed 100%.md",
+        "README.md links to malformed #100%",
       ],
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("flags release and MSI versions in the workflow that differ from package.json", () => {
+  const current = "0.1.0-alpha.4";
+  assert.deepEqual(
+    workflowVersionFailures(
+      current,
+      "release-artifacts/0.1.0-alpha.4/a.msi DisplayVersion -eq '0.1.0.4' tool 1.2.0.9",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    workflowVersionFailures(
+      current,
+      "release-artifacts/0.1.0-alpha.3/a.msi DisplayVersion -eq '0.1.0.3'",
+    ),
+    [
+      `.github/workflows/verify.yml version 0.1.0-alpha.3 differs from ${current} (MSI 0.1.0.4)`,
+      `.github/workflows/verify.yml version 0.1.0.3 differs from ${current} (MSI 0.1.0.4)`,
+    ],
+  );
 });
 
 test("public documentation discovery excludes ignored and untracked local records", () => {

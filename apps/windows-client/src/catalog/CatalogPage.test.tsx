@@ -8,6 +8,8 @@ import {
 import { beforeEach, expect, it, vi } from "vitest";
 import { App } from "../app/App";
 import { native } from "../native-bridge/native";
+import { AppActionState } from "./AppActionState";
+import { CatalogNavigation } from "./CatalogNavigation";
 import {
   availableApp,
   catalogSnapshot,
@@ -224,4 +226,44 @@ it("does not produce a receipt from absence in another catalog view", async () =
     screen.getByRole("heading", { name: "Installation status" }),
   ).toBeTruthy();
   expect(screen.queryByText("Editor · Installation confirmed")).toBeNull();
+});
+
+it("offers a new request when a succeeded local action no longer matches the application", () => {
+  const props = {
+    application: availableApp("editor", "Editor"),
+    busy: false,
+    locale: "en",
+    onConfirm: vi.fn(),
+    onResume: vi.fn(),
+    writesEnabled: true,
+  } as const;
+  const action = {
+    id: "old-action",
+    appId: "editor",
+    deviceId: "device",
+    intent: "install",
+    state: "succeeded",
+    errorCode: null,
+    errorMessage: null,
+    createdAt: "2026-08-21T00:00:00.000Z",
+    updatedAt: "2026-08-21T00:00:00.000Z",
+  } as const;
+  render(<AppActionState {...props} action={action} />);
+  expect(
+    screen.getByRole("button", { name: "Review installation" }),
+  ).toBeTruthy();
+});
+
+it("labels the software navigation in the selected language", () => {
+  render(
+    <CatalogNavigation
+      bootstrap={undefined}
+      locale="de"
+      view="apps"
+      onSelect={vi.fn()}
+    />,
+  );
+  expect(
+    screen.getByRole("navigation", { name: "Softwarebereiche" }),
+  ).toBeTruthy();
 });

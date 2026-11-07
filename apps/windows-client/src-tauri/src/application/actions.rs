@@ -10,6 +10,7 @@ use crate::{
             Transition,
         },
         catalog::AvailableApp,
+        device::same_uuid,
     },
     error::{Error, ErrorKind},
     infrastructure::{
@@ -103,9 +104,9 @@ impl ActionService {
             .await?;
         let intent = request_intent(&app)?;
         if expected.is_some_and(|target| {
-            device.id != target.device_id
-                || app.id != target.app_id
-                || app.released_version_id != target.version_id
+            !same_uuid(&device.id, target.device_id)
+                || !same_uuid(&app.id, target.app_id)
+                || !same_uuid(&app.released_version_id, target.version_id)
                 || app.released_version_label.as_deref() != Some(target.version_label)
                 || intent != target.intent
         }) {
@@ -165,8 +166,25 @@ impl ActionService {
             .client
             .deploy(token, &app_id, &version_id, &device_id)
             .await;
-        self.record_submission(&id, result).await?;
+        self.settle_submission(&id, result).await?;
         self.saved_action(&id).await
+    }
+
+    /// A failed journal write after the POST must not leave the row `reserved`, which nothing
+    /// can move before the next restart. The compare-and-set is a no-op if the row already moved.
+    async fn settle_submission(
+        &self,
+        id: &str,
+        response: Result<DeploymentResponse, Error>,
+    ) -> Result<(), Error> {
+        let recorded = self.record_submission(id, response).await;
+        if recorded.is_err() {
+            let _ = self
+                .journal
+                .transition(id, State::Reserved, Transition::SubmissionUncertain)
+                .await;
+        }
+        recorded
     }
 
     pub async fn get_action(
@@ -181,7 +199,7 @@ impl ActionService {
             .catalog
             .current_device_uncached(token, user_uuid)
             .await?;
-        if device.id != action.device_id {
+        if !same_uuid(&device.id, &action.device_id) {
             return Err(Error::device_match_failed("device not assigned"));
         }
         if action.state == State::Unknown {

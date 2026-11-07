@@ -155,7 +155,7 @@ function canSubmitTask(catalog: Catalog, application: AvailableApp) {
     current?.releasedVersionId === application.releasedVersionId &&
     !catalog.busyApps.has(application.id) &&
     allowsNewRequest(catalog.actions.get(application.id)?.state) &&
-    allowsNewRequest(current?.activeActionState)
+    allowsNewRequest(current.activeActionState)
   );
 }
 

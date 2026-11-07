@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useActionHydrator } from "./useActionHydrator";
 import { copyFor, type Locale } from "../i18n/copy";
@@ -363,6 +363,10 @@ export function useActionWorkflow({
   const [polling, setPolling] = useState<Map<string, PollingState>>(
     () => new Map(),
   );
+  const actionsRef = useRef(actions);
+  useEffect(() => {
+    actionsRef.current = actions;
+  }, [actions]);
   const actionGenerations = useRef(new Map<string, number>());
   const pendingStarts = useRef(new Map<string, symbol>());
   const { beginPolling, beginRecheck, isCurrent, poll } = useActionPoller({
@@ -376,6 +380,7 @@ export function useActionWorkflow({
   });
   const hydrationContext = useMemo(
     () => ({
+      actions: actionsRef,
       actionGenerations,
       beginPolling,
       generation,

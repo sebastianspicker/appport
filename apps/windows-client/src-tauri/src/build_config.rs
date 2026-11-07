@@ -107,8 +107,11 @@ pub(crate) fn is_fixed_https_origin(url: &Url) -> bool {
 }
 
 fn is_placeholder_host(host: &str) -> bool {
-    matches!(host, "localhost" | "example.com" | "example.test")
-        || host.ends_with(".localhost")
+    let host = host.strip_suffix('.').unwrap_or(host);
+    matches!(
+        host,
+        "localhost" | "invalid" | "example.com" | "example.test"
+    ) || host.ends_with(".localhost")
         || host.ends_with(".invalid")
         || host.ends_with(".example.com")
         || host.ends_with(".example.test")
@@ -199,6 +202,9 @@ mod tests {
         assert!(validate_origin("https://tenant.example.org", true).is_ok());
         assert!(validate_origin("https://example.com", true).is_err());
         assert!(validate_origin("https://user@example.org", true).is_err());
+        assert!(validate_origin("https://invalid", true).is_err());
+        assert!(validate_origin("https://localhost.", true).is_err());
+        assert!(validate_origin("https://tenant.example.com.", true).is_err());
         assert!(validate_uuid("123e4567-e89b-12d3-a456-426614174000").is_ok());
         assert!(validate_uuid("00000000-0000-0000-0000-000000000000").is_err());
     }

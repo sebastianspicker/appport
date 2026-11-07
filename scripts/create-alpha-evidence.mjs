@@ -48,11 +48,17 @@ const sourceEntries = [
   "README.md",
   "SECURITY.md",
   "apps/windows-client",
+  "clippy.toml",
   "docs",
+  "eslint.config.mjs",
+  "jscpd.json",
   "package.json",
   "pnpm-lock.yaml",
   "pnpm-workspace.yaml",
+  "quality-duplication-baseline.json",
+  "rust-toolchain.toml",
   "scripts",
+  "stylelint.config.mjs",
 ];
 const excludedDirectories = new Set([
   ".git",
@@ -85,6 +91,7 @@ const inputOptions = new Map([
   ["--live-report", "liveReport"],
   ["--cleanup-report", "cleanupReport"],
   ["--qualification-utility", "qualificationUtility"],
+  ["--client-executable", "clientExecutable"],
 ]);
 
 if (
@@ -109,6 +116,11 @@ function main() {
     inputs.qualificationUtility,
     forbiddenBinaryMarkers,
   );
+  const clientExecutable = inspectQualificationUtility(
+    inputs.clientExecutable,
+    forbiddenBinaryMarkers,
+    "Client executable",
+  );
   const repository = inspectRepository();
   const candidateBinding = createCandidateBinding(
     artifact,
@@ -127,6 +139,7 @@ function main() {
     repository,
     artifact,
     qualificationUtility,
+    clientExecutable,
     configuration,
     windowsRuntime: qualifications.windowsRuntime,
   });
@@ -145,6 +158,7 @@ function main() {
       repository,
       artifact,
       qualificationUtility,
+      clientExecutable,
       qualifications,
       gates,
       sourceTree,
@@ -174,6 +188,7 @@ function emptyInputs() {
     liveReport: null,
     cleanupReport: null,
     qualificationUtility: null,
+    clientExecutable: null,
   };
 }
 
@@ -181,7 +196,7 @@ function setInputPath(inputs, option, value) {
   const property = inputOptions.get(option);
   if (!property || !value || inputs[property]) {
     throw new Error(
-      "Use each option at most once: --msi, --qualification-utility, --windows-self-check, --live-report, --cleanup-report.",
+      "Use each option at most once: --msi, --qualification-utility, --client-executable, --windows-self-check, --live-report, --cleanup-report.",
     );
   }
   inputs[property] = resolve(value);
@@ -193,6 +208,9 @@ function assertInputDependencies(inputs) {
   }
   if (inputs.msi && !inputs.qualificationUtility) {
     throw new Error("MSI evidence requires --qualification-utility.");
+  }
+  if (inputs.msi && !inputs.clientExecutable) {
+    throw new Error("MSI evidence requires --client-executable.");
   }
   if (inputs.cleanupReport && !inputs.liveReport) {
     throw new Error("Cleanup evidence requires --live-report.");
@@ -263,10 +281,12 @@ function candidateRequirements(context) {
     context.repository.state === "clean",
     context.artifact?.formatValid,
     context.qualificationUtility?.formatValid,
+    context.clientExecutable?.formatValid,
     context.configuration.valid,
     context.configuration.diagnosticsEnabled === false,
     context.artifact?.embeddedSecretScanPassed,
     context.qualificationUtility?.embeddedSecretScanPassed,
+    context.clientExecutable?.embeddedSecretScanPassed,
     context.artifact?.signatureStatus === "not_signed",
     context.windowsRuntime.status === "passed",
   ];
@@ -343,6 +363,7 @@ function createEvidence(context) {
     qualificationConfiguration: context.configuration,
     windowsArtifact: context.artifact,
     qualificationUtility: context.qualificationUtility,
+    clientExecutable: context.clientExecutable,
     windowsRuntime: context.qualifications.windowsRuntime,
     ...qualificationEvidence(context.configuration, context.qualifications),
     excludedGates: {

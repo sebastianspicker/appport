@@ -79,8 +79,7 @@ pub(super) async fn allowed(
             return Ok(true);
         }
         if let Some(group) = permission.readable_group() {
-            let members = client.group_members(token, group).await?;
-            if members.iter().any(|member| same_uuid(member, user_uuid)) {
+            if client.group_contains_user(token, group, user_uuid).await? {
                 return Ok(true);
             }
         }
@@ -194,41 +193,38 @@ async fn group_access_bounded(
     let mut access = HashMap::new();
     for chunk in groups.chunks(4) {
         let results = match chunk {
-            [a] => vec![client.group_members(token, a).await?],
+            [a] => vec![client.group_contains_user(token, a, user_uuid).await?],
             [a, b] => {
                 let (a_result, b_result) = join2(
-                    client.group_members(token, a),
-                    client.group_members(token, b),
+                    client.group_contains_user(token, a, user_uuid),
+                    client.group_contains_user(token, b, user_uuid),
                 )
                 .await;
                 vec![a_result?, b_result?]
             }
             [a, b, c] => {
                 let (a_result, b_result, c_result) = join3(
-                    client.group_members(token, a),
-                    client.group_members(token, b),
-                    client.group_members(token, c),
+                    client.group_contains_user(token, a, user_uuid),
+                    client.group_contains_user(token, b, user_uuid),
+                    client.group_contains_user(token, c, user_uuid),
                 )
                 .await;
                 vec![a_result?, b_result?, c_result?]
             }
             [a, b, c, d] => {
                 let (a_result, b_result, c_result, d_result) = join4(
-                    client.group_members(token, a),
-                    client.group_members(token, b),
-                    client.group_members(token, c),
-                    client.group_members(token, d),
+                    client.group_contains_user(token, a, user_uuid),
+                    client.group_contains_user(token, b, user_uuid),
+                    client.group_contains_user(token, c, user_uuid),
+                    client.group_contains_user(token, d, user_uuid),
                 )
                 .await;
                 vec![a_result?, b_result?, c_result?, d_result?]
             }
             _ => unreachable!("chunks are bounded to four"),
         };
-        for (group, members) in chunk.iter().zip(results) {
-            access.insert(
-                group.to_ascii_lowercase(),
-                members.iter().any(|member| same_uuid(member, user_uuid)),
-            );
+        for (group, contains_user) in chunk.iter().zip(results) {
+            access.insert(group.to_ascii_lowercase(), contains_user);
         }
     }
     Ok(access)

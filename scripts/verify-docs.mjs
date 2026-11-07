@@ -130,6 +130,28 @@ function verifyReleaseVersions() {
   );
   verifyReleaseVersionSources(expected, tauri, cargoLock);
   verifyWixVersion(expected, tauri);
+  failures.push(
+    ...workflowVersionFailures(
+      expected,
+      readText(join(root, ".github/workflows/verify.yml")),
+    ),
+  );
+}
+
+/** The workflow hard-codes the release and MSI versions; any other one is stale. */
+export function workflowVersionFailures(expected, workflow) {
+  const base = expected.replace(/-alpha\.\d+$/, "").replaceAll(".", "\\.");
+  const expectedMsi = expected.replace("-alpha.", ".");
+  const stale = new Set();
+  for (const [version] of workflow.matchAll(
+    new RegExp(`(?<![\\d.])${base}(?:-alpha)?\\.\\d+(?!\\d)`, "g"),
+  )) {
+    if (version !== expected && version !== expectedMsi) stale.add(version);
+  }
+  return [...stale].map(
+    (version) =>
+      `.github/workflows/verify.yml version ${version} differs from ${expected} (MSI ${expectedMsi})`,
+  );
 }
 
 function verifyReleaseVersionSources(expected, tauri, cargoLock) {

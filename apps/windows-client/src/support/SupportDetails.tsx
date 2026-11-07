@@ -80,7 +80,7 @@ export function formatSupportDetails(copy: Copy, details: SupportDetails) {
     `Appport ${copy.support}:`,
     `${copy.supportUsername}: ${details.username}`,
     `${copy.supportDeviceName}: ${details.deviceName}`,
-    `${copy.supportWindows}: ${details.windowsDisplay}`,
+    `${copy.supportWindows}: ${windowsDisplay(details.windowsDisplay, copy.notAvailable)}`,
     `${copy.supportManufacturer}: ${details.manufacturer ?? copy.notAvailable}`,
     `${copy.supportModel}: ${details.model ?? copy.notAvailable}`,
     `${copy.supportSerial}: ${details.smbiosSerial ?? copy.notAvailable}`,

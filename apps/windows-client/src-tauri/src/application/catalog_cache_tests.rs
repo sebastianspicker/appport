@@ -1,6 +1,6 @@
-use super::{AuthorizedCatalog, CatalogCache};
+use super::{is_refresh_invalidated, AuthorizedCatalog, CatalogCache};
 use crate::domain::catalog::{AppInstallState, AppSource, AvailableApp, DeviceSummary};
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use std::time::{Duration, Instant};
 
 fn app(id: impl Into<String>) -> AvailableApp {
@@ -94,6 +94,18 @@ fn invalidation_rejects_in_flight_catalog_and_icon_completions() {
         cache.store_icon(7, "current", "allowed", Some("stale".into())),
         Err(error) if error == Error::server("catalog revision is no longer current")
     ));
+}
+
+#[test]
+fn action_invalidation_during_refresh_is_not_a_session_expiry() {
+    let cache = CatalogCache::default();
+    let pending = cache.context(7, "en-US").expect("refresh context");
+    cache.invalidate_apps(7).expect("application invalidation");
+    let error = cache
+        .store_catalog(&pending, catalog("stale", vec![]))
+        .expect_err("invalidated refresh");
+    assert!(is_refresh_invalidated(&error));
+    assert_ne!(error.kind(), ErrorKind::SessionExpired);
 }
 
 #[test]

@@ -4,6 +4,7 @@ import { CatalogResults } from "./CatalogResults";
 import { copyFor, type Locale } from "../i18n/copy";
 import { Icon } from "../ui/Icon";
 import type { ConfirmationHandler } from "./confirmation";
+import type { ActionIntent } from "../native-bridge/types";
 import type { Catalog } from "./model";
 import { CatalogToolbar } from "./CatalogToolbar";
 import {
@@ -74,7 +75,7 @@ function CatalogWorkspace({
         originatingView: catalog.view,
       });
   };
-  const completed = isTaskComplete(task, catalog);
+  const completedIntent = completedTaskIntent(task, catalog);
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
@@ -147,7 +148,7 @@ function CatalogWorkspace({
             catalog={catalog}
             locale={locale}
             task={task}
-            completed={completed}
+            completedIntent={completedIntent}
             back={back}
             onConfirm={onConfirm}
             onSubmit={() => {
@@ -198,20 +199,24 @@ function SignOutWarning({ message }: { message: string }) {
   );
 }
 
-function isTaskComplete(task: CatalogTaskState | undefined, catalog: Catalog) {
-  if (!task?.submitted || task.originatingView !== catalog.view) return false;
-  return (
-    catalog.actions.get(task.application.id)?.state === "succeeded" &&
+function completedTaskIntent(
+  task: CatalogTaskState | undefined,
+  catalog: Catalog,
+) {
+  if (!task?.submitted || task.originatingView !== catalog.view) return;
+  const action = catalog.actions.get(task.application.id);
+  return action?.state === "succeeded" &&
     (catalog.phase === "ready" || catalog.phase === "empty") &&
     !catalog.apps.some((app) => app.id === task.application.id)
-  );
+    ? action.intent
+    : undefined;
 }
 
 function CatalogBody({
   catalog,
   locale,
   task,
-  completed,
+  completedIntent,
   back,
   onConfirm,
   onSubmit,
@@ -219,7 +224,7 @@ function CatalogBody({
   catalog: Catalog;
   locale: Locale;
   task: CatalogTaskState | undefined;
-  completed: boolean;
+  completedIntent: ActionIntent | undefined;
   back: () => void;
   onConfirm: ConfirmationHandler;
   onSubmit: () => void;
@@ -233,7 +238,7 @@ function CatalogBody({
           {copy.readOnly}
         </p>
       )}
-      {task && !completed ? (
+      {task && !completedIntent ? (
         <CatalogTask
           task={task}
           catalog={catalog}
@@ -243,10 +248,10 @@ function CatalogBody({
         />
       ) : (
         <>
-          {task && completed && (
+          {task && completedIntent && (
             <SuccessReceipt
               task={task}
-              intent={catalog.actions.get(task.application.id)!.intent}
+              intent={completedIntent}
               locale={locale}
               onDismiss={back}
             />

@@ -64,7 +64,7 @@ describe("SupportPanel", () => {
     rendered.rerender(
       <SupportPanel
         bootstrap={nativeBootstrap({
-          device: { name: "New PC", status: "COMPLIANT", lastSeenAt: null },
+          device: { name: "New PC", status: "COMPLIANT" },
         })}
         locale="en"
       />,
@@ -74,6 +74,20 @@ describe("SupportPanel", () => {
       await oldDetails.promise;
     });
     expect(screen.queryByText("Old PC")).toBeNull();
+  });
+
+  it("copies the localized not-available text for an unsupported Windows", async () => {
+    vi.mocked(native.supportDetails).mockResolvedValue(
+      supportDetails({ windowsDisplay: "unsupported" }),
+    );
+    render(<SupportPanel bootstrap={nativeBootstrap()} locale="en" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Copy device details" }),
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0]?.[0]).toContain(
+      "Windows display and build: Not available",
+    );
   });
 
   it("reports clipboard and folder failures without unhandled UI state", async () => {

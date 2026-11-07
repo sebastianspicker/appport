@@ -88,6 +88,10 @@ test("qualification evidence fails closed on readiness and binding-relevant mism
       formatValid: true,
       embeddedSecretScanPassed: true,
     },
+    clientExecutable: {
+      formatValid: true,
+      embeddedSecretScanPassed: true,
+    },
     configuration,
     windowsRuntime: { status: "passed" },
   };
@@ -96,6 +100,11 @@ test("qualification evidence fails closed on readiness and binding-relevant mism
     { ...candidate, sourceGatesPassed: false },
     { ...candidate, repository: { state: "dirty" } },
     { ...candidate, windowsRuntime: { status: "failed" } },
+    { ...candidate, clientExecutable: null },
+    {
+      ...candidate,
+      clientExecutable: { formatValid: true, embeddedSecretScanPassed: false },
+    },
   ]) {
     assert.equal(isCandidateReady(incomplete), false);
   }

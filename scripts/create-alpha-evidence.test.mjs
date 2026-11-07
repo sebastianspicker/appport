@@ -17,11 +17,14 @@ test("alpha evidence accepts MSI and EXE inputs only with a Windows self-check",
     "candidate.msi",
     "--qualification-utility",
     "qualification.exe",
+    "--client-executable",
+    "client.exe",
     "--windows-self-check",
     "self-check.json",
   ]);
   assert.match(inputs.msi, /candidate\.msi$/);
   assert.match(inputs.qualificationUtility, /qualification\.exe$/);
+  assert.match(inputs.clientExecutable, /client\.exe$/);
   assert.match(inputs.windowsSelfCheck, /self-check\.json$/);
 });
 
@@ -46,6 +49,27 @@ test("artifact inspection distinguishes MSI and EXE signatures", () => {
       inspectQualificationUtility(invalidExe, []).formatValid,
       false,
     );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("client executable scan fails on a forbidden marker, including UTF-16", () => {
+  const directory = mkdtempSync(join(tmpdir(), "appport-evidence-"));
+  try {
+    const dirty = join(directory, "dirty.exe");
+    const clean = join(directory, "clean.exe");
+    const header = Buffer.from([0x4d, 0x5a, 0, 0]);
+    writeFileSync(
+      dirty,
+      Buffer.concat([header, Buffer.from("Appport/Bearer", "utf16le")]),
+    );
+    writeFileSync(clean, header);
+    const markers = ["Appport/Bearer"];
+    const scanned = (path) =>
+      inspectQualificationUtility(path, markers, "Client executable");
+    assert.equal(scanned(dirty).embeddedSecretScanPassed, false);
+    assert.equal(scanned(clean).embeddedSecretScanPassed, true);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

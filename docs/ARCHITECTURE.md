@@ -300,7 +300,6 @@ re-reads inventory.
 Where in the code:
 
 - [apps/windows-client/src/catalog/useActionWorkflow.ts](../apps/windows-client/src/catalog/useActionWorkflow.ts): starting (step 2) and polling (step 13) an action
-- [apps/windows-client/src/catalog/ConfirmationDialog.tsx](../apps/windows-client/src/catalog/ConfirmationDialog.tsx): the confirmation step
 - [apps/windows-client/src-tauri/src/application/actions.rs](../apps/windows-client/src-tauri/src/application/actions.rs): `prepare_action`, `submit_action`, `get_action`
 - [apps/windows-client/src-tauri/src/infrastructure/relution/actions.rs](../apps/windows-client/src-tauri/src/infrastructure/relution/actions.rs): the deployment POST and device-action reads
 - [apps/windows-client/src-tauri/src/infrastructure/journal.rs](../apps/windows-client/src-tauri/src/infrastructure/journal.rs): `reserve`, `transition`, startup recovery

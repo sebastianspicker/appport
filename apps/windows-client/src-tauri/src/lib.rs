@@ -95,6 +95,8 @@ fn run_background_mode(
 #[cfg(windows)]
 fn foreground_client(config: relution::RelutionConfig) -> Option<Arc<relution::RelutionClient>> {
     if let Err(error) = platform::acquire_singleton() {
+        // shortcut: focuses only; the running window keeps its view. Upgrade to single-instance argument forwarding if users need the Updates view.
+        platform::focus_existing_window();
         logging::write(error);
         return None;
     }

@@ -28,7 +28,11 @@ export function inspectMsiArtifact(path, forbiddenMarkers) {
   };
 }
 
-export function inspectQualificationUtility(path, forbiddenMarkers) {
+export function inspectQualificationUtility(
+  path,
+  forbiddenMarkers,
+  label = "Qualification utility",
+) {
   if (!path) return null;
   const { contents, ...artifact } = inspectBinary(
     path,
@@ -36,7 +40,7 @@ export function inspectQualificationUtility(path, forbiddenMarkers) {
     forbiddenMarkers,
   );
   if (!path.toLowerCase().endsWith(".exe")) {
-    throw new Error("Qualification utility must be a Windows executable.");
+    throw new Error(`${label} must be a Windows executable.`);
   }
   return {
     ...artifact,

@@ -294,7 +294,7 @@ impl CatalogCache {
     ) -> Result<MutexGuard<'_, CredentialCache>, Error> {
         let cache = self.for_generation(context.generation)?;
         if cache.invalidation != context.invalidation {
-            return Err(Error::session_expired("catalog refresh was invalidated"));
+            return Err(refresh_invalidated());
         }
         Ok(cache)
     }
@@ -316,6 +316,16 @@ impl CatalogCache {
             .lock()
             .map_err(|_| Error::unknown("native cache is unavailable"))
     }
+}
+
+/// A completed action invalidates apps mid-refresh; that is not a credential problem,
+/// so it must not surface as a session expiry.
+fn refresh_invalidated() -> Error {
+    Error::server("catalog refresh was invalidated")
+}
+
+pub(super) fn is_refresh_invalidated(error: &Error) -> bool {
+    *error == refresh_invalidated()
 }
 
 fn record_attempt(cache: &mut CredentialCache, context: &RefreshContext, error: Option<Error>) {
