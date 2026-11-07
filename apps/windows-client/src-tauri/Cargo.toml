@@ -33,7 +33,7 @@ path = "src/bin/qualification.rs"
 [target.'cfg(windows)'.dependencies]
 # Kept target-specific: the Win32 bindings must not activate Windows async
 # projection crates while the portable core is being checked on macOS/Linux.
-windows = { version = "=0.61.3", features = [
+windows = { version = "=0.62.2", features = [
   "Data_Xml_Dom",
   "UI_Notifications",
   "Win32_Foundation",
