@@ -1,0 +1,15 @@
+---
+# Tests and repo-local CI gate scripts; production code and lockfiles (Trivy SCA) stay analyzed.
+exclude_paths:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.test.mjs"
+  - "**/testing/**"
+  - "**/*_tests.rs"
+  - "**/tests.rs"
+  - "**/*test_support.rs"
+  - "scripts/verify-*.mjs"
+  - "scripts/check-*.mjs"
+  - "scripts/source-gates.mjs"
+  - "scripts/workflow-contracts.mjs"
+  - "scripts/documentation-links.mjs"

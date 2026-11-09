@@ -131,15 +131,16 @@ and build-verification tools. Run `pnpm demo:verify` separately for the demo.
 Windows integration and live Relution testing are covered in
 [Operations](docs/OPERATIONS.md).
 
-| Directory | Contents |
-| --- | --- |
+| Directory                                              | Contents                                           |
+| ------------------------------------------------------ | -------------------------------------------------- |
 | [`apps/windows-client`](apps/windows-client/README.md) | Windows app and command-line qualification utility |
-| [`apps/web-demo`](apps/web-demo/README.md) | Browser demo with fictional data |
-| `scripts` | Repository checks and qualification evidence tools |
-| `docs` | Architecture, setup, operations, and release notes |
+| [`apps/web-demo`](apps/web-demo/README.md)             | Browser demo with fictional data                   |
+| `scripts`                                              | Repository checks and qualification evidence tools |
+| `docs`                                                 | Architecture, setup, operations, and release notes |
 
 ## Documentation
 
+- [AppPort design proposal](output/pdf/hfmt-appport-design-draft.pdf): security basis, Relution comparison, illustrated workflows, and pilot acceptance ([editable source](reports/appport-design/README.txt))
 - [Architecture](docs/ARCHITECTURE.md): components and request flow
 - [Development](docs/DEVELOPMENT.md): setup, commands, and tests
 - [Configuration](docs/CONFIGURATION.md): build inputs, credentials, and diagnostics
