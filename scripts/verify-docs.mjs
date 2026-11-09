@@ -140,12 +140,13 @@ function verifyReleaseVersions() {
 
 /** The workflow hard-codes the release and MSI versions; any other one is stale. */
 export function workflowVersionFailures(expected, workflow) {
-  const base = expected.replace(/-alpha\.\d+$/, "").replaceAll(".", "\\.");
+  const base = expected.replace(/-alpha\.\d+$/, "");
   const expectedMsi = expected.replace("-alpha.", ".");
   const stale = new Set();
-  for (const [version] of workflow.matchAll(
-    new RegExp(`(?<![\\d.])${base}(?:-alpha)?\\.\\d+(?!\\d)`, "g"),
+  for (const [version, release] of workflow.matchAll(
+    /(?<![\d.])(\d+\.\d+\.\d+)(?:-alpha)?\.\d+(?!\d)/g,
   )) {
+    if (release !== base) continue;
     if (version !== expected && version !== expectedMsi) stale.add(version);
   }
   return [...stale].map(

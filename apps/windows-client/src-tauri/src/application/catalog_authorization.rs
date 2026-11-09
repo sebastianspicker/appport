@@ -1,6 +1,6 @@
 //! Bounded catalog permission and recursive-group evaluation.
 
-use super::{join2, join3, reads::join4};
+use super::{join2, reads::join_all};
 use crate::{
     application::catalog_cache::AuthorizedCatalog,
     domain::{
@@ -94,38 +94,16 @@ async fn app_permissions_bounded(
 ) -> Result<Vec<Vec<AppPermission>>, Error> {
     let mut permissions = Vec::with_capacity(apps.len());
     for chunk in apps.chunks(4) {
-        let pages = match chunk {
-            [a] => vec![client.app_permissions(token, &a.id).await?],
-            [a, b] => {
-                let (a, b) = join2(
-                    client.app_permissions(token, &a.id),
-                    client.app_permissions(token, &b.id),
-                )
-                .await;
-                vec![a?, b?]
-            }
-            [a, b, c] => {
-                let (a, b, c) = join3(
-                    client.app_permissions(token, &a.id),
-                    client.app_permissions(token, &b.id),
-                    client.app_permissions(token, &c.id),
-                )
-                .await;
-                vec![a?, b?, c?]
-            }
-            [a, b, c, d] => {
-                let (a, b, c, d) = join4(
-                    client.app_permissions(token, &a.id),
-                    client.app_permissions(token, &b.id),
-                    client.app_permissions(token, &c.id),
-                    client.app_permissions(token, &d.id),
-                )
-                .await;
-                vec![a?, b?, c?, d?]
-            }
-            _ => unreachable!("chunks are bounded to four"),
-        };
-        permissions.extend(pages);
+        let pages = join_all(
+            chunk
+                .iter()
+                .map(|app| client.app_permissions(token, &app.id))
+                .collect(),
+        )
+        .await;
+        for page in pages {
+            permissions.push(page?);
+        }
     }
     Ok(permissions)
 }
@@ -192,39 +170,15 @@ async fn group_access_bounded(
 ) -> Result<HashMap<String, bool>, Error> {
     let mut access = HashMap::new();
     for chunk in groups.chunks(4) {
-        let results = match chunk {
-            [a] => vec![client.group_contains_user(token, a, user_uuid).await?],
-            [a, b] => {
-                let (a_result, b_result) = join2(
-                    client.group_contains_user(token, a, user_uuid),
-                    client.group_contains_user(token, b, user_uuid),
-                )
-                .await;
-                vec![a_result?, b_result?]
-            }
-            [a, b, c] => {
-                let (a_result, b_result, c_result) = join3(
-                    client.group_contains_user(token, a, user_uuid),
-                    client.group_contains_user(token, b, user_uuid),
-                    client.group_contains_user(token, c, user_uuid),
-                )
-                .await;
-                vec![a_result?, b_result?, c_result?]
-            }
-            [a, b, c, d] => {
-                let (a_result, b_result, c_result, d_result) = join4(
-                    client.group_contains_user(token, a, user_uuid),
-                    client.group_contains_user(token, b, user_uuid),
-                    client.group_contains_user(token, c, user_uuid),
-                    client.group_contains_user(token, d, user_uuid),
-                )
-                .await;
-                vec![a_result?, b_result?, c_result?, d_result?]
-            }
-            _ => unreachable!("chunks are bounded to four"),
-        };
+        let results = join_all(
+            chunk
+                .iter()
+                .map(|group| client.group_contains_user(token, group, user_uuid))
+                .collect(),
+        )
+        .await;
         for (group, contains_user) in chunk.iter().zip(results) {
-            access.insert(group.to_ascii_lowercase(), contains_user);
+            access.insert(group.to_ascii_lowercase(), contains_user?);
         }
     }
     Ok(access)
